@@ -12,6 +12,7 @@ import {
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '@core/services/auth/auth.service';
+import { injectCurrencyLiveMark } from '@core/services/currency/currency-live';
 import { CurrencyService } from '@core/services/currency/currency.service';
 import { FavoritesGateService, FavoritesService } from '@core/services/favorites';
 import { displayDecimals, toDisplayAmount } from '@core/services/offers/engine';
@@ -68,6 +69,8 @@ export class ProductCardComponent {
   readonly #productCache = inject(ProductCacheService);
   readonly #offers = inject(OffersService);
   readonly #currency = inject(CurrencyService);
+  /** `data-cur-live` on the money tag (ATS-323): hidden while it still shows the server's currency. */
+  readonly liveMark = injectCurrencyLiveMark();
 
   /** Colour picked by a click or tap; the card shows its photo (and opens it) until another is picked. */
   readonly #preview = signal<ProductCardColorway | null>(null);

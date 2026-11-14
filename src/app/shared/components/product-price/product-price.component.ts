@@ -1,4 +1,5 @@
 import { Component, computed, inject, input } from '@angular/core';
+import { injectCurrencyLiveMark } from '@core/services/currency/currency-live';
 import { CurrencyService } from '@core/services/currency/currency.service';
 import { displayDecimals, toDisplayAmount } from '@core/services/offers/engine';
 import { offerTextFor } from '@core/services/offers/offer-shop';
@@ -6,10 +7,11 @@ import { formatMoney } from '@shared/utils/money';
 
 @Component({
   selector: 'app-product-price',
-  host: { class: 'block w-full' },
+  host: { class: 'block w-full', '[attr.data-cur-live]': 'liveMark' },
   templateUrl: './product-price.component.html',
 })
 export class ProductPriceComponent {
+  readonly liveMark = injectCurrencyLiveMark();
   readonly #currency = inject(CurrencyService);
 
   readonly price = input.required<number>();

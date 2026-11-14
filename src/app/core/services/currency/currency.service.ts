@@ -45,6 +45,11 @@ const PENDING_TIMEOUT_MS = 2500;
 const VISITOR_LOCATION_PATH = '/api/visitor-location';
 /** Server could not find the country; the browser decides by its time zone (ATS-313). */
 const BY_ZONE_ATTR = 'data-cur-by-zone';
+/**
+ * Prices now differ from the server HTML (ATS-323). Blocks still waiting to hydrate keep the
+ * server's prices, so `_base.scss` hides any price that is not marked `data-cur-live`.
+ */
+const MOVED_ATTR = 'data-cur-moved';
 
 /**
  * Storefront display currency (ATS-317), first known of: `?cur=` (one visit, never saved); the
@@ -92,6 +97,8 @@ export class CurrencyService {
   /** Signed-in account and its saved address country (`setAccount`); first from the stored hint. */
   #uid: string | null = null;
   #savedCountry: string | null = null;
+  /** The currency in the server HTML this page hydrated (ATS-323); null without a server render. */
+  #renderedCode: string | null = null;
 
   constructor() {
     if (isPlatformBrowser(this.#platformId)) {
@@ -306,6 +313,7 @@ export class CurrencyService {
   #hydrateFromTransfer(): void {
     const transferred = this.#transfer.get(CURRENCY_BOOT_KEY, null);
     if (!transferred) return;
+    this.#renderedCode = transferred.code ?? 'EGP';
     this.#visitorCountry.set(transferred.country);
     if (transferred.map) this.#map = transferred.map;
     if (transferred.code === null) {
@@ -347,9 +355,13 @@ export class CurrencyService {
     this.#settledFor = code;
     if (country !== null) this.#visitorCountry.set(country);
     if (code === 'EGP') {
-      this.#generation += 1;
+      const generation = ++this.#generation;
       this.#apply(EGP_ENTRY);
       this.#settled = true;
+      if (this.#pricesHidden()) {
+        this.#revealAfterRender(generation);
+        return;
+      }
       this.#syncDocumentHints(this.#visitorCountry(), true, false);
       return;
     }
@@ -371,25 +383,33 @@ export class CurrencyService {
     const entry = entryFor(code, map);
     this.#apply(entry);
     this.#settled = true;
-    // Only a changed price needs a render first; an EGP fallback changes nothing on screen.
-    if (
-      entry.code !== 'EGP' &&
-      isPlatformBrowser(this.#platformId) &&
-      this.#document.documentElement.hasAttribute(BY_ZONE_ATTR)
-    ) {
-      // Time-zone path (ATS-321): the prices stay hidden until Angular has drawn the new currency,
-      // so the EGP price the server rendered never shows for a frame.
-      afterNextRender(
-        () => {
-          if (generation === this.#generation && this.#settled) {
-            this.#syncDocumentHints(this.#visitorCountry(), true, false);
-          }
-        },
-        { injector: this.#injector },
-      );
+    if (this.#pricesHidden()) {
+      this.#revealAfterRender(generation);
       return;
     }
     this.#syncDocumentHints(this.#visitorCountry(), true, false);
+  }
+
+  /** In the browser, prices are hidden (`data-cur-pending`) while the currency resolves. */
+  #pricesHidden(): boolean {
+    return (
+      isPlatformBrowser(this.#platformId) && this.#document.documentElement.hasAttribute('data-cur-pending')
+    );
+  }
+
+  /**
+   * Shows the prices only once Angular has drawn the new currency (ATS-321 time zone, ATS-323 a
+   * remembered country), so the price the server rendered never shows for a frame.
+   */
+  #revealAfterRender(generation: number): void {
+    afterNextRender(
+      () => {
+        if (generation === this.#generation && this.#settled) {
+          this.#syncDocumentHints(this.#visitorCountry(), true, false);
+        }
+      },
+      { injector: this.#injector },
+    );
   }
 
   async #resolveVisitorCountryClient(): Promise<string | null> {
@@ -472,10 +492,14 @@ export class CurrencyService {
 
   #giveUp(): void {
     if (this.#settled) return;
-    this.#generation += 1;
+    const generation = ++this.#generation;
     this.#settled = true;
     console.warn('Currency rates took too long. Showing EGP prices.');
     this.#apply(EGP_ENTRY);
+    if (this.#pricesHidden()) {
+      this.#revealAfterRender(generation);
+      return;
+    }
     this.#syncDocumentHints(this.#visitorCountry(), true, false);
   }
 
@@ -494,6 +518,10 @@ export class CurrencyService {
     if (pendingIntl) root.setAttribute('data-cur-pending', '');
     else root.removeAttribute('data-cur-pending');
     if (ready) root.removeAttribute(BY_ZONE_ATTR);
+    const moved =
+      ready && !pendingIntl && this.#renderedCode !== null && this.#selected() !== this.#renderedCode;
+    if (moved) root.setAttribute(MOVED_ATTR, '');
+    else root.removeAttribute(MOVED_ATTR);
   }
 }
 
