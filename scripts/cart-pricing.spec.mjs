@@ -565,7 +565,15 @@ describe('Bundle & Save wording (ATS-254)', () => {
 
 describe('offer text that names pounds (ATS-309)', () => {
   it('is hidden from a visitor whose prices are not in EGP', () => {
-    for (const text of ['EGP 100 off', 'Save 200 egp', 'خصم 100 جنيه']) {
+    for (const text of [
+      'EGP 100 off',
+      'Save 200 egp',
+      'خصم 100 جنيه',
+      'Save 100 LE',
+      'L.E. 50 off',
+      'E£200 off',
+      'خصم 100 ج.م',
+    ]) {
       assert.equal(offerTextFor(text, 'QAR'), '', text);
       assert.equal(offerTextFor(text, 'EGP'), text, text);
     }

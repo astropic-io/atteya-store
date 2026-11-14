@@ -423,12 +423,13 @@ export class CheckoutConfirmationPageComponent implements OnInit {
     if (!pricing || !input) return [];
     const fee =
       input.shippingEgp !== null && input.shippingEgp > 0 ? formatMoney(input.shippingEgp, 'EGP', 0) : null;
-    const money = orderShopperMoney(pricing);
+    const money = this.#money();
+    if (!money) return [];
     return buildPaymentParts(this.stage(), {
       method: this.paymentMethod(),
-      total: formatShopperAmount(money, money.total) ?? '—',
+      total: formatShopperAmount(money, money.total) ?? '',
       payIn: this.#payInTotal(),
-      items: formatShopperAmount(money, money.subtotal) ?? '—',
+      items: formatShopperAmount(money, money.subtotal) ?? '',
       fee,
       cash: this.#cash(),
     });

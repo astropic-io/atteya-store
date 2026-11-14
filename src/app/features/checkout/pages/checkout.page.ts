@@ -372,14 +372,20 @@ export class CheckoutPageComponent implements OnInit {
    * The currency checkout shows and prices in (ATS-309): the delivery country decides. Egypt is
    * EGP; abroad it is the delivery country's currency, whatever the visitor browsed in, so a
    * shopper abroad never sees EGP or the Egypt price. Before a country is chosen, the visitor's
-   * own currency. Null while an abroad currency loads or can't be read (no amounts are shown).
+   * own currency. Null while an abroad currency loads; undefined when it can't be read (no
+   * amounts are shown and the order can't be placed: the server would refuse it too).
    */
-  readonly #entry = computed<CurrencyEntry | null>(() => {
+  readonly #entry = computed<CurrencyEntry | null | undefined>(() => {
     const country = this.shipping().country;
     if (!isCheckoutCountry(country)) return this.#currency.entry();
     if (country === 'EG') return EGP_ENTRY;
-    return this.#deliveryEntry.hasValue() ? this.#deliveryEntry.value() : null;
+    if (this.#deliveryEntry.error()) return undefined;
+    if (!this.#deliveryEntry.hasValue()) return null;
+    return this.#deliveryEntry.value() ?? undefined;
   });
+
+  /** The currency code checkout shows prices in, for the offer notes above the summary. */
+  readonly checkoutCurrency = computed(() => this.#entry()?.code ?? null);
   /** InstaPay and cash on delivery are Egypt-only. */
   readonly localMethodsAvailable = computed(() => this.isEgypt());
   /** A country outside Egypt is chosen while neither Card nor Bank Transfer can be used: order on WhatsApp. */
@@ -468,6 +474,8 @@ export class CheckoutPageComponent implements OnInit {
    */
   readonly #pricedBag = computed((): PricedBag => {
     const entry = this.#entry();
+    // Abroad with no factors to price in (never the Egypt price instead): delivery can't be worked out.
+    if (entry === undefined) return { state: 'unavailable' };
     if (!this.#currency.ready() || !this.#offers.ready() || !entry) return { state: 'loading' };
     if (this.productsResource.error()) return { state: 'unavailable' };
     const products = this.productsResource.value();

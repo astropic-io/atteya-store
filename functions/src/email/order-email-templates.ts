@@ -895,13 +895,14 @@ function orderSummary(order: OrderEmailOrder, ctx: OrderEmailContext, opts: Summ
   if (opts.delivery !== false) boxes.push({ label: 'Delivery to', lines: addressLines(order) });
   if (opts.payment) boxes.push({ label: 'Payment', lines: opts.payment });
   const view = orderButton(order, ctx);
-  const out: Block[] = [
-    itemsRow('Your Items', order, order.lines, ctx, { prices: true }),
-    {
+  const out: Block[] = [itemsRow('Your Items', order, order.lines, ctx, { prices: true })];
+  // Abroad with no amount in the shopper's currency there are no totals to show (<KEY>-309).
+  if (rows.length || after.length) {
+    out.push({
       html: section(totals(rows, after), 8),
       text: [...rows, ...after].map(([label, value]) => `${label}: ${value}`).join('\n'),
-    },
-  ];
+    });
+  }
   if (boxes.length) out.push(boxesRow(boxes));
   if (view) out.push(opts.viewAsButton ? buttonRow(view) : linkRow(view));
   return out;

@@ -40,9 +40,15 @@ export class BagOfferNotesComponent {
   /** Extra classes on the list when it shows (its margins), so no gap is left when it is empty. */
   readonly spacing = input('');
 
+  /**
+   * The currency the page shows prices in, when it isn't the visitor's own (checkout prices in the
+   * delivery country's currency). Null = the visitor's currency.
+   */
+  readonly currency = input<string | null>(null);
+
   readonly notes = computed(() => {
     // A title naming pounds is left out for a visitor paying in another currency (ATS-309).
-    const currency = this.#currency.selected();
+    const currency = this.currency() ?? this.#currency.selected();
     return this.#notes.offerNotes().map((note) => ({
       offerId: note.offerId,
       text: offerNoteText({ ...note, title: offerTextFor(note.title, currency) }),

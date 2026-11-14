@@ -196,7 +196,10 @@ export function readOrderForEmail(
       ? wholeNumber(storedTotal)
       : subtotalEgp + shippingEgp;
 
-  const isInternational = pricing['isInternational'] === true;
+  const shippingCountry = text(isRecord(data['shipping']) ? data['shipping']['country'] : undefined);
+  // Same test as the order page (`orderShopperMoney`): shipped outside Egypt.
+  const isInternational =
+    pricing['isInternational'] === true || (shippingCountry !== '' && shippingCountry !== 'EG');
   const payIn = isRecord(pricing['payIn']) ? pricing['payIn'] : null;
   const shopper = shopperMoney({
     abroad: isInternational,

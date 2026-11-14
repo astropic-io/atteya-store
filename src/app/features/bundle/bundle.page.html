@@ -6,12 +6,11 @@
     <app-error-page class="container-content" kind="failed" />
   }
   @default {
-    @let o = offer()!;
     <article class="container-content">
       <div class="bundle-page">
         <header class="bundle-page__header">
           <p class="bundle-page__kicker">{{ kicker() }}</p>
-          <h1 class="bundle-page__title" dir="auto">{{ o.title }}</h1>
+          <h1 class="bundle-page__title" dir="auto">{{ pageTitle() }}</h1>
           @if (saving()) {
             <p class="bundle-page__tag">{{ saving() }}</p>
           }

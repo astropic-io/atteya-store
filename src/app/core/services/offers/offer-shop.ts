@@ -35,8 +35,11 @@ export function offerTitleVisible(offer: Offer, visitorCountry: string | null): 
   return (visitorCountry ?? 'EG') === 'EG';
 }
 
-/** An amount in pounds that staff may type into an offer's title or banner ("EGP 200", "200 جنيه"). */
-const POUNDS = /\bEGP\b|جنيه/i;
+/**
+ * An amount in pounds that staff may type into an offer's title or banner: "EGP 200", "200 LE",
+ * "L.E. 200", "E£200", "200 جنيه", "200 ج.م".
+ */
+const POUNDS = /\bEGP\b|\bL\.?E\b|E£|جنيه|ج\.م/i;
 
 /**
  * An offer's title or banner text as a visitor whose prices are in `currency` may see it

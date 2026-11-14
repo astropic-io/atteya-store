@@ -88,7 +88,9 @@ export class CurrencyService {
     if (code === 'EGP') return EGP_ENTRY;
     const map = await this.#loadMap();
     if (!map) return null;
-    return factorsEntry(code, map) ?? factorsEntry('USD', map);
+    // Same rule as the server's `payInEntry()`: a factor above 0, else USD.
+    const usable = (entry: CurrencyEntry | null) => (entry && entry.factor > 0 ? entry : null);
+    return usable(factorsEntry(code, map)) ?? usable(factorsEntry('USD', map));
   }
 
   /** Runs during SSR before the storefront HTML is rendered. */
