@@ -117,8 +117,18 @@ export class CurrencyService {
       // Unknown country (ATS-313): render EGP with prices hidden; the browser decides by time zone.
       this.#apply(EGP_ENTRY);
       this.#syncDocumentHints(null, false, true);
-      // Prerendered pages have no visitor: send no decision, so the browser runs the full lookup.
-      if (!headers) return;
+      // Prerendered pages have no visitor: the browser hydrates this same ready EGP render
+      // (so the chrome is kept), then runs the full lookup.
+      if (!headers) {
+        const payload: CurrencyBootTransfer = {
+          country: null,
+          code: null,
+          map: null,
+          prerendered: true,
+        };
+        this.#transfer.set(CURRENCY_BOOT_KEY, payload);
+        return;
+      }
       // The inline script in index.html shows these EGP prices at once for an Africa/Cairo browser.
       this.#document.documentElement.setAttribute(BY_ZONE_ATTR, '');
       // Factors ride along, so a visitor the time zone places abroad converts without a read.
@@ -169,7 +179,7 @@ export class CurrencyService {
         });
         return;
       }
-      if (transferred.code === null) {
+      if (transferred.code === null && !transferred.prerendered) {
         // The server already tried every lookup; go straight to the time zone.
         const choice = await visitorBrowsingChoice(null, readTimeZone());
         await this.#finishWithCode(choice.currency, choice.country, {

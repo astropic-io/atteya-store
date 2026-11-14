@@ -11,6 +11,11 @@ export interface CurrencyBootTransfer {
    */
   readonly code: string | null;
   readonly map: PublicCurrencyMap | null;
+  /**
+   * Prerendered page (no visitor request): the server tried no lookup, so the browser
+   * hydrates the hidden EGP render and then runs the full geo lookup, not only the time zone.
+   */
+  readonly prerendered?: boolean;
 }
 
 export const CURRENCY_BOOT_KEY = makeStateKey<CurrencyBootTransfer>('currency-boot');
