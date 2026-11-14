@@ -293,6 +293,13 @@ function paymentRows(
       });
     }
     rows.push({ label: 'Received', value: 'Not yet' });
+  } else if (stage === 'fee-to-be-agreed' && order.paymentMethod === 'bank-transfer') {
+    // Nothing is due or sent until the delivery fee is agreed (ATS-319): the saved amount is items only.
+    rows.push({ label: 'To receive by bank transfer', value: 'After the fee is agreed', strong: true });
+    if (abroad?.lines) {
+      rows.push({ label: 'Same order in Egypt', value: egpMoney(abroad.egyptTotal), muted: true });
+    }
+    rows.push({ label: 'Received', value: 'Not yet' });
   } else if (pricing.payIn && order.paymentMethod === 'bank-transfer') {
     rows.push({
       label: 'Customer sent',

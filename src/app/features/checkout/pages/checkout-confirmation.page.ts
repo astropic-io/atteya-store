@@ -238,8 +238,12 @@ export class CheckoutConfirmationPageComponent implements OnInit {
     return payIn ? formatMoney(payIn.amount, payIn.currency, displayDecimals(payIn.currency)) : null;
   });
 
-  /** The "You send by bank" row under the order total: a Bank Transfer in a currency other than EGP. */
+  /**
+   * The "You send by bank" row under the order total: a Bank Transfer in a currency other than EGP.
+   * Hidden until the delivery fee is agreed: the saved amount is the items only, and nothing is due yet.
+   */
   readonly bankSendTotal = computed(() => {
+    if (this.stage() === 'fee-to-be-agreed') return null;
     const payIn = this.order()?.pricing.payIn;
     return payIn && payIn.currency !== 'EGP' ? this.#payInTotal() : null;
   });
