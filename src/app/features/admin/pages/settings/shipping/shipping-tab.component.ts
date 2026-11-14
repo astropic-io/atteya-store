@@ -55,12 +55,13 @@ interface ShippingDraft {
   promoMinSubtotal: number | null;
   promoBanner: string;
   note: string;
-  /** Egypt extra fee and switch per governorate id. `extraFeeEgp` null: not a whole number 0 to 1,000. */
+  /** Egypt extra fee (as typed) and switch per governorate id. */
   governorates: Record<string, GovernorateDraft>;
 }
 
 interface GovernorateDraft {
-  extraFeeEgp: number | null;
+  /** The Extra Fee (EGP) box as typed; checked on save (`parseExtraFee`). */
+  extraFee: string;
   active: boolean;
 }
 
@@ -71,7 +72,7 @@ function governorateDrafts(
   return Object.fromEntries(
     EGYPT_GOVERNORATES.map((governorate) => {
       const setting = governorateSetting({ egyptGovernorates: saved }, governorate.id);
-      return [governorate.id, { extraFeeEgp: setting.extraFeeEgp, active: setting.active }];
+      return [governorate.id, { extraFee: String(setting.extraFeeEgp), active: setting.active }];
     }),
   );
 }
@@ -116,6 +117,14 @@ function toDate(raw: unknown): Date | null {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
   return null;
+}
+
+/** Whole pounds from 0 to 1,000, or null for anything else (an empty box included). */
+function parseExtraFee(raw: string): number | null {
+  const text = raw.trim();
+  if (text === '') return null;
+  const value = Number(text);
+  return Number.isInteger(value) && value >= 0 && value <= MAX_GOVERNORATE_EXTRA_FEE_EGP ? value : null;
 }
 
 @Component({
@@ -240,14 +249,6 @@ export class ShippingTabComponent implements OnInit {
     this.draft.update((prev) => (prev[key].length > 1 ? { ...prev, [key]: prev[key].slice(0, -1) } : prev));
   }
 
-  /** Whole pounds from 0 to 1,000, or null for anything else (an empty box included). */
-  extraFeeFrom(event: Event): number | null {
-    const raw = (event.target as HTMLInputElement).value.trim();
-    if (raw === '') return null;
-    const value = Number(raw);
-    return Number.isInteger(value) && value >= 0 && value <= MAX_GOVERNORATE_EXTRA_FEE_EGP ? value : null;
-  }
-
   patchGovernorate(id: string, change: Partial<GovernorateDraft>): void {
     this.draft.update((prev) => ({
       ...prev,
@@ -291,7 +292,7 @@ export class ShippingTabComponent implements OnInit {
       this.#snackbar.error('The promotion must end after it starts.');
       return;
     }
-    if (Object.values(d.governorates).some((row) => row.extraFeeEgp === null)) {
+    if (Object.values(d.governorates).some((row) => parseExtraFee(row.extraFee) === null)) {
       this.region.set('egypt');
       this.#snackbar.error('Each governorate needs an extra fee in whole pounds, from 0 to 1,000.');
       return;
@@ -326,7 +327,10 @@ export class ShippingTabComponent implements OnInit {
           egyptGovernorates: Object.fromEntries(
             EGYPT_GOVERNORATES.map((governorate) => {
               const row = d.governorates[governorate.id];
-              return [governorate.id, { extraFeeEgp: row?.extraFeeEgp ?? 0, active: row?.active !== false }];
+              return [
+                governorate.id,
+                { extraFeeEgp: parseExtraFee(row?.extraFee ?? '') ?? 0, active: row?.active !== false },
+              ];
             }),
           ),
           // Drop legacy zone / flat-fee fields on the next admin save.

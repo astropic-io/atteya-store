@@ -4,6 +4,7 @@ import {
   activeGovernorates,
   checkGovernorate,
   governorateFromCity,
+  governorateOfAddress,
   searchGovernorates,
   EGYPT_GOVERNORATES,
 } from './governorates.js';
@@ -457,5 +458,11 @@ describe('Egypt delivery by governorate (ATS-306)', () => {
     assert.equal(governorateFromCity(' Hurghada ')?.id, 'red-sea');
     assert.equal(governorateFromCity('اسكندرية')?.id, 'alexandria');
     assert.equal(governorateFromCity('Somewhere')?.id, undefined);
+  });
+
+  it('an address uses its saved id first, then a typed city that names a governorate', () => {
+    assert.equal(governorateOfAddress('giza', 'Cairo')?.id, 'giza');
+    assert.equal(governorateOfAddress(null, 'Mansoura')?.id, 'dakahlia');
+    assert.equal(governorateOfAddress('atlantis', 'Nowhere'), null);
   });
 });

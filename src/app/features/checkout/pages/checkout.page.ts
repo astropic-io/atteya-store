@@ -46,7 +46,7 @@ import {
   type CurrencyEntry,
   dealTag,
   governorateById,
-  governorateFromCity,
+  governorateOfAddress,
   displayDecimals,
   parcelWeight,
   planDelivery,
@@ -1271,9 +1271,7 @@ function hasTypedAddress(shipping: CheckoutShippingInput): boolean {
 function fillFromSavedAddress(current: CheckoutShippingInput, saved: SavedAddress): CheckoutShippingInput {
   const isEgypt = saved.country === 'EG';
   // Egypt: the saved governorate, or the one an old typed city names (else the shopper picks one).
-  const governorate = isEgypt
-    ? (governorateById(saved.governorateId) ?? governorateFromCity(saved.city))
-    : null;
+  const governorate = isEgypt ? governorateOfAddress(saved.governorateId, saved.city) : null;
   return {
     ...current,
     fullName: saved.fullName,

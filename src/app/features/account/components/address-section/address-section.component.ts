@@ -1,9 +1,9 @@
-import { Component, computed, inject, input, linkedSignal, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, linkedSignal, signal, untracked } from '@angular/core';
 import { form, submit, validate } from '@angular/forms/signals';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { isEgyptMobile } from '@core/config/order-messages';
-import { governorateById, governorateFromCity } from '@core/services/offers/engine';
+import { governorateById, governorateOfAddress } from '@core/services/offers/engine';
 import { ShippingSettingsService } from '@core/services/shipping/shipping-settings.service';
 import { SnackbarService } from '@core/services/snack-bar/snack-bar.service';
 import { UserProfileService, type SavedAddress, type UserProfile } from '@core/services/user-profile';
@@ -35,9 +35,7 @@ function toModel(address: SavedAddress | null | undefined): AddressModel {
   const country = address && isCheckoutCountry(address.country) ? address.country : 'EG';
   // An old Egypt address has only a typed city: fill in the governorate it names, if any.
   const governorate =
-    country === 'EG' && address
-      ? (governorateById(address.governorateId) ?? governorateFromCity(address.city))
-      : null;
+    country === 'EG' && address ? governorateOfAddress(address.governorateId, address.city) : null;
   return {
     country,
     fullName: address?.fullName ?? '',
@@ -105,6 +103,18 @@ export class AddressSectionComponent {
 
   readonly model = linkedSignal<AddressModel>(() => toModel(this.#saved()));
   readonly isEgypt = computed(() => this.model().country === 'EG');
+
+  constructor() {
+    // Leaving Egypt: the governorate's name filled the city, and abroad has its own typed city.
+    effect(() => {
+      if (this.isEgypt()) return;
+      untracked(() => {
+        if (this.model().governorateId) {
+          this.model.update((current) => ({ ...current, governorateId: null, city: '' }));
+        }
+      });
+    });
+  }
 
   readonly addressForm = form(this.model, (path) => {
     validate(path.fullName, ({ value }) => textRule('full name', 120, true)(value()));

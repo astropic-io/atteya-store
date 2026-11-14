@@ -76,10 +76,15 @@ export class GovernorateInputComponent {
       const picked = this.#picked();
       untracked(() => {
         if (id && !picked && this.options().length > 0) {
+          // Switched off: clear the name too, so the field asks for a governorate again.
+          this.#text.set({ query: '' });
           this.value.set(null);
           return;
         }
-        if (picked && this.query() !== picked.name) this.#text.set({ query: picked.name });
+        // Text the shopper is typing that already names this governorate stays as typed.
+        if (picked && this.#exactMatch(this.query())?.id !== picked.id) {
+          this.#text.set({ query: picked.name });
+        }
       });
     });
     effect(() => {

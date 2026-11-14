@@ -176,7 +176,10 @@ const KEYS = new Map(EGYPT_GOVERNORATES.map((governorate) => [governorate.id, se
 
 /** True when the typed text is part of the governorate's name, Arabic name or one of its aliases. */
 export function governorateMatches(governorate: Governorate, query: string): boolean {
-  const needle = normalizeGovernorateText(query);
+  return matchesNormalized(governorate, normalizeGovernorateText(query));
+}
+
+function matchesNormalized(governorate: Governorate, needle: string): boolean {
   if (!needle) return true;
   const keys = KEYS.get(governorate.id) ?? searchKeys(governorate);
   // Arabic names are often typed without "ال" ("اسكندرية" for "الإسكندرية").
@@ -186,7 +189,8 @@ export function governorateMatches(governorate: Governorate, query: string): boo
 
 /** The governorates whose names or aliases contain the typed text, in list order. */
 export function searchGovernorates(list: readonly Governorate[], query: string): Governorate[] {
-  return list.filter((governorate) => governorateMatches(governorate, query));
+  const needle = normalizeGovernorateText(query);
+  return list.filter((governorate) => matchesNormalized(governorate, needle));
 }
 
 /**
@@ -207,4 +211,15 @@ export function governorateFromCity(city: string | null | undefined): Governorat
     }
   }
   return null;
+}
+
+/**
+ * The governorate of an Egypt address: its saved id, or else the governorate its typed city names
+ * (old saved addresses, and orders from checkout pages opened before the Governorate field).
+ */
+export function governorateOfAddress(
+  governorateId: string | null | undefined,
+  city: string | null | undefined,
+): Governorate | null {
+  return governorateById(governorateId) ?? governorateFromCity(city);
 }

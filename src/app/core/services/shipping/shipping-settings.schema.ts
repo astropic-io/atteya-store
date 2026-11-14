@@ -8,7 +8,14 @@ const dimCm = v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(300));
 
 /** One governorate's delivery setting: extra fee (whole EGP, 0 to 1,000) and whether we deliver there. */
 export const GovernorateSettingSchema = v.object({
-  extraFeeEgp: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(MAX_GOVERNORATE_EXTRA_FEE_EGP)),
+  // Rounded before the range check, the same way the order callables read it.
+  extraFeeEgp: v.pipe(
+    v.number(),
+    v.finite(),
+    v.transform(Math.round),
+    v.minValue(0),
+    v.maxValue(MAX_GOVERNORATE_EXTRA_FEE_EGP),
+  ),
   active: v.optional(v.boolean(), true),
 });
 

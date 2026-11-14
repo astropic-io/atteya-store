@@ -1,6 +1,6 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 import * as v from 'valibot';
-import { governorateById } from '../offers/engine/index.js';
+import { governorateOfAddress } from '../offers/engine/index.js';
 import { isEgyptMobile } from '../store/order-messages.js';
 
 const COUNTRY_CODE = /^[A-Z]{2}$/;
@@ -324,9 +324,16 @@ function parseShipping(raw: unknown): OrderShippingInput {
   const fullName = readText(raw['fullName'], MAX_NAME, 'Enter the recipient name.');
   const line1 = readText(raw['line1'], MAX_LINE, 'Enter the street address.');
   const line2 = readOptionalText(raw['line2'], MAX_LINE);
-  // Egypt: the governorate picked from the list decides the city (and the delivery fee); a typed
-  // city is ignored. An id that is not on the list is refused like a missing one.
-  const governorate = country === 'EG' ? governorateById(readOptionalText(raw['governorateId'], 40)) : null;
+  // Egypt: the governorate picked from the list decides the city (and the delivery fee). A checkout
+  // page opened before the Governorate field sends only a typed city: it counts when it names a
+  // governorate exactly. Anything else is refused like a missing governorate.
+  const governorate =
+    country === 'EG'
+      ? governorateOfAddress(
+          readOptionalText(raw['governorateId'], 40),
+          readOptionalText(raw['city'], MAX_CITY),
+        )
+      : null;
   if (country === 'EG' && !governorate) {
     throw new HttpsError('invalid-argument', 'Choose your governorate.');
   }

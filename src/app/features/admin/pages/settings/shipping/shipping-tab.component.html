@@ -164,8 +164,8 @@
                   [max]="maxExtraFee"
                   step="1"
                   [attr.aria-label]="'Extra Fee (EGP), ' + governorate.name"
-                  [value]="row.extraFeeEgp ?? ''"
-                  (input)="patchGovernorate(governorate.id, { extraFeeEgp: extraFeeFrom($event) })"
+                  [value]="row.extraFee"
+                  (input)="patchGovernorate(governorate.id, { extraFee: textFrom($event) })"
                 />
                 <mat-hint>Whole pounds, 0 to 1,000</mat-hint>
               </mat-form-field>
