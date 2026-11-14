@@ -85,6 +85,8 @@ export interface OrderEmailOrder {
   readonly shippedAtMs: number | null;
   /** When staff marked the order Delivered (`deliveredAt`, epoch ms), or null. */
   readonly deliveredAtMs: number | null;
+  /** When staff last reopened the order after a cancel (`reopenedAt`, epoch ms), or null. */
+  readonly reopenedAtMs: number | null;
   /** A guest order's secret view key (its links carry `?key=`); null for signed-in orders. */
   readonly viewKey: string | null;
   /** Bank Transfer: the amount to send in the shopper's currency (`pricing.payIn`), or null. */
@@ -288,6 +290,7 @@ export function readOrderForEmail(
     deliveryFeeSetAtMs: timestampMs(data['deliveryFeeSetAt']),
     shippedAtMs: timestampMs(data['shippedAt']),
     deliveredAtMs: timestampMs(data['deliveredAt']),
+    reopenedAtMs: timestampMs(data['reopenedAt']),
     viewKey: text(data['viewKey']) || null,
     payIn: readPayIn(pricing['payIn']),
     chargeEgp:

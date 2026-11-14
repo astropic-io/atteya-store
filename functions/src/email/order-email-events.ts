@@ -33,6 +33,11 @@ export type OrderEmailKind =
   /** Staff marked the order as Delivered (first time only). */
   | 'order-delivered'
   /**
+   * Staff reopened an order cancelled by mistake (ATS-325): "Your order is back on". Sent on every
+   * reopen (claimed per `reopenedAt`, not once per order).
+   */
+  | 'order-reopened'
+  /**
    * Store-owner alert: a cash-on-delivery, InstaPay or Bank Transfer order was placed, or a card
    * payment cleared.
    */
@@ -46,13 +51,17 @@ export function claimId(kind: OrderEmailKind, order: OrderEmailOrder): string {
   if (kind === 'delivery-fee-changed') {
     return `${order.id}_${kind}_${order.deliveryFeeSetAtMs ?? order.shippingEgp}`;
   }
+  if (kind === 'order-reopened') {
+    return `${order.id}_${kind}_${order.reopenedAtMs ?? 'first'}`;
+  }
   return `${order.id}_${kind}`;
 }
 
 /**
  * Decide which emails one order write should send, from the state before and after.
  * Pending Paymob orders send nothing: the shopper may never finish paying.
- * Cancelling sends nothing: staff talk to the shopper on WhatsApp.
+ * Cancelling sends nothing: staff talk to the shopper on WhatsApp. Reopening a cancelled order
+ * sends "Your order is back on" (`order-reopened`) and nothing else.
  * Shipped and Delivered each send one email the first time the order reaches them (any payment
  * method); the `orderEmails/{orderId}_{kind}` claim stops a resend after a step back.
  * A step back to Confirmed (from Shipped) never sends a confirmation again.
@@ -64,6 +73,14 @@ export function orderEmailsForWrite(
   if (!after) return [];
   const kinds: OrderEmailKind[] = [];
   const statusBefore = before?.status ?? null;
+  // Reopened after a cancel by mistake (never Card: those can't be reopened).
+  if (
+    statusBefore === 'cancelled' &&
+    (after.status === 'pending' || after.status === 'confirmed') &&
+    after.paymentMethod !== 'paymob'
+  ) {
+    return ['order-reopened'];
+  }
   if (after.status === 'shipped' && statusBefore !== 'shipped' && statusBefore !== 'delivered') {
     return ['order-shipped'];
   }

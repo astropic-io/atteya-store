@@ -28,6 +28,58 @@ import { orderActionError } from '../../utils/order-action-error';
 
 type OrderAction = 'status' | 'fee' | 'delete';
 
+/** What Confirm Order does: only what really happens (stock, email). */
+function confirmMessage(stockTaken: boolean, emails: boolean): string {
+  if (!stockTaken && emails) {
+    return 'This takes the items out of stock and emails the shopper that the order is confirmed.';
+  }
+  if (!stockTaken) {
+    return 'This takes the items out of stock. The shopper already had the confirmation email, so no new email is sent.';
+  }
+  return emails
+    ? 'This emails the shopper that the order is confirmed.'
+    : "The shopper's order page shows the order as confirmed. They already had the confirmation email, so no new email is sent.";
+}
+
+/** The confirm dialog of a forward move (Confirmed, Shipped, Delivered), saying what happens. */
+function forwardMoveDialog(row: OrderLineAdminRow, move: OrderStatusMove): ConfirmDialogData {
+  const base = { cancelText: 'Keep Status', theme: 'primary' as const };
+  switch (move.status) {
+    case 'confirmed':
+      return {
+        ...base,
+        title: `Confirm ${row.orderRef}?`,
+        message: confirmMessage(row.stockTaken, move.emailsShopper),
+        confirmText: 'Confirm Order',
+      };
+    case 'shipped':
+      return {
+        ...base,
+        title: `Mark ${row.orderRef} as Shipped?`,
+        message: move.emailsShopper
+          ? 'This emails the shopper that the order is on its way.'
+          : "The shopper's order page shows the order as on its way. They already had the shipping email, so no new email is sent.",
+        confirmText: 'Mark as Shipped',
+      };
+    case 'delivered':
+      return {
+        ...base,
+        title: `Mark ${row.orderRef} as Delivered?`,
+        message: move.emailsShopper
+          ? 'This emails the shopper that the order was delivered and opens returns.'
+          : "The shopper's order page shows the order as delivered and returns open again. They already had the delivered email, so no new email is sent.",
+        confirmText: 'Mark as Delivered',
+      };
+    default:
+      return {
+        ...base,
+        title: `Mark ${row.orderRef} as ${statusName(move.status)}?`,
+        message: `The order moves to ${statusName(move.status)}.`,
+        confirmText: `Mark as ${statusName(move.status)}`,
+      };
+  }
+}
+
 /** What a step back does, said before staff confirm it. */
 function stepBackMessage(status: string): string {
   switch (status) {
@@ -90,7 +142,7 @@ function stepBackMessage(status: string): string {
         }
       </button>
     }
-    @if (r.statusMoves.length) {
+    @if (r.statusMoves.length || r.reopen) {
       <button
         matButton="filled"
         type="button"
@@ -107,6 +159,9 @@ function stepBackMessage(status: string): string {
       <mat-menu #statusMenu="matMenu">
         @for (move of r.statusMoves; track move.status) {
           <button mat-menu-item type="button" (click)="changeStatus(move)">{{ move.label }}</button>
+        }
+        @if (r.reopen) {
+          <button mat-menu-item type="button" (click)="reopenOrder()">Reopen Order</button>
         }
       </mat-menu>
     }
@@ -163,8 +218,9 @@ export class OrderActionsComponent {
   }
 
   /**
-   * The status dropdown. Confirmed on a pending InstaPay order first asks staff to check the bank
-   * app; Cancelled asks for an optional reason. The server checks the move again and takes or
+   * The status dropdown. Every move asks first (ATS-325): Confirmed on a pending InstaPay or Bank
+   * Transfer order asks staff to check the bank app; Cancelled asks for an optional reason; a step
+   * back and every other move say what happens. The server checks the move again and takes or
    * returns stock.
    */
   async changeStatus(move: OrderStatusMove): Promise<void> {
@@ -180,8 +236,7 @@ export class OrderActionsComponent {
         theme: 'primary',
       });
       if (!ok) return;
-    }
-    if (move.status === 'cancelled') {
+    } else if (move.status === 'cancelled') {
       const ref = this.#dialog.open<
         CancelOrderDialogComponent,
         CancelOrderDialogData,
@@ -193,8 +248,7 @@ export class OrderActionsComponent {
       const result = await firstValueFrom(ref.afterClosed());
       if (!result) return;
       reason = result.reason || null;
-    }
-    if (move.label.startsWith('Back to')) {
+    } else if (move.label.startsWith('Back to')) {
       const ok = await this.#ask({
         title: `Move ${row.orderRef} back to ${statusName(move.status)}?`,
         message: stepBackMessage(move.status),
@@ -203,6 +257,9 @@ export class OrderActionsComponent {
         theme: 'primary',
       });
       if (!ok) return;
+    } else {
+      // Every other move asks too: it can email the shopper and move stock.
+      if (!(await this.#ask(forwardMoveDialog(row, move)))) return;
     }
     await this.#run('status', async () => {
       const result = await this.#ordersAdmin.setOrderStatus(row.orderId, move.status, reason);
@@ -218,6 +275,28 @@ export class OrderActionsComponent {
       } else {
         this.#snackbar.success(done);
       }
+    });
+  }
+
+  /**
+   * Reopen Order (ATS-325): asks first, then puts the cancelled order back to its status before
+   * the cancel. The server checks the 7 days, takes stock again and emails the shopper.
+   */
+  async reopenOrder(): Promise<void> {
+    const row = this.row();
+    const reopen = row.reopen;
+    if (!reopen || this.busy()) return;
+    const ok = await this.#ask({
+      title: `Reopen ${row.orderRef}?`,
+      message: `This puts the order back to ${statusName(reopen.status)}, ${reopen.takesStock ? 'takes the items out of stock again ' : ''}and emails the shopper that their order is back on.`,
+      confirmText: 'Reopen Order',
+      cancelText: 'Keep Cancelled',
+      theme: 'primary',
+    });
+    if (!ok) return;
+    await this.#run('status', async () => {
+      const result = await this.#ordersAdmin.reopenOrder(row.orderId);
+      this.#snackbar.success(`Order reopened as ${statusName(result.status)}.`);
     });
   }
 

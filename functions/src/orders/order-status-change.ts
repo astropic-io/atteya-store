@@ -177,14 +177,18 @@ export async function changeOrderStatus(
   });
 }
 
-interface StockPlanItem {
+export interface StockPlanItem {
   readonly ref: DocumentReference;
   /** Null when the product doc no longer exists. */
   readonly data: DocumentData | null;
   readonly demand: ProductStockDemand;
 }
 
-async function readStockPlan(tx: Transaction, db: Firestore, order: DocumentData): Promise<StockPlanItem[]> {
+export async function readStockPlan(
+  tx: Transaction,
+  db: Firestore,
+  order: DocumentData,
+): Promise<StockPlanItem[]> {
   const demandByProduct = aggregateOrderStockDemand(parseOrderStockLines(order));
   const ids = [...demandByProduct.keys()];
   const refs = ids.map((id) => db.collection('products').doc(id));
@@ -196,7 +200,7 @@ async function readStockPlan(tx: Transaction, db: Firestore, order: DocumentData
   }));
 }
 
-function stockSnapshot(data: DocumentData | null) {
+export function stockSnapshot(data: DocumentData | null) {
   return {
     stock: data?.['stock'],
     stockBySize: data?.['stockBySize'],
@@ -205,7 +209,7 @@ function stockSnapshot(data: DocumentData | null) {
 }
 
 /** Same rule as `confirmCodOrder` always had: a missing product or too little stock refuses. */
-function takeStock(data: DocumentData | null, demand: ProductStockDemand) {
+export function takeStock(data: DocumentData | null, demand: ProductStockDemand) {
   if (!data) {
     throw new HttpsError(
       'failed-precondition',

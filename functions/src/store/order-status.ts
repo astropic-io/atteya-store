@@ -209,3 +209,62 @@ export function orderStatusLabel(status: OrderStatus): string {
       return 'Payment Failed';
   }
 }
+
+// ── Reopen Order (ATS-325) ────────────────────────────────────────────────────
+
+/** A cancelled order can be reopened for this many days after `cancelledAt`. */
+export const REOPEN_WINDOW_DAYS = 7;
+
+const REOPEN_WINDOW_MS = REOPEN_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
+export const REOPEN_TOO_LATE_MESSAGE =
+  'Orders can only be reopened within 7 days of being cancelled. Ask the shopper to order again.';
+
+/** The statuses a reopen can put an order back to (cancel is only allowed from these two). */
+export type ReopenStatus = 'pending' | 'confirmed';
+
+export interface ReopenFacts {
+  readonly status: unknown;
+  readonly paymentMethod: unknown;
+  /** `cancelledAt` in epoch ms; null when not saved. */
+  readonly cancelledAtMs: number | null;
+}
+
+/**
+ * Whether staff may reopen this order now: Cancelled (never Payment Failed), paid outside Paymob
+ * (Cash on Delivery, InstaPay or Bank Transfer), and cancelled less than 7 days ago.
+ */
+export function canReopenOrder(order: ReopenFacts, nowMs: number): boolean {
+  return reopenRefusal(order, nowMs) === null;
+}
+
+/** Why a reopen is refused, or null when it is allowed. */
+export function reopenRefusal(order: ReopenFacts, nowMs: number): string | null {
+  if (order.status !== 'cancelled') return 'Only cancelled orders can be reopened.';
+  if (!isManualPayment(order.paymentMethod)) {
+    return "Card orders can't be reopened. Ask the shopper to order again.";
+  }
+  if (order.cancelledAtMs === null || nowMs - order.cancelledAtMs > REOPEN_WINDOW_MS) {
+    return REOPEN_TOO_LATE_MESSAGE;
+  }
+  return null;
+}
+
+/** One saved status change, as far as a reopen needs it. */
+export interface StatusHistoryFacts {
+  readonly status: unknown;
+  readonly from?: unknown;
+}
+
+/**
+ * The status the order had before its cancel: `from` on the latest history row to `cancelled`.
+ * Null when that row is missing or its `from` is not Waiting for Payment or Confirmed.
+ */
+export function statusBeforeCancel(history: readonly StatusHistoryFacts[]): ReopenStatus | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const entry = history[i]!;
+    if (entry.status !== 'cancelled') continue;
+    return entry.from === 'pending' || entry.from === 'confirmed' ? entry.from : null;
+  }
+  return null;
+}
