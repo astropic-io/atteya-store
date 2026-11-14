@@ -89,6 +89,7 @@ export class UserProfileService {
         postalCode: isEgypt ? '' : address.postalCode.trim(),
         country: address.country,
         phone: address.phone.trim(),
+        governorateId: isEgypt ? (address.governorateId ?? null) : null,
       },
     });
   }

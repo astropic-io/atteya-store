@@ -289,8 +289,13 @@
             </div>
           }
           @if (sum.fee; as fee) {
-            <div class="elements-between gap-4">
-              <dt class="font-body-md text-on-surface-variant">{{ fee.label }}</dt>
+            <div class="elements-between items-start! gap-4">
+              <dt class="font-body-md text-on-surface-variant min-w-0">
+                {{ fee.label }}
+                @if (fee.note; as note) {
+                  <span class="block font-body-sm">{{ note }}</span>
+                }
+              </dt>
               <dd class="font-body-md whitespace-nowrap">{{ fee.value }}</dd>
             </div>
           }
@@ -298,12 +303,6 @@
             <div class="elements-between items-baseline! gap-4 border-t border-outline-variant pt-2">
               <dt class="font-title-md font-bold!">Your refund</dt>
               <dd class="font-title-md font-bold! whitespace-nowrap">{{ refund }}</dd>
-            </div>
-          }
-          @if (sum.cashAtDoor; as cash) {
-            <div class="elements-between gap-4">
-              <dt class="font-body-md text-on-surface-variant">The rest of the fee, in cash at the door</dt>
-              <dd class="font-body-md whitespace-nowrap">{{ cash }}</dd>
             </div>
           }
         </dl>

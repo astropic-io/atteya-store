@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { toDisplayAmount } from '../../lib/offers/engine/currency.js';
-import { payInEntry, payInFor } from '../../lib/orders/pay-in.js';
+import { payInEntry, payInFor, payInRateFor } from '../../lib/orders/pay-in.js';
 
 const USD = { code: 'USD', factor: 0.0285 };
 
@@ -59,7 +59,13 @@ describe('payInFor', () => {
       },
     ];
     const expected = toDisplayAmount(1850, USD) * 2 + toDisplayAmount(900, USD) + toDisplayAmount(950, USD);
-    assert.deepEqual(payInFor(lines, { priceEgp: 950 }, USD), { currency: 'USD', amount: expected });
+    assert.deepEqual(payInFor(lines, { priceEgp: 950 }, USD), {
+      currency: 'USD',
+      amount: expected,
+      lines: [toDisplayAmount(1850, USD) * 2, toDisplayAmount(900, USD), 0],
+      shipping: toDisplayAmount(950, USD),
+      factor: USD.factor,
+    });
   });
 
   it('keeps 3 decimals for KWD and free shipping adds 0', () => {
@@ -67,5 +73,57 @@ describe('payInFor', () => {
     const result = payInFor([{ unitEgp: 1000, quantity: 3, lineDisplay: 3000 }], { priceEgp: 0 }, kwd);
     assert.equal(result.currency, 'KWD');
     assert.equal(result.amount, Number((toDisplayAmount(1000, kwd) * 3).toFixed(3)));
+    assert.deepEqual(result.lines, [result.amount]);
+    assert.equal(result.shipping, 0);
+  });
+
+  it('saves line and shipping amounts that add up exactly to the amount', () => {
+    const qar = { code: 'QAR', factor: 0.0955 };
+    const lines = [
+      { unitEgp: 999, quantity: 1, lineDisplay: 999 },
+      { unitEgp: 1499, quantity: 2, lineDisplay: 2998 },
+      { unitEgp: 750, quantity: 3, lineDisplay: 1500, fullEgp: 2250 },
+    ];
+    const result = payInFor(lines, { priceEgp: 750 }, qar);
+    const sum = (result.lines ?? []).reduce((a, b) => a + b, 0) + (result.shipping ?? 0);
+    assert.equal(sum, result.amount);
+    assert.equal(result.lines?.length, lines.length);
+  });
+
+  it('line and shipping amounts round to the amount for 3-decimal currencies', () => {
+    const bhd = { code: 'BHD', factor: 0.0108 };
+    const lines = [
+      { unitEgp: 1234, quantity: 3, lineDisplay: 3702 },
+      { unitEgp: 877, quantity: 2, lineDisplay: 877, fullEgp: 1754 },
+    ];
+    const result = payInFor(lines, { priceEgp: 650 }, bhd);
+    const sum = (result.lines ?? []).reduce((a, b) => a + b, 0) + (result.shipping ?? 0);
+    assert.equal(Number(sum.toFixed(3)), result.amount);
+  });
+
+  it('adds no line amounts when paid in EGP', () => {
+    const result = payInFor([{ unitEgp: 100, quantity: 1, lineDisplay: 100 }], null, {
+      code: 'EGP',
+      factor: 1,
+    });
+    assert.deepEqual(result, { currency: 'EGP', amount: 100 });
+  });
+});
+
+describe('payInRateFor', () => {
+  const rate = 0.0682;
+  const qar = { code: 'QAR', factor: rate * 1.4 };
+
+  it('returns the markup and rate that rebuild the factor', () => {
+    assert.deepEqual(payInRateFor(qar, 40, { QAR: rate }), { markupPercent: 40, rate });
+  });
+
+  it('is null when the markup or rate changed since the factor was saved, or is missing', () => {
+    assert.equal(payInRateFor(qar, 30, { QAR: rate }), null);
+    assert.equal(payInRateFor(qar, 40, { QAR: 0.07 }), null);
+    assert.equal(payInRateFor(qar, 40, { USD: 0.02 }), null);
+    assert.equal(payInRateFor(qar, null, { QAR: rate }), null);
+    assert.equal(payInRateFor(qar, 40, null), null);
+    assert.equal(payInRateFor({ code: 'EGP', factor: 1 }, 40, { QAR: rate }), null);
   });
 });

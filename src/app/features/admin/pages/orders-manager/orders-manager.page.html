@@ -166,9 +166,7 @@
                     <span class="font-body-md font-bold! truncate max-w-full">
                       {{ row.customerName }}
                       @if (d?.customer?.account === 'Guest') {
-                        <span class="ms-1 px-1.5 border border-outline-variant border-shape font-label-sm"
-                          >Guest</span
-                        >
+                        <span class="ms-1 admin-order-tag">Guest</span>
                       }
                     </span>
                     <span class="admin-order-muted truncate max-w-full"
@@ -197,9 +195,17 @@
                   </span>
                   <span class="hidden @5xl:block font-body-md">{{ row.paymentLabel }}</span>
                   <span class="order-6 elements-end-col items-end! @5xl:items-start! @5xl:order-none">
-                    <span class="font-body-md font-bold! whitespace-nowrap @5xl:whitespace-normal">{{
-                      row.orderTotalLabel
-                    }}</span>
+                    <span class="elements-end flex-wrap gap-x-1.5 gap-y-0.5 @5xl:justify-start!">
+                      <span class="font-body-md font-bold! whitespace-nowrap @5xl:whitespace-normal">{{
+                        row.orderTotalLabel
+                      }}</span>
+                      @if (row.abroadTag; as tag) {
+                        <span class="admin-order-tag">{{ tag }}</span>
+                      }
+                    </span>
+                    @if (row.egyptTotalLabel; as egypt) {
+                      <span class="admin-order-muted whitespace-nowrap">{{ egypt }}</span>
+                    }
                     @if (d?.totalEgp; as egp) {
                       <span class="admin-order-muted whitespace-nowrap">{{ egp }}</span>
                     }

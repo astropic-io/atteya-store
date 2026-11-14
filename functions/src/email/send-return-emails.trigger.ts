@@ -13,8 +13,9 @@ import { isReturnStatus } from '../store/returns.js';
 /**
  * Sends return and exchange emails (ATS-291, ATS-294): a new request sends the staff alert
  * (`store-return-request`, to `STORE_ALERT_EMAIL`) and the shopper's "Request Sent"
- * (`return-requested`); each staff step forward sends the shopper one status email (Approved,
- * Rejected, Received, Refund Sent). Which emails: `returnEmailsForWrite`. Each (request, email) pair is
+ * (`return-requested`); each staff step forward sends the shopper one status email (Approved, or
+ * its pay version for Waiting for Payment; Payment Received, ATS-303; Rejected, Received, Refund
+ * Sent). Which emails: `returnEmailsForWrite`. Each (request, email) pair is
  * claimed in `returnEmails/{requestId}_{kind}` before sending, so a repeated trigger never sends
  * twice; a failed send is recorded there and not retried automatically (same as order emails).
  */
@@ -109,7 +110,7 @@ async function sendOnce(
 }
 
 function recipientFor(kind: ReturnEmailKind, request: ReturnEmailRequest): string | null {
-  if (kind === 'store-return-request') {
+  if (kind === 'store-return-request' || kind === 'store-return-fee-reminder') {
     const alert = STORE_ALERT_EMAIL.value().trim();
     return alert.includes('@') ? alert : null;
   }

@@ -1,5 +1,6 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 import * as v from 'valibot';
+import { governorateOfAddress } from '../offers/engine/index.js';
 import { isEgyptMobile } from '../store/order-messages.js';
 
 const COUNTRY_CODE = /^[A-Z]{2}$/;
@@ -58,7 +59,10 @@ export interface OrderShippingInput {
   readonly postalCode: string;
   readonly country: string;
   readonly phone: string;
-  /** Legacy Egypt governorate id; no longer collected at checkout (AS-58). */
+  /**
+   * Egypt: the governorate id from `EGYPT_GOVERNORATES` (ATS-306), and `city` is its English name.
+   * Whether we deliver there is checked while pricing (`priceStoreOrder`). Null abroad.
+   */
   readonly governorateId: string | null;
 }
 
@@ -320,8 +324,21 @@ function parseShipping(raw: unknown): OrderShippingInput {
   const fullName = readText(raw['fullName'], MAX_NAME, 'Enter the recipient name.');
   const line1 = readText(raw['line1'], MAX_LINE, 'Enter the street address.');
   const line2 = readOptionalText(raw['line2'], MAX_LINE);
-  const city = readText(raw['city'], MAX_CITY, 'Enter the city.');
-  const region = readOptionalText(raw['region'], MAX_CITY);
+  // Egypt: the governorate picked from the list decides the city (and the delivery fee). A checkout
+  // page opened before the Governorate field sends only a typed city: it counts when it names a
+  // governorate exactly. Anything else is refused like a missing governorate.
+  const governorate =
+    country === 'EG'
+      ? governorateOfAddress(
+          readOptionalText(raw['governorateId'], 40),
+          readOptionalText(raw['city'], MAX_CITY),
+        )
+      : null;
+  if (country === 'EG' && !governorate) {
+    throw new HttpsError('invalid-argument', 'Choose your governorate.');
+  }
+  const city = governorate ? governorate.name : readText(raw['city'], MAX_CITY, 'Enter the city.');
+  const region = governorate ? null : readOptionalText(raw['region'], MAX_CITY);
   const postalCode =
     country === 'EG'
       ? (readOptionalText(raw['postalCode'], MAX_POSTAL) ?? '')
@@ -336,7 +353,7 @@ function parseShipping(raw: unknown): OrderShippingInput {
     postalCode,
     country,
     phone,
-    governorateId: null,
+    governorateId: governorate ? governorate.id : null,
   };
 }
 

@@ -41,12 +41,17 @@ export type ReturnWants = 'send-another' | 'send-right-one' | 'refund';
 
 /**
  * Requested → Approved → Received; a request with any refund item goes on to Refund Sent.
- * Rejected is possible any time before Received, Cancelled (by the shopper) only while Requested.
+ * A request with a courier fee the shopper pays by InstaPay first (`feePaid: 'instapay-first'`,
+ * ATS-303) goes Requested → Waiting for Payment → Approved: Approve moves it to Waiting for
+ * Payment and Payment Received to Approved. Rejected is possible any time before Received,
+ * Cancelled (by the shopper) while Requested or Waiting for Payment.
  */
-export type ReturnStatus = 'requested' | 'approved' | 'received' | 'refund-sent' | 'rejected' | 'cancelled';
+export type ReturnStatus =
+  'requested' | 'waiting-for-payment' | 'approved' | 'received' | 'refund-sent' | 'rejected' | 'cancelled';
 
 export const RETURN_STATUSES: readonly ReturnStatus[] = [
   'requested',
+  'waiting-for-payment',
   'approved',
   'received',
   'refund-sent',
@@ -72,6 +77,15 @@ export const REFUND_REFERENCE_MAX = 100;
 
 /** Requests one order can ever have (cancelled and rejected ones included), so a loop can't flood staff. */
 export const RETURN_REQUESTS_PER_ORDER_MAX = 10;
+
+/** Days after Approve (entering Waiting for Payment) before the fee reminder email (ATS-307). */
+export const RETURN_FEE_REMINDER_DAYS = 2;
+
+/** Days after Approve before an unpaid Waiting for Payment request cancels itself (ATS-307). */
+export const RETURN_FEE_AUTO_CANCEL_DAYS = 5;
+
+/** Fee Sent Back: the most characters for "Sent to" and the reference (ATS-307). */
+export const FEE_SENT_BACK_TEXT_MAX = 100;
 
 export function isReturnKind(value: unknown): value is ReturnKind {
   return typeof value === 'string' && (RETURN_KINDS as readonly string[]).includes(value);
@@ -137,6 +151,8 @@ export function returnStatusLabel(status: ReturnStatus): string {
   switch (status) {
     case 'requested':
       return 'Requested';
+    case 'waiting-for-payment':
+      return 'Waiting for Payment';
     case 'approved':
       return 'Approved';
     case 'received':
@@ -162,11 +178,11 @@ export function isStoreFault(kind: ReturnKind): boolean {
 }
 
 /**
- * Still in progress: Requested, Approved, or Received while a refund is still to send. An
- * exchange-only request ends at Received.
+ * Still in progress: Requested, Waiting for Payment, Approved, or Received while a refund is still
+ * to send. An exchange-only request ends at Received.
  */
 export function isOpenReturn(status: ReturnStatus, hasRefund: boolean): boolean {
-  if (status === 'requested' || status === 'approved') return true;
+  if (status === 'requested' || status === 'waiting-for-payment' || status === 'approved') return true;
   return status === 'received' && hasRefund;
 }
 
@@ -233,16 +249,20 @@ function readKeptItems(raw: unknown): ReturnKeptItem[] {
 
 /**
  * The statuses a request may move to next. `byShopper` asks for the shopper's own move
- * (Cancelled while Requested); staff get Approved, Rejected, Received and Refund Sent.
+ * (Cancelled while Requested or Waiting for Payment); staff get Approved (or Waiting for Payment
+ * when the shopper pays the courier fee first, `returnApproveStatus()`), Rejected, Received and
+ * Refund Sent. Waiting for Payment → Approved is staff's Payment Received.
  */
 export function nextReturnStatuses(
   status: ReturnStatus,
   hasRefund: boolean,
   byShopper = false,
 ): ReturnStatus[] {
-  if (byShopper) return status === 'requested' ? ['cancelled'] : [];
+  if (byShopper) return status === 'requested' || status === 'waiting-for-payment' ? ['cancelled'] : [];
   switch (status) {
     case 'requested':
+      return ['waiting-for-payment', 'approved', 'rejected'];
+    case 'waiting-for-payment':
       return ['approved', 'rejected'];
     case 'approved':
       return ['received', 'rejected'];
@@ -296,8 +316,24 @@ export interface ReturnSummary {
   readonly refundEgp?: number;
   /** Refund Sent: what staff really sent, whole EGP; the shopper's box shows this over `refundEgp`. */
   readonly refundSentEgp?: number;
+  /**
+   * The courier fee the shopper pays by InstaPay before the courier comes, whole EGP (ATS-303):
+   * the pay steps while Waiting for Payment. Only on entries with `feePaid: 'instapay-first'`.
+   */
+  readonly payFeeEgp?: number;
   /** Why staff rejected it, as the shopper sees it (Rejected only). */
   readonly rejectReason?: string;
+  /**
+   * A courier fee the shopper already paid that we send back by InstaPay (Rejected or Cancelled
+   * before pickup, ATS-307), whole EGP. Never the InstaPay details or the reference.
+   */
+  readonly feeBackEgp?: number;
+  /** Fee Sent Back: what staff sent back, whole EGP (ATS-307). */
+  readonly feeSentBackEgp?: number;
+  /** Fee Sent Back: when, as a Timestamp from the function's clock (arrays can't hold server time). */
+  readonly feeSentBackAt?: unknown;
+  /** Cancelled by itself: the courier fee didn't arrive in 5 days (ATS-307). */
+  readonly autoCancelled?: boolean;
   /**
    * Rejected after Approve: the Wrong Item Sent line pieces whose stock corrections were kept, so
    * they stay held (`piecesLeft`, `hasReturnHoldingPieces`). Absent otherwise.
@@ -351,6 +387,10 @@ export interface ReturnStatusExtras {
   readonly refundSentEgp?: number | null;
   /** Rejected after Approve: the line pieces whose stock corrections were kept (saved as `keptItems`). */
   readonly keptItems?: readonly ReturnKeptItem[] | null;
+  /** Rejected or Cancelled: a paid courier fee we send back (saved as `feeBackEgp`, ATS-307). */
+  readonly feeBackEgp?: number | null;
+  /** Cancelled by the hourly schedule: the fee didn't arrive in 5 days (saved as `autoCancelled`). */
+  readonly autoCancelled?: boolean;
 }
 
 /**
@@ -375,9 +415,104 @@ export function withReturnStatus(
   }
   const kept = readKeptItems(extras.keptItems);
   if (status === 'rejected' && kept.length > 0) patch['keptItems'] = kept;
+  const feeBack = wholeOrZero(extras.feeBackEgp);
+  if ((status === 'rejected' || status === 'cancelled') && feeBack > 0) patch['feeBackEgp'] = feeBack;
+  if (status === 'cancelled' && extras.autoCancelled === true) patch['autoCancelled'] = true;
   return raw.map((entry: unknown) =>
     isRecord(entry) && entry['id'] === requestId ? { ...entry, ...patch } : entry,
   );
+}
+
+/**
+ * The order's raw `returns` array with one request's Fee Sent Back saved (ATS-307): the amount and
+ * when, for the shopper's request box. Never "Sent to" or the reference: shoppers and guests
+ * (`orderViews`) read the summary. `at` is a Timestamp from the function's clock.
+ */
+export function withReturnFeeSentBack(
+  raw: unknown,
+  requestId: string,
+  feeSentBackEgp: number,
+  at: unknown,
+): unknown[] {
+  if (!Array.isArray(raw)) return [];
+  const patch = { feeSentBackEgp: wholeOrZero(feeSentBackEgp), feeSentBackAt: at };
+  return raw.map((entry: unknown) =>
+    isRecord(entry) && entry['id'] === requestId ? { ...entry, ...patch } : entry,
+  );
+}
+
+// ── Courier fee sent back (ATS-307) ─────────────────────────────────────────
+
+/**
+ * The paid courier fee to send back when a request ends before pickup, whole EGP (ATS-307):
+ * - Cancel or Reject from Waiting for Payment: the fee when the shopper or staff tick that it was
+ *   already paid (`feeAlreadyPaid`).
+ * - Reject from Approved: the fee when staff confirmed the payment (`paymentReceivedAt`), always.
+ * - Anything else: 0 (no fee paid first, or the request had not reached payment).
+ */
+export function returnFeeBackEgp(
+  saved: Readonly<Record<string, unknown>>,
+  from: ReturnStatus,
+  feeAlreadyPaid: boolean,
+): number {
+  if (!returnPaysFirst(saved['feePaid'], saved['feeEgp'])) return 0;
+  const fee = wholeOrZero(saved['feeEgp']);
+  if (from === 'waiting-for-payment') return feeAlreadyPaid ? fee : 0;
+  if (from === 'approved') return saved['paymentReceivedAt'] ? fee : 0;
+  return 0;
+}
+
+/** When a Waiting for Payment request started waiting, epoch ms: `waitingForPaymentAt`, else `approvedAt`. */
+export function waitingForPaymentStartMs(saved: Readonly<Record<string, unknown>>): number | null {
+  return timestampMs(saved['waitingForPaymentAt']) ?? timestampMs(saved['approvedAt']);
+}
+
+/**
+ * The last moment the courier fee may arrive before the request cancels itself, epoch ms: 5 days
+ * after it started waiting, but never sooner than 3 days after the reminder (a request approved
+ * before `waitingForPaymentAt` existed is reminded first and still gets those days).
+ */
+export function returnFeeCancelAtMs(startMs: number, reminderMs: number | null = null): number {
+  const byStart = startMs + RETURN_FEE_AUTO_CANCEL_DAYS * DAY_MS;
+  if (reminderMs === null) return byStart;
+  return Math.max(byStart, reminderMs + (RETURN_FEE_AUTO_CANCEL_DAYS - RETURN_FEE_REMINDER_DAYS) * DAY_MS);
+}
+
+/**
+ * The most Fee Sent Back may record, whole EGP (ATS-307): the saved `feeBackEgp`, or the whole fee
+ * for a request that cancelled itself (the shopper may have paid just before the cancel and told
+ * us on WhatsApp); 0 when there is nothing to send back.
+ */
+export function returnFeeBackLimitEgp(saved: Readonly<Record<string, unknown>>): number {
+  const owed = wholeOrZero(saved['feeBackEgp']);
+  if (owed > 0) return owed;
+  if (
+    saved['status'] === 'cancelled' &&
+    saved['cancelledBy'] === 'system' &&
+    returnPaysFirst(saved['feePaid'], saved['feeEgp'])
+  ) {
+    return wholeOrZero(saved['feeEgp']);
+  }
+  return 0;
+}
+
+/**
+ * What the hourly schedule does with a request (ATS-307): `remind` after 2 days still Waiting for
+ * Payment when no reminder was sent yet, `cancel` once reminded and past `returnFeeCancelAtMs()`,
+ * else `none`.
+ */
+export function returnFeeChase(
+  saved: Readonly<Record<string, unknown>>,
+  nowMs: number,
+): 'none' | 'remind' | 'cancel' {
+  if (saved['status'] !== 'waiting-for-payment') return 'none';
+  const start = waitingForPaymentStartMs(saved);
+  if (start === null) return 'none';
+  if (nowMs < start + RETURN_FEE_REMINDER_DAYS * DAY_MS) return 'none';
+  // The shopper is always reminded before the request cancels itself.
+  const reminderMs = timestampMs(saved['feeReminderSentAt']);
+  if (!saved['feeReminderSentAt']) return 'remind';
+  return nowMs >= returnFeeCancelAtMs(start, reminderMs) ? 'cancel' : 'none';
 }
 
 // ── Who and when ────────────────────────────────────────────────────────────
@@ -637,23 +772,46 @@ export function courierFeeEgp(input: CourierFeeInput): number {
   return own > 0 ? own : wholeOrZero(input.normalBoxFeeEgp);
 }
 
-/** How the courier fee is paid: free, taken off the refund, or cash at the door (exchange only). */
-export type CourierFeePaid = 'free' | 'off-refund' | 'cash';
+/**
+ * How the courier fee is paid: free (the store pays), or by InstaPay before the courier comes
+ * (`instapay-first`, every new request with a fee since ATS-303). Requests saved before that
+ * still read `off-refund` (taken off the refund) or `cash` (cash at the door, exchange only).
+ */
+export type CourierFeePaid = 'free' | 'instapay-first' | 'off-refund' | 'cash';
+
+/** Reads a saved `feePaid`; anything unknown reads as `free`. */
+export function readCourierFeePaid(raw: unknown): CourierFeePaid {
+  return raw === 'instapay-first' || raw === 'off-refund' || raw === 'cash' ? raw : 'free';
+}
+
+/** True when the shopper pays the courier fee by InstaPay before the courier comes (ATS-303). */
+export function returnPaysFirst(feePaid: unknown, feeEgp: unknown): boolean {
+  return feePaid === 'instapay-first' && wholeOrZero(feeEgp) > 0;
+}
+
+/**
+ * Where staff's Approve moves a Requested request: Waiting for Payment when the shopper pays the
+ * courier fee first, else Approved (no fee, or a request saved before ATS-303).
+ */
+export function returnApproveStatus(feePaid: unknown, feeEgp: unknown): ReturnStatus {
+  return returnPaysFirst(feePaid, feeEgp) ? 'waiting-for-payment' : 'approved';
+}
 
 export interface ReturnMoney {
   /** What the refunded pieces were paid (whole EGP). */
   readonly itemsEgp: number;
   readonly feeEgp: number;
   readonly feePaid: CourierFeePaid;
-  /** Sent by InstaPay after the items are Received: items − fee, never below 0. */
+  /** Sent by InstaPay after the items are Received: the full paid share of the refunded pieces. */
   readonly refundEgp: number;
-  /** Paid to the courier in cash: the fee for an exchange-only request, or what the refund can't cover. */
+  /** Cash to the courier: always 0 for new requests (only requests saved before ATS-303 have it). */
   readonly cashAtDoorEgp: number;
 }
 
 /**
- * Refund and fee for a request. The fee is taken off the refund when there is one, or paid in
- * cash to the courier for an exchange-only request. The original delivery fee is never refunded.
+ * Refund and fee for a new request (ATS-303). The shopper pays the courier fee by InstaPay after
+ * Approve and before the courier comes, so the refund is the full paid share of the refunded
+ * pieces and nothing is paid at the door. The original delivery fee is never refunded.
  */
 export function returnMoney(itemsEgp: number, feeEgp: number, hasRefund: boolean): ReturnMoney {
   const items = wholeOrZero(itemsEgp);
@@ -667,15 +825,12 @@ export function returnMoney(itemsEgp: number, feeEgp: number, hasRefund: boolean
       cashAtDoorEgp: 0,
     };
   }
-  if (!hasRefund) {
-    return { itemsEgp: items, feeEgp: fee, feePaid: 'cash', refundEgp: 0, cashAtDoorEgp: fee };
-  }
   return {
     itemsEgp: items,
     feeEgp: fee,
-    feePaid: 'off-refund',
-    refundEgp: Math.max(0, items - fee),
-    cashAtDoorEgp: Math.max(0, fee - items),
+    feePaid: 'instapay-first',
+    refundEgp: hasRefund ? items : 0,
+    cashAtDoorEgp: 0,
   };
 }
 
@@ -809,6 +964,14 @@ export function undoStockStep(step: StockStep): StockStep {
 /** What the shopper sends with photos of a damaged or wrong item (prefilled; Arabic like the order messages). */
 export function returnPhotosWhatsappText(ref: string, orderRef: string): string {
   return `مرحباً، دي صور المنتج لطلب الاسترجاع أو الاستبدال رقم ${ref} (طلب رقم ${orderRef}).`;
+}
+
+/**
+ * What the shopper sends on WhatsApp with the InstaPay screenshot of the courier fee (prefilled;
+ * Arabic like the order messages, English digits), ATS-303.
+ */
+export function returnPaymentWhatsappText(ref: string, orderRef: string, feeEgp: number): string {
+  return `مرحبا، دفعت ${wholeOrZero(feeEgp)} EGP مصاريف الشحن لطلب الاسترجاع ${ref} (طلب ${orderRef}). مرفق صورة التحويل.`;
 }
 
 /** What staff send the shopper about a new request (prefilled; staff can edit it). */

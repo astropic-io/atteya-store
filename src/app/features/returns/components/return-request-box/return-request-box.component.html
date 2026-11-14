@@ -50,6 +50,25 @@
     } @else if (message()) {
       <p class="font-body-md">{{ message() }}</p>
     }
+    @if (feeBack(); as line) {
+      <p class="font-body-md font-bold!">{{ line }}</p>
+    }
+
+    @if (pay(); as p) {
+      <ol class="pay-steps" aria-label="How to pay the courier fee">
+        @for (step of p.steps; track step.title) {
+          <li class="pay-step">
+            <span class="pay-step__text">
+              <span class="font-body-md font-bold!">{{ step.title }}</span>
+              <span class="font-body-sm text-on-surface-variant">{{ step.note }}</span>
+            </span>
+            @if (step.amount) {
+              <span class="pay-step__amount">{{ step.amount }}</span>
+            }
+          </li>
+        }
+      </ol>
+    }
 
     <ul class="elements-start-col items-stretch! gap-3">
       @for (item of items(); track item.key) {
@@ -82,21 +101,29 @@
     @if (refund(); as amount) {
       @if (!done()) {
         <div class="elements-between items-baseline! gap-4 border-t border-outline-variant pt-3">
-          <span class="font-body-md">Your refund after the courier fee</span>
+          <span class="font-body-md">{{ refundLabel() }}</span>
           <span class="font-title-md font-bold! whitespace-nowrap">{{ amount }}</span>
         </div>
       }
     }
 
-    @if (photosUrl() || request().status === 'requested') {
+    @if (photosUrl() || pay()?.whatsappUrl || canCancel()) {
       <div class="grid gap-3">
+        @if (pay(); as p) {
+          @if (p.whatsappUrl; as url) {
+            <a matButton="filled" theme="success" [href]="url" target="_blank" rel="noopener">
+              <mat-icon name="chat_bubble" />
+              <span>{{ p.buttonLabel }}</span>
+            </a>
+          }
+        }
         @if (photosUrl(); as url) {
           <a matButton="filled" [href]="url" target="_blank" rel="noopener">
             <mat-icon name="photo_library" />
             <span>Send Photos on WhatsApp</span>
           </a>
         }
-        @if (request().status === 'requested') {
+        @if (canCancel()) {
           <button
             matButton="outlined"
             type="button"

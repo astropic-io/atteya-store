@@ -3,7 +3,13 @@ import { computed, DestroyRef, inject, PLATFORM_ID, Service, signal, TransferSta
 import { doc, onSnapshot } from 'firebase/firestore';
 import { injectFirestore } from '@core/firebase';
 import { CurrencyService } from '@core/services/currency/currency.service';
-import { shippingFromFee, type ShippingBox, type ShippingSettings } from '@core/services/offers/engine';
+import {
+  activeGovernorates,
+  EGYPT_GOVERNORATES,
+  shippingFromFee,
+  type ShippingBox,
+  type ShippingSettings,
+} from '@core/services/offers/engine';
 import { createValibotConverter } from '@shared/utils/firebase/firestore-converter';
 import {
   DEFAULT_EGYPT_BOXES,
@@ -32,6 +38,7 @@ export function toEngineShipping(docData: ShippingSettingsDoc): ShippingSettings
       banner: docData.promo.banner,
     },
     note: docData.note,
+    egyptGovernorates: docData.egyptGovernorates,
   };
 }
 
@@ -118,6 +125,15 @@ export class ShippingSettingsService {
   readonly settings = computed<ShippingSettings | null>(() => {
     const raw = this.#doc();
     return raw ? toEngineShipping(raw) : null;
+  });
+
+  /**
+   * Governorates the shopper can pick at checkout and in Account → Delivery Address: the ones we
+   * deliver to. All 27 until the settings load (the server checks again at Place Order).
+   */
+  readonly governorates = computed(() => {
+    const settings = this.settings();
+    return settings ? activeGovernorates(settings) : [...EGYPT_GOVERNORATES];
   });
 
   readonly fromFee = computed(() => {

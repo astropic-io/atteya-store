@@ -5,6 +5,7 @@ import {
   boxesForRegion,
   liveOffers,
   parcelWeight,
+  checkGovernorate,
   planDelivery,
   priceBagDeals,
   priceItem,
@@ -50,6 +51,17 @@ export type OrderFulfilment =
 export interface OrderPayIn {
   readonly currency: string;
   readonly amount: number;
+  /**
+   * Not in EGP only (orders from ATS-304 on): each `pricing.lines` entry in the shopper's currency
+   * (index-matched, 0 for free gifts) and the shipping fee, rounded the same way as `amount`, so
+   * `lines` + `shipping` add up to `amount` once rounded to the currency's decimals. Staff see
+   * them on the admin order page. The markup and rate behind `factor` are staff-only, so they go to
+   * `orderStaffNotes/{orderId}.payInRate` instead (the owner can read this doc).
+   */
+  readonly lines?: readonly number[];
+  readonly shipping?: number;
+  /** The public `settings/currency` factor `amount` was worked out with (shopper currency per EGP). */
+  readonly factor?: number;
 }
 
 /** One chosen option, saved as the shopper saw it (e.g. `Size` → `M`). */
@@ -488,6 +500,10 @@ async function priceWithOffers(
   const isInternational = input.shipping.country !== 'EG';
   const region = isInternational ? 'international' : 'egypt';
   const regionBoxes = boxesForRegion(shippingConfig.settings, region);
+  // Egypt: the governorate must be one we deliver to; its extra fee is added to the box fee.
+  const governorateExtraEgp = isInternational
+    ? 0
+    : egyptGovernorateExtraFee(shippingConfig.settings, input.shipping.governorateId);
 
   const usedOffers = new Map<string, UsedOffer>();
   // Pieces the order takes from stock, by product and size: every paid line first, then gifts as
@@ -649,6 +665,7 @@ async function priceWithOffers(
     cartProducts,
     offers,
     ctx,
+    governorateExtraEgp,
   });
 
   // A Free shipping offer counts only when it made the shipping free (not when the box fee, the
@@ -875,6 +892,21 @@ interface ShippingLineContext {
   readonly cartProducts: readonly ShippingQuoteLine[];
   readonly offers: readonly Offer[];
   readonly ctx: PricingContext;
+  /** Egypt: the governorate's extra fee on top of the box fee (0 abroad). */
+  readonly governorateExtraEgp: number;
+}
+
+/**
+ * The extra delivery fee of an Egypt order's governorate. Refuses a missing or unknown governorate
+ * and one we don't deliver to right now (switched off in Settings → Shipping).
+ */
+export function egyptGovernorateExtraFee(settings: ShippingSettings, governorateId: string | null): number {
+  const check = checkGovernorate(settings, governorateId);
+  if (check.ok) return check.extraFeeEgp;
+  if (check.code === 'inactive') {
+    throw new HttpsError('failed-precondition', `We don't deliver to ${check.governorate.name} right now.`);
+  }
+  throw new HttpsError('invalid-argument', 'Choose your governorate.');
 }
 
 /**
@@ -923,6 +955,7 @@ function quoteShippingLine(
         totalWeightGrams: plan.quoteWeightGrams,
         goodsSubtotal: c.subtotalEgp,
         lines: c.cartProducts,
+        governorateExtraEgp: c.governorateExtraEgp,
       },
       c.offers,
       c.ctx,
@@ -949,9 +982,13 @@ function quoteShippingLine(
  * itself already costs 0: the offer saved nothing).
  */
 export function freeShippingOfferIdOf(
-  quote: Pick<ShippingQuote, 'fee' | 'reason' | 'offerId'> & { readonly box: { readonly feeEgp: number } },
+  quote: Pick<ShippingQuote, 'fee' | 'reason' | 'offerId'> & {
+    readonly box: { readonly feeEgp: number };
+    readonly extraFeeEgp?: number;
+  },
 ): string | null {
-  const madeItFree = quote.reason === 'offer' && quote.fee === 0 && Math.round(quote.box.feeEgp) > 0;
+  const boxAndExtra = Math.round(quote.box.feeEgp) + Math.round(quote.extraFeeEgp ?? 0);
+  const madeItFree = quote.reason === 'offer' && quote.fee === 0 && boxAndExtra > 0;
   return madeItFree && quote.offerId ? quote.offerId : null;
 }
 

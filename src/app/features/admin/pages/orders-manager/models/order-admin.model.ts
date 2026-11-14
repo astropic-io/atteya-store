@@ -68,6 +68,10 @@ export interface OrderLineAdminRow {
   readonly currentStock: number | null;
   readonly stockStatus: OrderLineStockStatus;
   readonly orderTotalLabel: string;
+  /** Bank Transfer from abroad in another currency: the same order in Egypt, `EGP 4,747 in Egypt`. */
+  readonly egyptTotalLabel: string | null;
+  /** Bank Transfer from abroad in another currency: `Abroad · QAR`. */
+  readonly abroadTag: string | null;
   /** Shopper phone as typed at checkout. */
   readonly phone: string;
   /** What the order may say right now (`orderStage()`). */
@@ -111,6 +115,40 @@ export interface OrderDetailRow {
   readonly label: string;
   readonly value: string;
   readonly strong?: boolean;
+  /** Grey, e.g. "Same order in Egypt". */
+  readonly muted?: boolean;
+}
+
+/**
+ * One price shown three ways on an order from abroad (ATS-304): what the customer pays in their
+ * currency, what that comes to in pounds (null: rate unknown, the column is hidden) and the price
+ * in Egypt. All three read "Free" on a free line or free shipping.
+ */
+export interface AbroadPriceCells {
+  readonly customer: string;
+  readonly pounds: string | null;
+  readonly egypt: string;
+  /** "+408 abroad" under the Egypt price; null when abroad prices add nothing. */
+  readonly extra: string | null;
+}
+
+/** An order from abroad's Subtotal, Shipping or Total row in the three columns. */
+export interface AbroadTotalRow extends AbroadPriceCells {
+  readonly label: string;
+  readonly strong?: boolean;
+}
+
+/** The three-price view of a Bank Transfer order from abroad (orders that saved line amounts). */
+export interface AbroadOrderView {
+  /** False when the rate is unknown: the In pounds column is left out. */
+  readonly showPounds: boolean;
+  readonly totals: readonly AbroadTotalRow[];
+  /** The grey box under the totals; null when the rate is unknown. */
+  readonly note: {
+    readonly extra: string;
+    /** "Abroad prices +40% · rate on the day 1 QAR = 14.66 EGP"; null when not saved. */
+    readonly rate: string | null;
+  } | null;
 }
 
 /** One saved order line as staff see it. */
@@ -129,6 +167,8 @@ export interface OrderDetailItem {
   readonly gift: string | null;
   /** Buy X Get Y tag ("1 free", "−50%"). */
   readonly deal: string | null;
+  /** Order from abroad: the line in three columns (the struck-out `was` is then in the customer's currency). */
+  readonly abroad: AbroadPriceCells | null;
   /** "EGP 350 × 3"; null on a gift. */
   readonly unit: string | null;
   /** Line price after offers, or "Free". */
@@ -167,6 +207,8 @@ export interface OrderDetails {
   readonly total: string;
   /** The total in EGP when the customer saw another currency. */
   readonly totalEgp: string | null;
+  /** Bank Transfer from abroad with saved line amounts: the three-price view; null otherwise. */
+  readonly abroad: AbroadOrderView | null;
   /** Paid while an item had sold out. */
   readonly needsReview: boolean;
   /** "11 Nov, 2:14 pm". */

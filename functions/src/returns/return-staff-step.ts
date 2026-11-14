@@ -8,6 +8,7 @@ import { readSizeValueIds, stockFields, type StockFields } from '../products/sto
 import {
   isReturnKind,
   keptStockItems,
+  FEE_SENT_BACK_TEXT_MAX,
   REFUND_REFERENCE_MAX,
   REJECT_REASON_MAX,
   returnStockPlan,
@@ -124,9 +125,27 @@ export interface ApproveInput {
   readonly sent: readonly SentPieceInput[];
 }
 
+/** Payment Received (ATS-303): the courier fee arrived by InstaPay. */
+export interface ConfirmPaymentInput {
+  readonly requestId: string;
+}
+
 export interface RejectInput {
   readonly requestId: string;
   readonly reason: string;
+  /**
+   * Waiting for Payment only: staff ticked "The customer already paid the courier fee", so the fee
+   * is saved to send back (ATS-307). From Approved the fee comes back when the payment was confirmed.
+   */
+  readonly feeAlreadyPaid: boolean;
+}
+
+/** Fee Sent Back (admin only, ATS-307): the paid courier fee went back by InstaPay. */
+export interface FeeSentBackInput {
+  readonly requestId: string;
+  readonly amountEgp: number;
+  readonly sentTo: string;
+  readonly reference: string | null;
 }
 
 export interface ReceiveInput {
@@ -181,6 +200,11 @@ export function parseApprove(raw: unknown): ApproveInput {
   return { requestId, sent };
 }
 
+export function parseConfirmPayment(raw: unknown): ConfirmPaymentInput {
+  const data = isRecord(raw) ? raw : {};
+  return { requestId: requestIdOf(data) };
+}
+
 export function parseReject(raw: unknown): RejectInput {
   const data = isRecord(raw) ? raw : {};
   const requestId = requestIdOf(data);
@@ -191,7 +215,36 @@ export function parseReject(raw: unknown): RejectInput {
       `Write a reason the customer will see (up to ${REJECT_REASON_MAX} characters).`,
     );
   }
-  return { requestId, reason };
+  return { requestId, reason, feeAlreadyPaid: data['feeAlreadyPaid'] === true };
+}
+
+export function parseFeeSentBack(raw: unknown): FeeSentBackInput {
+  const data = isRecord(raw) ? raw : {};
+  const requestId = requestIdOf(data);
+  const amount = data['amountEgp'];
+  // The upper bound (the fee to send back) is checked in the transaction.
+  if (typeof amount !== 'number' || !Number.isInteger(amount) || amount < 1) {
+    throw new ReturnStepError('invalid-argument', 'Write the amount you sent, in whole pounds.');
+  }
+  const sentTo = typeof data['sentTo'] === 'string' ? data['sentTo'].trim() : '';
+  if (!sentTo || sentTo.length > FEE_SENT_BACK_TEXT_MAX) {
+    throw new ReturnStepError(
+      'invalid-argument',
+      `Write the InstaPay number or address you sent it to (up to ${FEE_SENT_BACK_TEXT_MAX} characters).`,
+    );
+  }
+  const refRaw = data['reference'];
+  let reference: string | null = null;
+  if (refRaw !== undefined && refRaw !== null) {
+    if (typeof refRaw !== 'string' || refRaw.trim().length > FEE_SENT_BACK_TEXT_MAX) {
+      throw new ReturnStepError(
+        'invalid-argument',
+        `The InstaPay reference can be up to ${FEE_SENT_BACK_TEXT_MAX} characters.`,
+      );
+    }
+    reference = refRaw.trim() || null;
+  }
+  return { requestId, amountEgp: amount, sentTo, reference };
 }
 
 export function parseReceive(raw: unknown): ReceiveInput {

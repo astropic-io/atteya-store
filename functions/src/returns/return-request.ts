@@ -19,6 +19,7 @@ import {
   refundedBefore,
   returnEligibility,
   returnMoney,
+  returnPaysFirst,
   returnReasonLabel,
   returnRef,
   returnWantsLabel,
@@ -389,7 +390,10 @@ export function buildReturnRequest(build: BuildReturnInput): BuiltReturnRequest 
  */
 export function returnSummaryEntry(
   requestId: string,
-  built: Pick<BuiltReturnRequest, 'ref' | 'hasRefund' | 'storeFault' | 'refundEgp' | 'summaryItems'>,
+  built: Pick<
+    BuiltReturnRequest,
+    'ref' | 'hasRefund' | 'storeFault' | 'refundEgp' | 'feeEgp' | 'feePaid' | 'summaryItems'
+  >,
 ): Omit<ReturnSummary, 'createdAtMs'> {
   return {
     id: requestId,
@@ -399,6 +403,7 @@ export function returnSummaryEntry(
     items: built.summaryItems,
     storeFault: built.storeFault,
     refundEgp: built.refundEgp,
+    ...(returnPaysFirst(built.feePaid, built.feeEgp) ? { payFeeEgp: built.feeEgp } : {}),
   };
 }
 

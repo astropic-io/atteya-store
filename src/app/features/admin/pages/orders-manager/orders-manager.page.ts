@@ -258,9 +258,10 @@ export class OrdersManagerPageComponent implements OnInit {
     const all = this.#orders();
     const orders = terms.length > 1 ? all.filter((order) => matchesAllWords(order, terms)) : all;
     const productsById = this.#productsById();
-    const rows = toOrderLineAdminRows(orders, productsById, this.#notesById());
+    const notesById = this.#notesById();
+    const rows = toOrderLineAdminRows(orders, productsById, notesById);
     const details = new Map<string, OrderDetails>(
-      orders.map((order) => [order.id, orderDetails(order, productsById)]),
+      orders.map((order) => [order.id, orderDetails(order, productsById, notesById.get(order.id) ?? null)]),
     );
     return groupOrderCards(rows, details);
   });

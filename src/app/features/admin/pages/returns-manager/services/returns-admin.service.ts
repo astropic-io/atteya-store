@@ -99,10 +99,15 @@ export class ReturnsAdminService {
     };
   }
 
-  /** How many requests wait for Approve or Reject (the admin menu count). */
+  /**
+   * How many requests wait for staff (the admin menu count): Approve or Reject, or Payment
+   * Received for Waiting for Payment (ATS-303).
+   */
   async countRequested(): Promise<number> {
     const col = collection(this.#firestore, RETURN_REQUESTS_COLLECTION);
-    const snap = await getCountFromServer(query(col, where('status', '==', 'requested')));
+    const snap = await getCountFromServer(
+      query(col, where('status', 'in', ['requested', 'waiting-for-payment'])),
+    );
     return snap.data().count;
   }
 
@@ -157,8 +162,14 @@ export class ReturnsAdminService {
     return this.#step('approveReturnRequest', { requestId, sent });
   }
 
-  reject(requestId: string, reason: string): Promise<ReturnStepResult> {
-    return this.#step('rejectReturnRequest', { requestId, reason });
+  /** Payment Received (ATS-303): the courier fee arrived by InstaPay. */
+  confirmPayment(requestId: string): Promise<ReturnStepResult> {
+    return this.#step('confirmReturnPayment', { requestId });
+  }
+
+  /** `feeAlreadyPaid`: Waiting for Payment only, the customer already paid the courier fee (ATS-307). */
+  reject(requestId: string, reason: string, feeAlreadyPaid = false): Promise<ReturnStepResult> {
+    return this.#step('rejectReturnRequest', { requestId, reason, feeAlreadyPaid });
   }
 
   receive(
@@ -171,6 +182,16 @@ export class ReturnsAdminService {
   /** Admin only (the server checks the role too). */
   refundSent(requestId: string, amountEgp: number, reference: string | null): Promise<ReturnStepResult> {
     return this.#step('markRefundSent', { requestId, amountEgp, reference });
+  }
+
+  /** Fee Sent Back (admin only, the server checks the role too; ATS-307). */
+  feeSentBack(
+    requestId: string,
+    amountEgp: number,
+    sentTo: string,
+    reference: string | null,
+  ): Promise<ReturnStepResult> {
+    return this.#step('markFeeSentBack', { requestId, amountEgp, sentTo, reference });
   }
 
   async #step(name: string, payload: object): Promise<ReturnStepResult> {

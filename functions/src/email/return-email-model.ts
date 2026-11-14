@@ -5,7 +5,9 @@
 import {
   isReturnKind,
   isReturnStatus,
+  readCourierFeePaid,
   timestampMs,
+  waitingForPaymentStartMs,
   type CourierFeePaid,
   type ReturnKind,
   type ReturnStatus,
@@ -62,6 +64,23 @@ export interface ReturnEmailRequest {
   readonly refundSentEgp: number;
   /** The InstaPay reference staff saved with Refund Sent, if any. */
   readonly refundReference: string | null;
+  /** A paid courier fee to send back (Rejected or Cancelled before pickup, ATS-307); 0 when none. */
+  readonly feeBackEgp: number;
+  /** Fee Sent Back saved (ATS-307). */
+  readonly feeSentBack: boolean;
+  /** What staff sent back; 0 before Fee Sent Back. */
+  readonly feeSentBackEgp: number;
+  /** The InstaPay number or address staff sent the fee to (only its last 4 characters are shown). */
+  readonly feeSentBackTo: string | null;
+  readonly feeSentBackReference: string | null;
+  /** The schedule saved the fee reminder (`feeReminderSentAt`, ATS-307). */
+  readonly feeReminderSent: boolean;
+  /** Who cancelled: `shopper`, or `system` for the automatic cancel (ATS-307); null otherwise. */
+  readonly cancelledBy: 'shopper' | 'system' | null;
+  /** When the request started Waiting for Payment (`waitingForPaymentAt`, else `approvedAt`). */
+  readonly waitingSinceMs: number | null;
+  /** When the fee reminder was saved (the cancel day can move later for older requests). */
+  readonly feeReminderAtMs: number | null;
   readonly createdAtMs: number | null;
   readonly deliveredAtMs: number | null;
   /** The order's secret view key, for a guest's "View Your Order" link; null for signed-in orders. */
@@ -102,7 +121,6 @@ export function readReturnForEmail(
   if (items.length === 0) return null;
   const customer = isRecord(data['customer']) ? data['customer'] : {};
   const email = text(customer['email']);
-  const feePaid = data['feePaid'];
   return {
     id: requestId,
     ref: text(data['ref']) || `#R-${requestId.slice(0, 6).toUpperCase()}`,
@@ -126,13 +144,23 @@ export function readReturnForEmail(
     storeFault: data['storeFault'] === true,
     itemsEgp: whole(data['itemsEgp']),
     feeEgp: whole(data['feeEgp']),
-    feePaid: feePaid === 'off-refund' || feePaid === 'cash' ? feePaid : 'free',
+    feePaid: readCourierFeePaid(data['feePaid']),
     refundEgp: whole(data['refundEgp']),
     cashAtDoorEgp: whole(data['cashAtDoorEgp']),
     rejectReason: text(data['rejectReason']) || null,
     refundSentEgp:
       typeof data['refundSentEgp'] === 'number' ? whole(data['refundSentEgp']) : whole(data['refundEgp']),
     refundReference: text(data['refundReference']) || null,
+    feeBackEgp: whole(data['feeBackEgp']),
+    feeSentBack: Boolean(data['feeSentBackAt']),
+    feeSentBackEgp: whole(data['feeSentBackEgp']),
+    feeSentBackTo: text(data['feeSentBackTo']) || null,
+    feeSentBackReference: text(data['feeSentBackReference']) || null,
+    feeReminderSent: Boolean(data['feeReminderSentAt']),
+    cancelledBy:
+      data['cancelledBy'] === 'system' ? 'system' : data['cancelledBy'] === 'shopper' ? 'shopper' : null,
+    waitingSinceMs: waitingForPaymentStartMs(data),
+    feeReminderAtMs: timestampMs(data['feeReminderSentAt']),
     createdAtMs: timestampMs(data['createdAt']),
     deliveredAtMs: timestampMs(data['orderDeliveredAt']),
     viewKey: viewKey || null,

@@ -62,6 +62,21 @@
             }
           </button>
         }
+        @if (canConfirmPayment()) {
+          <button
+            matButton="filled"
+            type="button"
+            [disabled]="busy() !== null"
+            [attr.aria-label]="busy() === 'payment' ? 'Saving…' : null"
+            (click)="confirmPayment()"
+          >
+            @if (busy() === 'payment') {
+              <mat-progress-spinner mode="indeterminate" diameter="18" />
+            } @else {
+              <span>Payment Received</span>
+            }
+          </button>
+        }
         @if (canReceive()) {
           <button
             matButton="filled"
@@ -74,6 +89,21 @@
               <mat-progress-spinner mode="indeterminate" diameter="18" />
             } @else {
               <span>Item Received</span>
+            }
+          </button>
+        }
+        @if (canSendFeeBack()) {
+          <button
+            matButton="filled"
+            type="button"
+            [disabled]="busy() !== null"
+            [attr.aria-label]="busy() === 'fee-back' ? 'Saving…' : null"
+            (click)="feeSentBack()"
+          >
+            @if (busy() === 'fee-back') {
+              <mat-progress-spinner mode="indeterminate" diameter="18" />
+            } @else {
+              <span>Fee Sent Back</span>
             }
           </button>
         }
@@ -102,6 +132,16 @@
           An admin marks the refund as sent.
         }
       </p>
+    }
+    @if (feeBack(); as line) {
+      <p class="admin-order-box font-body-md font-bold!" [class.text-error]="feeBackOwed()">
+        {{ line }}
+      </p>
+      @if (feeBackNeedsCheck()) {
+        <p class="admin-order-box font-body-md">
+          The customer ticked that they already sent it. Check it arrived in InstaPay before sending it back.
+        </p>
+      }
     }
     @if (r.rejectReason && r.status === 'rejected') {
       <p class="admin-order-box break-words">Reason the customer sees: {{ r.rejectReason }}</p>
@@ -164,6 +204,16 @@
             @if (m.sent; as sent) {
               <div class="admin-order-pair">
                 <span>Refund sent</span><span>{{ sent }}</span>
+              </div>
+            }
+            @if (r.feeSentBackTo; as to) {
+              <div class="admin-order-pair">
+                <span>Fee sent to</span><span class="break-all" dir="auto">{{ to }}</span>
+              </div>
+            }
+            @if (r.feeSentBackReference; as reference) {
+              <div class="admin-order-pair">
+                <span>Fee reference</span><span class="break-all">{{ reference }}</span>
               </div>
             }
             @if (r.refundReference; as reference) {
