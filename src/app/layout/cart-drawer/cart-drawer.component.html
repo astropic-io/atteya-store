@@ -350,7 +350,8 @@
     >
       <div class="elements-between">
         <span class="font-title-sm font-bold!">Subtotal</span>
-        <span class="font-title-sm font-bold!">{{ subtotal() }}</span>
+        <!-- cart-drawer__subtotal: hidden while the currency is pending (inline style in index.html). -->
+        <span class="cart-drawer__subtotal font-title-sm font-bold!">{{ subtotal() }}</span>
       </div>
 
       <p class="font-label-md opacity-70">Shipping is worked out at checkout.</p>

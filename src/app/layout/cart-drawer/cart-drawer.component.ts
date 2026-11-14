@@ -435,8 +435,12 @@ export class CartDrawerComponent {
   readonly subtotal = computed(() => {
     const entry = this.#currency.entry();
     const bag = this.#pricedBag();
+    const lines = this.lines();
+    // A line still waiting for its product to load: show nothing instead of "EGP 0" (ATS-324).
+    // Once loading ends, a product that is gone or failed to read is left out as before.
+    if (this.productsResource.isLoading() && lines.some((_, index) => !bag.lines[index])) return '';
     let amount = 0;
-    this.lines().forEach((line, index) => {
+    lines.forEach((line, index) => {
       const priced = bag.lines[index];
       if (priced) amount += this.#lineDisplay(priced, line.quantity);
     });
