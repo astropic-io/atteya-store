@@ -1,6 +1,11 @@
 import * as v from 'valibot';
 import { isUnreliableCurrency } from '@core/services/offers/engine';
-import { currencyForCountry, currencyForTimeZone, EGYPT_TIME_ZONE } from './browsing-currency';
+import {
+  browsingChoice,
+  currencyForCountry,
+  EGYPT_TIME_ZONE,
+  type BrowsingChoice,
+} from './browsing-currency';
 import { COUNTRY_CURRENCY } from './country-currency';
 import type { PublicCurrencyMap } from './currency.schema';
 
@@ -49,14 +54,25 @@ export function currencyFromCountry(country: string | null | undefined): string 
 }
 
 /**
- * Browser time zone → display currency, used when the visitor's country could not be found
- * (ATS-313). `Africa/Cairo` and a missing time zone are EGP; any other zone is its currency
- * at abroad prices, or USD. The zone table is loaded only when it is needed.
+ * Where the visitor browses from and in which currency (ATS-313): the geo country when known,
+ * else the country of the browser's time zone (`Africa/Cairo` is Egypt), else Egypt.
+ * The zone table is loaded only when the geo country is unknown; if it can't load, Egypt.
  */
-export async function currencyFromTimeZone(timeZone: string | undefined): Promise<string> {
-  if (!timeZone || timeZone === EGYPT_TIME_ZONE) return 'EGP';
-  const { TZ_CURRENCY } = await import('./tz-currency');
-  return currencyForTimeZone(timeZone, TZ_CURRENCY, isUnreliableCurrency);
+export async function visitorBrowsingChoice(
+  geoCountry: string | null,
+  timeZone: string | undefined,
+): Promise<BrowsingChoice> {
+  const tables = { countries: COUNTRY_CURRENCY, isUnreliable: isUnreliableCurrency };
+  if (geoCountry || !timeZone || timeZone === EGYPT_TIME_ZONE) {
+    return browsingChoice(geoCountry, timeZone, { ...tables, zones: {} });
+  }
+  try {
+    const { TZ_COUNTRY } = await import('./tz-country');
+    return browsingChoice(null, timeZone, { ...tables, zones: TZ_COUNTRY });
+  } catch {
+    // Page code missing after a release: show the Egypt price; checkout corrects it by address.
+    return { country: null, currency: 'EGP' };
+  }
 }
 
 export function readCachedCurrencyMap(maxAgeMs: number | null): PublicCurrencyMap | null {

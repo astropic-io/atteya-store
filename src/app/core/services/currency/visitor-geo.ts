@@ -177,25 +177,32 @@ interface CachedCountry {
 }
 
 const countryByIp = new Map<string, CachedCountry>();
+/** Lookups still running, so requests from one IP at the same time share one. */
+const lookupsInFlight = new Map<string, Promise<string | null>>();
 
 /**
- * IP → country (ATS-313): `ipwho.is`, one quick retry when it failed fast (not after a
- * timeout), then `api.country.is`. All within {@link GEO_BUDGET_MS}. Found countries are
- * cached per IP for a few hours; a miss for a minute. Each failure logs
+ * IP → country (ATS-313): `ipwho.is`, one quick retry after a network error or a 5xx answer
+ * (not after a timeout or a refusal), then `api.country.is`. All within {@link GEO_BUDGET_MS}.
+ * Found countries are cached per IP for a few hours; a miss for a minute. Each failure logs
  * `Visitor country lookup failed` with the reason.
  */
-async function lookupCountryByIp(ip: string): Promise<string | null> {
-  const now = Date.now();
+function lookupCountryByIp(ip: string): Promise<string | null> {
   const cached = countryByIp.get(ip);
-  if (cached && cached.expiresAt > now) return cached.country;
+  if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.country);
   if (cached) countryByIp.delete(ip);
+  const running = lookupsInFlight.get(ip);
+  if (running) return running;
+  const lookup = runLookups(ip).finally(() => lookupsInFlight.delete(ip));
+  lookupsInFlight.set(ip, lookup);
+  return lookup;
+}
 
-  const deadline = now + GEO_BUDGET_MS;
+async function runLookups(ip: string): Promise<string | null> {
+  const deadline = Date.now() + GEO_BUDGET_MS;
   const first = await attemptLookup(ipWhoIs, ip, deadline);
   let country = first.country;
-  if (!country && !first.timedOut) country = (await attemptLookup(ipWhoIs, ip, deadline)).country;
+  if (!country && first.retry) country = (await attemptLookup(ipWhoIs, ip, deadline)).country;
   if (!country) country = (await attemptLookup(countryIs, ip, deadline)).country;
-
   rememberCountry(ip, country);
   return country;
 }
@@ -237,11 +244,11 @@ async function attemptLookup(
   service: LookupService,
   ip: string,
   deadline: number,
-): Promise<{ country: string | null; timedOut: boolean }> {
+): Promise<{ country: string | null; retry: boolean }> {
   const remaining = Math.min(GEO_ATTEMPT_MS, deadline - Date.now());
   if (remaining <= 0) {
     console.warn(`Visitor country lookup failed: no time left for ${service.name}`);
-    return { country: null, timedOut: true };
+    return { country: null, retry: false };
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), remaining);
@@ -252,7 +259,7 @@ async function attemptLookup(
     });
     if (!response.ok) {
       console.warn(`Visitor country lookup failed: ${service.name} answered ${response.status}`);
-      return { country: null, timedOut: false };
+      return { country: null, retry: response.status >= 500 };
     }
     const body: unknown = await response.json();
     const country = normalizeCountry(service.read(body));
@@ -262,14 +269,14 @@ async function attemptLookup(
         JSON.stringify(body).slice(0, 300),
       );
     }
-    return { country, timedOut: false };
+    return { country, retry: false };
   } catch (error) {
     const timedOut = controller.signal.aborted;
     console.warn(
       `Visitor country lookup failed (${service.name}):`,
       timedOut ? 'timed out' : error instanceof Error ? error.message : error,
     );
-    return { country: null, timedOut };
+    return { country: null, retry: !timedOut };
   } finally {
     clearTimeout(timer);
   }
