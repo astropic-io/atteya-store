@@ -2,7 +2,8 @@ import { FieldValue, Timestamp, type DocumentData, type Firestore } from 'fireba
 import { HttpsError } from 'firebase-functions/v2/https';
 import type { RequiredCaller } from '../auth/require-role.js';
 import { shortOrderRef } from '../email/order-email-model.js';
-import { parseOrderStockLines } from './decrement-order-stock.js';
+import { readSizeValueIds } from '../products/stock.js';
+import { timestampMs } from '../store/returns.js';
 import { parseSavedOfferUses, readOfferRetake } from './offer-usage.js';
 import { orderStaffNotesRef, staffNotesPatch } from './order-staff-notes.js';
 import { readStockPlan, takeStock, type StockPlanItem } from './order-status-change.js';
@@ -74,6 +75,14 @@ export async function reopenOrder(
 
     // Confirmed holds stock; a cancel put it back, so it is taken again (never twice).
     const takesStock = target === 'confirmed' && !orderStockTaken(order);
+    // Pieces the cancel couldn't put back are still out of stock: taking the whole order again
+    // would count them out twice.
+    if (takesStock && wholeCount(order['stockNotReturned']) > 0) {
+      throw new HttpsError(
+        'failed-precondition',
+        "Some items on this order didn't go back into stock when it was cancelled, so it can't be reopened here. Ask the shopper to order again.",
+      );
+    }
     let stockPlan: StockPlanItem[] | null = null;
     if (takesStock) {
       stockPlan = await readStockPlan(tx, db, order);
@@ -166,7 +175,8 @@ export function stockShortage(
     const map = isRecord(item.data['stockBySize']) ? item.data['stockBySize'] : null;
     if (item.demand.kind === 'sized' && map) {
       for (const [sizeId, qty] of Object.entries(item.demand.bySize)) {
-        if (!Object.hasOwn(map, sizeId)) continue;
+        // A size the product's size option no longer has: `takeStock` refuses with its own message.
+        if (!Object.hasOwn(map, sizeId) && readSizeValueIds(item.data['options']).length > 0) continue;
         const left = wholeCount(map[sizeId]);
         if (left < qty) return { item: itemName(lines, item.data, productId, sizeId), left };
       }
@@ -188,8 +198,6 @@ interface SavedLine {
 function savedLines(order: Readonly<Record<string, unknown>>): SavedLine[] {
   const pricing = isRecord(order['pricing']) ? order['pricing'] : null;
   const raw = pricing && Array.isArray(pricing['lines']) ? pricing['lines'] : [];
-  // Same lines the stock plan was built from (it throws on a bad line before we get here).
-  parseOrderStockLines(order);
   return raw.filter(isRecord).map((line) => {
     const selection = isRecord(line['selection']) ? line['selection'] : {};
     const labels = Array.isArray(line['optionLabels']) ? line['optionLabels'].filter(isRecord) : [];
@@ -231,17 +239,6 @@ function sizeLabel(product: DocumentData, sizeId: string): string {
 
 function wholeCount(raw: unknown): number {
   return typeof raw === 'number' && Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
-}
-
-/** Firestore Timestamp (or Date / epoch ms) → epoch ms, else null. */
-function timestampMs(raw: unknown): number | null {
-  if (raw instanceof Date) return raw.getTime();
-  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
-  if (isRecord(raw) && typeof raw['toMillis'] === 'function') {
-    const ms = (raw as { toMillis: () => unknown }).toMillis();
-    return typeof ms === 'number' && Number.isFinite(ms) ? ms : null;
-  }
-  return null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

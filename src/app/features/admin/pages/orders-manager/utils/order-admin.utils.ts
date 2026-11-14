@@ -194,8 +194,8 @@ function amountDueLabel(due: ReturnType<typeof paymentDue>): string | null {
 /**
  * The status dropdown's choices: the shared move table (`@core/config/order-status`, the same
  * one `setOrderStatus` checks), minus Confirmed while a large order's delivery fee is still to be
- * agreed. A step back reads "Back to …". `emailsShopper`: Shipped and Delivered email the shopper
- * only the first time (the history shows whether the order got there before).
+ * agreed. A step back reads "Back to …". `emailsShopper`: Confirmed, Shipped and Delivered email
+ * the shopper only the first time (the history shows whether the order got there before).
  */
 export function statusMoves(
   order: OrderDoc,
@@ -214,7 +214,8 @@ export function statusMoves(
       label: isStepBack(order.status, status)
         ? `Back to ${orderStatusLabel(status)}`
         : orderStatusLabel(status),
-      emailsShopper: (status === 'shipped' || status === 'delivered') && !reached.has(status),
+      emailsShopper:
+        (status === 'confirmed' || status === 'shipped' || status === 'delivered') && !reached.has(status),
     }));
 }
 

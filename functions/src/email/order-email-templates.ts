@@ -789,7 +789,9 @@ function reopenedCopy(order: OrderEmailOrder, email: ShopperEmail): ShopperEmail
   } else if (order.feeToBeAgreed) {
     next = order.paymentMethod === 'bank-transfer' ? abroadAgreeLine(order) : FEE_TO_AGREE;
   } else if (dueFor(order)) {
-    next = "Pay as shown below and we'll confirm it as soon as your payment arrives.";
+    // The cancel may have been the mistake on an order the shopper already paid for.
+    next =
+      "If you haven't paid yet, pay as shown below and we'll confirm it as soon as your payment arrives. If you already paid, there's nothing to do: we'll confirm it shortly.";
   } else {
     next = "We'll contact you to confirm it.";
   }

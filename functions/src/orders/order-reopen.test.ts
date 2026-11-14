@@ -180,39 +180,62 @@ describe('reopenOrder', () => {
     assert.equal(store.get('orders/o1')?.['confirmedAt'], null);
   });
 
-  it('counts the offer uses again, even when the offer has ended', async () => {
+  const withOffer = {
+    offerUses: { offerIds: ['deal-1'], customerKeys: ['uid-1'], switchedOffIds: ['deal-1'] },
+    offerUsesReturnedAt: at(NOW - 2 * DAY),
+  };
+
+  it('counts the offer uses again and switches a now-full offer off', async () => {
     const { db, store } = fakeDb({
-      'orders/o1': cancelledOrder({
-        offerUses: { offerIds: ['deal-1'], customerKeys: ['uid-1'], switchedOffIds: ['deal-1'] },
-        offerUsesReturnedAt: at(NOW - 2 * DAY),
-      }),
+      'orders/o1': cancelledOrder(withOffer),
       'orderStaffNotes/o1': notes('confirmed'),
       'products/p1': PRODUCT,
       'offerUsage/deal-1': { count: 2 },
       'offerUsage/deal-1_uid-1': { count: 0 },
-      // The cancel switched it back on; the reopen uses the last use again.
-      'offers/deal-1': { active: true, updatedBy: OFFER_LIMIT_ACTOR },
+      'offers/deal-1': { active: true, updatedBy: 'admin-1', limits: { totalUses: 3 } },
     });
     await reopenOrder(db, 'o1', ACTOR, NOW);
     assert.equal(store.get('offerUsage/deal-1')?.['count'], 3);
     assert.equal(store.get('offerUsage/deal-1_uid-1')?.['count'], 1);
     assert.equal(store.get('offers/deal-1')?.['active'], false);
+    assert.equal(store.get('offers/deal-1')?.['updatedBy'], OFFER_LIMIT_ACTOR);
     assert.equal(store.get('orders/o1')?.['offerUsesReturnedAt'], null);
   });
 
-  it('leaves an offer staff switched on themselves alone', async () => {
-    const { db, store } = fakeDb({
-      'orders/o1': cancelledOrder({
-        offerUses: { offerIds: ['deal-1'], customerKeys: ['uid-1'], switchedOffIds: ['deal-1'] },
-        offerUsesReturnedAt: at(NOW - 2 * DAY),
-      }),
+  it('counts the uses again even when the offer has ended, and leaves an offer with uses left on', async () => {
+    const ended = fakeDb({
+      'orders/o1': cancelledOrder(withOffer),
       'orderStaffNotes/o1': notes('confirmed'),
       'products/p1': PRODUCT,
-      'offers/deal-1': { active: true, updatedBy: 'admin-1' },
+      'offerUsage/deal-1': { count: 3 },
+      'offers/deal-1': { active: false, updatedBy: 'admin-1', limits: { totalUses: 3 } },
     });
-    await reopenOrder(db, 'o1', ACTOR, NOW);
-    assert.equal(store.get('offers/deal-1')?.['active'], true);
-    assert.equal(store.get('offerUsage/deal-1')?.['count'], 1);
+    await reopenOrder(ended.db, 'o1', ACTOR, NOW);
+    assert.equal(ended.store.get('offerUsage/deal-1')?.['count'], 4);
+    assert.equal(ended.store.get('offers/deal-1')?.['updatedBy'], 'admin-1');
+
+    const open = fakeDb({
+      'orders/o1': cancelledOrder(withOffer),
+      'orderStaffNotes/o1': notes('confirmed'),
+      'products/p1': PRODUCT,
+      'offerUsage/deal-1': { count: 1 },
+      'offers/deal-1': { active: true, updatedBy: OFFER_LIMIT_ACTOR, limits: { totalUses: 5 } },
+    });
+    await reopenOrder(open.db, 'o1', ACTOR, NOW);
+    assert.equal(open.store.get('offerUsage/deal-1')?.['count'], 2);
+    assert.equal(open.store.get('offers/deal-1')?.['active'], true);
+    // No customer count doc was there to give back to: none is made up.
+    assert.equal(open.store.has('offerUsage/deal-1_uid-1'), false);
+  });
+
+  it("refuses back to Confirmed when the cancel couldn't put every piece back", async () => {
+    const { db, writes } = fakeDb({
+      'orders/o1': cancelledOrder({ stockNotReturned: 2 }),
+      'orderStaffNotes/o1': notes('confirmed'),
+      'products/p1': PRODUCT,
+    });
+    await assert.rejects(reopenOrder(db, 'o1', ACTOR, NOW), /didn't go back into stock/);
+    assert.equal(writes.length, 0);
   });
 
   it('refuses after 7 days, Payment Failed and Card orders', async () => {
@@ -290,5 +313,8 @@ describe('"back on" email', () => {
     const pending = renderOrderEmail('order-reopened', doc('pending', 'cash-on-delivery')!, ctx);
     assert.equal(pending.subject, 'Your order #ABC123 is back on');
     assert.match(pending.text, /Back On/);
+    // InstaPay pending: the cancel may have been the mistake on a paid order.
+    const instapay = renderOrderEmail('order-reopened', doc('pending', 'instapay')!, ctx);
+    assert.match(instapay.text, /If you already paid, there's nothing to do/);
   });
 });

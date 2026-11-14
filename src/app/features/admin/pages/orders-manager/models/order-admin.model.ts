@@ -19,8 +19,8 @@ export interface OrderStatusMove {
   /** "Shipped", or "Back to Confirmed" for a step back. */
   readonly label: string;
   /**
-   * Shipped or Delivered: the shopper gets an email about it (only the first time the order gets
-   * there; the email is never sent twice).
+   * Confirmed, Shipped or Delivered: the shopper gets an email about it (only the first time the
+   * order gets there; the email is never sent twice).
    */
   readonly emailsShopper: boolean;
 }

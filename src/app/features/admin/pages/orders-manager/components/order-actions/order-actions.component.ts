@@ -28,6 +28,19 @@ import { orderActionError } from '../../utils/order-action-error';
 
 type OrderAction = 'status' | 'fee' | 'delete';
 
+/** What Confirm Order does: only what really happens (stock, email). */
+function confirmMessage(stockTaken: boolean, emails: boolean): string {
+  if (!stockTaken && emails) {
+    return 'This takes the items out of stock and emails the shopper that the order is confirmed.';
+  }
+  if (!stockTaken) {
+    return 'This takes the items out of stock. The shopper already had the confirmation email, so no new email is sent.';
+  }
+  return emails
+    ? 'This emails the shopper that the order is confirmed.'
+    : "The shopper's order page shows the order as confirmed. They already had the confirmation email, so no new email is sent.";
+}
+
 /** The confirm dialog of a forward move (Confirmed, Shipped, Delivered), saying what happens. */
 function forwardMoveDialog(row: OrderLineAdminRow, move: OrderStatusMove): ConfirmDialogData {
   const base = { cancelText: 'Keep Status', theme: 'primary' as const };
@@ -36,9 +49,7 @@ function forwardMoveDialog(row: OrderLineAdminRow, move: OrderStatusMove): Confi
       return {
         ...base,
         title: `Confirm ${row.orderRef}?`,
-        message: row.stockTaken
-          ? 'This emails the shopper that the order is confirmed.'
-          : 'This takes the items out of stock and emails the shopper that the order is confirmed.',
+        message: confirmMessage(row.stockTaken, move.emailsShopper),
         confirmText: 'Confirm Order',
       };
     case 'shipped':
