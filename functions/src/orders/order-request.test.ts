@@ -84,6 +84,20 @@ describe('order request: only what we need is required (ATS-318)', () => {
     );
   });
 
+  it('refuses an Egyptian number starting with 0 when the country is Qatar (ATS-322)', () => {
+    assert.equal(
+      refusal(() => parseCreateStoreOrderRequest(abroad({ country: 'QA', phone: '010 1234 5678' }))),
+      ABROAD_PHONE_MESSAGE,
+    );
+  });
+
+  it('accepts a Qatar number typed with its country code (ATS-322)', () => {
+    assert.equal(
+      refusal(() => parseCreateStoreOrderRequest(abroad({ country: 'QA', phone: '+974 5500 0318' }))),
+      '',
+    );
+  });
+
   it('refuses an order without a name or address', () => {
     assert.equal(
       refusal(() => parseCreateStoreOrderRequest(abroad({ fullName: '' }))),
