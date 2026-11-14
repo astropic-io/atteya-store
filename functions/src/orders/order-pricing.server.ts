@@ -62,6 +62,11 @@ export interface OrderPayIn {
   readonly shipping?: number;
   /** The public `settings/currency` factor `amount` was worked out with (shopper currency per EGP). */
   readonly factor?: number;
+  /**
+   * The plain rate the shipping fee was converted with, no markup (orders from ATS-311 on). Missing
+   * on older orders, whose shipping was converted with `factor`.
+   */
+  readonly shippingFactor?: number;
 }
 
 /** One chosen option, saved as the shopper saw it (e.g. `Size` → `M`). */
@@ -157,11 +162,19 @@ export interface OrderPricingSnapshot {
   readonly subtotalDisplay: number;
   readonly shipping: OrderShippingLine | null;
   readonly totalDisplay: number;
-  /** Whole EGP pounds charged (Paymob amount_cents = totalEgp * 100). */
+  /** The order at Egypt prices, whole EGP. Paymob charges this in Egypt (`chargeEgp` abroad). */
   readonly totalEgp: number;
   readonly fulfilment: OrderFulfilment;
-  /** Bank Transfer only: the amount to send in the shopper's currency. `totalEgp` stays what we expect. */
+  /**
+   * Orders shipped abroad (Bank Transfer, and Card from ATS-311): the amount in the shopper's
+   * currency. `totalEgp` stays the Egypt price.
+   */
   readonly payIn?: OrderPayIn;
+  /**
+   * Card orders shipped abroad only (ATS-311): whole pounds Paymob charges, `payIn.amount` at the
+   * plain rate rounded up (`cardChargeEgp()`), so Card costs the same as Bank Transfer.
+   */
+  readonly chargeEgp?: number;
 }
 
 export interface PricedStoreOrder {

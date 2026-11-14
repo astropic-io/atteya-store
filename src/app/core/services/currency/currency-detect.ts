@@ -5,6 +5,7 @@ import type { PublicCurrencyMap } from './currency.schema';
 
 const cachedFactorsSchema = v.object({
   factor: v.pipe(v.number(), v.finite(), v.gtValue(0)),
+  shippingFactor: v.optional(v.pipe(v.number(), v.finite(), v.gtValue(0))),
 });
 
 const CachedCurrencySchema = v.object({
@@ -12,7 +13,9 @@ const CachedCurrencySchema = v.object({
   currencies: v.record(v.string(), cachedFactorsSchema),
 });
 
-const STORED_DOC_KEY = 'atteya.curDoc';
+// v2 (ATS-311): entries carry `shippingFactor`; a cache saved before it is never read, so checkout
+// and the server convert the shipping fee with the same rate.
+const STORED_DOC_KEY = 'atteya.curDoc.v2';
 const DOC_TTL_MS = 24 * 60 * 60 * 1000;
 const CURRENCY_CODE = /^[A-Z]{3}$/;
 

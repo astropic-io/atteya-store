@@ -113,6 +113,16 @@ function abroadCells(prices: AbroadPrices, customer: number, egypt: number, free
   };
 }
 
+/**
+ * The shipping row of an order from abroad. Shipping abroad has no markup (ATS-311): in pounds it is
+ * its Egypt price, with no "+N abroad". Older orders, whose shipping had the markup, keep the old look.
+ */
+function abroadShippingCells(prices: AbroadPrices, customer: number, egypt: number): AbroadPriceCells {
+  const cells = abroadCells(prices, customer, egypt, egypt === 0);
+  if (!prices.shippingAtPlainRate || egypt === 0 || cells.pounds === null) return cells;
+  return { ...cells, pounds: egpMoney(egypt), extra: null };
+}
+
 /** Subtotal, Shipping and Total of an order from abroad in three columns, and the grey note under them. */
 function abroadView(order: OrderDoc, prices: AbroadPrices): AbroadOrderView | null {
   const lines = prices.lines;
@@ -127,15 +137,21 @@ function abroadView(order: OrderDoc, prices: AbroadPrices): AbroadOrderView | nu
   if (pricing.shipping) {
     totals.push({
       label: shippingLabelText ? `Shipping · ${shippingLabelText}` : 'Shipping',
-      ...abroadCells(prices, shippingAmount, pricing.shipping.priceEgp, pricing.shipping.priceEgp === 0),
+      ...abroadShippingCells(prices, shippingAmount, pricing.shipping.priceEgp),
     });
   }
+  // Card abroad (ATS-311): in pounds the total is exactly what Paymob charges.
+  const cardEgp = 'paymob' in order && order.paymob ? order.paymob.amountCents / 100 : null;
+  const totalCells = abroadCells(prices, prices.amount, prices.egyptTotal, false);
   totals.push({
     label: 'Total',
     strong: true,
-    ...abroadCells(prices, prices.amount, prices.egyptTotal, false),
+    ...(cardEgp === null || totalCells.pounds === null
+      ? totalCells
+      : { ...totalCells, pounds: egpMoney(cardEgp), extra: abroadExtra(cardEgp, prices.egyptTotal) }),
   });
-  const poundsTotal = inPounds(prices, prices.amount);
+  const poundsTotal =
+    cardEgp !== null && prices.egpPerUnit !== null ? cardEgp : inPounds(prices, prices.amount);
   return {
     showPounds: prices.egpPerUnit !== null,
     totals,
@@ -277,6 +293,12 @@ function paymentRows(
 
   if ('paymob' in order && order.paymob) {
     const paid = shortOrderDate(order.paymob.paidAt);
+    if (abroad) {
+      // Card abroad (ATS-311): Paymob charges pounds, the customer's total at the plain rate.
+      const label = order.paymob.paidAt ? 'Charged by card' : 'To charge by card';
+      rows.push({ label, value: egp(order.paymob.amountCents / 100), strong: true });
+      rows.push({ label: 'Same order in Egypt', value: egpMoney(abroad.egyptTotal), muted: true });
+    }
     rows.push({ label: 'Card payment', value: paid ? `Paid ${paid}` : 'Not paid yet' });
     if (order.paymob.transactionId != null) {
       rows.push({ label: 'Card transaction number', value: String(order.paymob.transactionId) });

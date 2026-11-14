@@ -2,7 +2,16 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { toDisplayAmount } from '../../lib/offers/engine/currency.js';
-import { payInEntry, payInFor, payInRateFor } from '../../lib/orders/pay-in.js';
+import {
+  abroadPricing,
+  cardChargeEgp,
+  payInEntry,
+  payInAboveShown,
+  payInFor,
+  payInRateFor,
+  plainRateFor,
+} from '../../lib/orders/pay-in.js';
+import { parseShownPayIn } from '../../lib/orders/order-request.js';
 
 const USD = { code: 'USD', factor: 0.0285 };
 
@@ -115,5 +124,137 @@ describe('payInRateFor', () => {
     assert.equal(payInRateFor(qar, null, { QAR: rate }), null);
     assert.equal(payInRateFor(qar, 40, null), null);
     assert.equal(payInRateFor({ code: 'EGP', factor: 1 }, 40, { QAR: rate }), null);
+  });
+});
+
+describe('shipping abroad gets no markup (ATS-311)', () => {
+  const qar = { code: 'QAR', factor: 0.0682 * 1.4, shippingFactor: 0.0682 };
+
+  it('payInEntry keeps the plain shipping rate when settings/currency has it', () => {
+    assert.deepEqual(payInEntry('QAR', { QAR: { factor: 0.1, shippingFactor: 0.07 } }), {
+      code: 'QAR',
+      factor: 0.1,
+      shippingFactor: 0.07,
+    });
+    assert.deepEqual(payInEntry('QAR', { QAR: { factor: 0.1, shippingFactor: 0 } }), {
+      code: 'QAR',
+      factor: 0.1,
+    });
+  });
+
+  it('converts the shipping fee at the plain rate and the items with the markup', () => {
+    const result = payInFor([{ unitEgp: 360, quantity: 1, lineDisplay: 360 }], { priceEgp: 450 }, qar);
+    assert.equal(result.shipping, toDisplayAmount(450, { code: 'QAR', factor: 0.0682 }));
+    assert.equal(result.shipping, 31);
+    assert.deepEqual(result.lines, [toDisplayAmount(360, qar)]);
+    assert.equal(result.shippingFactor, 0.0682);
+    assert.equal(result.factor, qar.factor);
+  });
+});
+
+describe('Card abroad costs the same as Bank Transfer (ATS-311)', () => {
+  const pricingOf = (
+    lines: Parameters<typeof payInFor>[0],
+    shippingEgp: number,
+  ): Parameters<typeof abroadPricing>[0] => {
+    const subtotal = lines.reduce((sum, line) => sum + line.lineDisplay, 0);
+    return {
+      isInternational: true,
+      shippingCountry: 'QA',
+      currency: 'EGP',
+      rate: 1,
+      markupPercent: 0,
+      ratesUpdatedAt: '',
+      lines: lines as never,
+      subtotalEgp: subtotal,
+      subtotalDisplay: subtotal,
+      shipping: { priceEgp: shippingEgp } as never,
+      totalDisplay: subtotal + shippingEgp,
+      totalEgp: subtotal + shippingEgp,
+      fulfilment: {} as never,
+    };
+  };
+  const bag = [
+    { unitEgp: 1850, quantity: 2, lineDisplay: 3700 },
+    // Buy X Get Y group line.
+    { unitEgp: 900, quantity: 2, lineDisplay: 900, fullEgp: 1800 },
+    // Free gift.
+    {
+      unitEgp: 0,
+      quantity: 1,
+      lineDisplay: 0,
+      gift: { offerId: 'o', giftId: 'g', giftName: 'Free', forLine: 0 },
+    },
+  ];
+
+  for (const entry of [
+    { code: 'QAR', factor: 0.0682 * 1.4, shippingFactor: 0.0682 },
+    { code: 'KWD', factor: 0.0062 * 1.4, shippingFactor: 0.0062 },
+    { code: 'USD', factor: 0.0205 * 1.4, shippingFactor: 0.0205 },
+  ]) {
+    it(`gives both methods the same ${entry.code} amount, and Card charges it in pounds`, () => {
+      const pricing = pricingOf(bag, 950);
+      const bank = abroadPricing(pricing, entry, 'bank-transfer', null);
+      const card = abroadPricing(pricing, entry, 'paymob', null);
+      assert.ok(bank && card);
+      assert.deepEqual(card.payIn, bank.payIn);
+      assert.equal(bank.chargeEgp, undefined);
+      // Egypt price untouched.
+      assert.equal(card.totalEgp, pricing.totalEgp);
+      const amount = card.payIn!.amount;
+      assert.equal(card.chargeEgp, Math.ceil(Number((amount / entry.shippingFactor).toFixed(6))));
+      // Rounded up to whole pounds, never under the shopper-currency total.
+      assert.ok(Number.isInteger(card.chargeEgp));
+      assert.ok(card.chargeEgp! * entry.shippingFactor >= amount - 1e-9);
+      assert.ok((card.chargeEgp! - 1) * entry.shippingFactor < amount);
+    });
+  }
+
+  it('matches the ticket example: QAR 78 at 14.68 EGP per QAR is EGP 1,146 at most', () => {
+    assert.equal(cardChargeEgp(78, 1 / 14.68), 1146);
+    assert.equal(cardChargeEgp(100, 0.1), 1000);
+  });
+
+  it('turns back with the staff rate when settings/currency has no plain rate yet', () => {
+    const entry = { code: 'QAR', factor: 0.0682 * 1.4 };
+    assert.equal(plainRateFor(entry, { markupPercent: 40, rate: 0.0682 }), 0.0682);
+    assert.equal(plainRateFor(entry, null), null);
+    const pricing = pricingOf(bag, 0);
+    assert.equal(abroadPricing(pricing, entry, 'paymob', null), null);
+    assert.ok(abroadPricing(pricing, entry, 'bank-transfer', null));
+  });
+});
+
+describe('never more than checkout showed in the shopper currency (ATS-311)', () => {
+  it('refuses only a higher amount in the same currency', () => {
+    assert.equal(payInAboveShown({ currency: 'QAR', amount: 79 }, { currency: 'QAR', amount: 78 }), true);
+    assert.equal(payInAboveShown({ currency: 'QAR', amount: 78 }, { currency: 'QAR', amount: 78 }), false);
+    assert.equal(payInAboveShown({ currency: 'QAR', amount: 77 }, { currency: 'QAR', amount: 78 }), false);
+    assert.equal(payInAboveShown({ currency: 'QAR', amount: 90 }, { currency: 'USD', amount: 20 }), false);
+    assert.equal(payInAboveShown({ currency: 'QAR', amount: 90 }, null), false);
+  });
+
+  it('compares 3-decimal currencies to the last decimal', () => {
+    assert.equal(
+      payInAboveShown({ currency: 'KWD', amount: 6.251 }, { currency: 'KWD', amount: 6.25 }),
+      true,
+    );
+    assert.equal(
+      payInAboveShown({ currency: 'KWD', amount: 6.25 }, { currency: 'KWD', amount: 6.2500001 }),
+      false,
+    );
+  });
+
+  it('reads the shown amount from checkout, or nothing when it is unreadable', () => {
+    assert.deepEqual(parseShownPayIn({ currency: 'QAR', amount: 78 }), { currency: 'QAR', amount: 78 });
+    for (const raw of [
+      null,
+      'x',
+      { currency: 'qar', amount: 78 },
+      { currency: 'QAR', amount: -1 },
+      { currency: 'QAR' },
+    ]) {
+      assert.equal(parseShownPayIn(raw), null, JSON.stringify(raw));
+    }
   });
 });

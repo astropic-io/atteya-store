@@ -73,6 +73,11 @@ export interface OrderEmailOrder {
   readonly viewKey: string | null;
   /** Bank Transfer: the amount to send in the shopper's currency (`pricing.payIn`), or null. */
   readonly payIn: PayIn | null;
+  /**
+   * Card (Paymob) order shipped abroad: the whole pounds Paymob charges (`pricing.chargeEgp`,
+   * ATS-311), which differs from the Egypt price `totalEgp`. Null when not saved (Egypt orders).
+   */
+  readonly chargeEgp: number | null;
   /** When the order was placed (`createdAt`, epoch ms), or null. */
   readonly createdAtMs: number | null;
   /** True when the order has no account (`customerId` empty): a guest checkout. */
@@ -250,6 +255,12 @@ export function readOrderForEmail(
     deliveredAtMs: timestampMs(data['deliveredAt']),
     viewKey: text(data['viewKey']) || null,
     payIn: readPayIn(pricing['payIn']),
+    chargeEgp:
+      typeof pricing['chargeEgp'] === 'number' &&
+      Number.isFinite(pricing['chargeEgp']) &&
+      pricing['chargeEgp'] > 0
+        ? wholeNumber(pricing['chargeEgp'])
+        : null,
     createdAtMs: timestampMs(data['createdAt']),
     guestCheckout: !text(data['customerId']),
     boxId: (shipping && text(shipping['boxId'])) || null,

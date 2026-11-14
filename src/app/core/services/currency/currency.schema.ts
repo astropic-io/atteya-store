@@ -3,6 +3,8 @@ import { timestampSchema } from '@shared/schemas';
 
 const currencyFactorsSchema = v.object({
   factor: v.pipe(v.number(), v.finite(), v.gtValue(0)),
+  /** The plain rate for the shipping fee, no markup (ATS-311). Missing on older docs. */
+  shippingFactor: v.optional(v.pipe(v.number(), v.finite(), v.gtValue(0))),
 });
 
 export const PublicCurrencySchema = v.object({

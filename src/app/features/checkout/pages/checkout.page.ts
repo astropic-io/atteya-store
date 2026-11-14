@@ -51,6 +51,7 @@ import {
   displayDecimals,
   parcelWeight,
   planDelivery,
+  shippingEntry,
   shippingQuote,
   type ParcelLine,
   toDisplayAmount,
@@ -61,6 +62,8 @@ import {
 import {
   isFailedPrecondition,
   offerToLeaveOut,
+  payInChangedFrom,
+  payInFrom,
   priceChangedFrom,
   serverClockFrom,
   serverTotalsToShow,
@@ -665,9 +668,15 @@ export class CheckoutPageComponent implements OnInit {
       // than save the order for more, or charge a box fee this summary never showed.
       if (server && server.forShippingEgp === null && server.forTotalEgp === subtotalEgp) {
         // Refused twice in a row with the same figures (see `placeOrder`): show the server's.
-        if (server.shippingEgp > 0) return serverTotalsSummary(server, entry, null);
-        const serverItemsDisplay = toDisplayAmount(server.totalEgp, entry);
-        return feeToBeAgreedSummary(server.totalEgp, serverItemsDisplay, entry);
+        if (server.shippingEgp > 0) return serverTotalsSummary(server, entry, null, bag, this.#serverPayIn());
+        const itemsDisplay = serverItemsDisplay(
+          { shippingEgp: null, totalEgp: server.totalEgp },
+          0,
+          entry,
+          bag,
+          this.#serverPayIn(),
+        );
+        return feeToBeAgreedSummary(server.totalEgp, itemsDisplay, entry);
       }
       return feeToBeAgreedSummary(subtotalEgp, subtotalDisplay, entry);
     }
@@ -710,10 +719,10 @@ export class CheckoutPageComponent implements OnInit {
     // The server refused this same shipping fee and total twice in a row with its own figures:
     // show those, so the shopper sees what the order costs (see `placeOrder`).
     if (server && server.forShippingEgp === feeEgp && server.forTotalEgp === subtotalEgp + feeEgp) {
-      return serverTotalsSummary(server, entry, freeShippingOfferId);
+      return serverTotalsSummary(server, entry, freeShippingOfferId, bag, this.#serverPayIn());
     }
 
-    const shippingDisplay = toDisplayAmount(feeEgp, entry);
+    const shippingDisplay = toDisplayAmount(feeEgp, shippingEntry(entry));
     return {
       state: 'ready',
       feeToBeAgreed: false,
@@ -724,7 +733,11 @@ export class CheckoutPageComponent implements OnInit {
       codShippingEgp: feeEgp,
       codShipping: formatMoney(feeEgp, 'EGP', 0),
       codCash: formatMoney(subtotalEgp, 'EGP', 0),
-      shown: { shippingEgp: feeEgp, totalEgp: subtotalEgp + feeEgp },
+      shown: {
+        shippingEgp: feeEgp,
+        totalEgp: subtotalEgp + feeEgp,
+        payIn: shownPayIn(entry, subtotalDisplay + shippingDisplay),
+      },
       freeShippingOfferId,
     };
   });
@@ -1052,6 +1065,12 @@ export class CheckoutPageComponent implements OnInit {
   readonly #serverTotals = signal<
     (ServerTotals & { readonly forShippingEgp: number | null; readonly forTotalEgp: number }) | null
   >(null);
+  /**
+   * The amount in the shopper's currency the server sent with a `payInChanged` refusal while the
+   * summary showed the server's totals (`for…`, the totals sent then). The server adds each line up
+   * on its own (`payInFor()`), which checkout can't do for lines it priced differently.
+   */
+  readonly #serverPayIn = signal<ServerPayIn | null>(null);
 
   async placeOrder(): Promise<void> {
     if (this.isSubmitting() || this.isEmpty()) return;
@@ -1210,6 +1229,19 @@ export class CheckoutPageComponent implements OnInit {
       // Read the products again after any refusal about the bag (a price went up, or a free gift
       // sold out), so the summary and its notes show what changed.
       if (priceChangedFrom(error) || isFailedPrecondition(error)) this.productsResource.reload();
+      // The prices in the shopper's currency changed since checkout read them (ATS-311): read the
+      // factors again, so the summary shows the new total before they place the order again.
+      if (payInChangedFrom(error)) this.#deliveryEntry.reload();
+      // Showing the server's totals: show the server's amount for them too, so Place Order never
+      // fails forever on a total checkout can't add up line by line.
+      const serverPayIn = payInFrom(error);
+      if (serverPayIn && this.#serverTotals() !== null && shownTotals.totalEgp !== null) {
+        this.#serverPayIn.set({
+          ...serverPayIn,
+          forShippingEgp: shownTotals.shippingEgp,
+          forTotalEgp: shownTotals.totalEgp,
+        });
+      }
       // The shipping fee or total came out higher than this summary showed (a lower price dropped
       // the bag under free shipping, a Buy X Get Y discount shrank): price offers on the server's
       // clock from now on and read the products again (above). When the same server totals come
@@ -1259,9 +1291,50 @@ function feeToBeAgreedSummary(itemsEgp: number, itemsDisplay: number, entry: Cur
     codShippingEgp: 0,
     codShipping: '',
     codCash: formatMoney(itemsEgp, 'EGP', 0),
-    shown: { shippingEgp: null, totalEgp: itemsEgp },
+    shown: { shippingEgp: null, totalEgp: itemsEgp, payIn: shownPayIn(entry, itemsDisplay) },
     freeShippingOfferId: null,
   };
+}
+
+/** The total shown in the shopper's currency for an order shipped abroad; null in EGP (ATS-311). */
+function shownPayIn(entry: CurrencyEntry, amount: number): ShownOrderTotals['payIn'] {
+  if (entry.code === 'EGP') return null;
+  return { currency: entry.code, amount: Number(amount.toFixed(displayDecimals(entry.code))) };
+}
+
+/** The server's amount in the shopper's currency for the totals checkout sent (`for…`). */
+interface ServerPayIn {
+  readonly currency: string;
+  readonly amount: number;
+  readonly forShippingEgp: number | null;
+  readonly forTotalEgp: number;
+}
+
+/**
+ * The items total in the shopper's currency for the server's totals, added up the way the server
+ * adds it up (`payInFor()`: each line on its own, then shipping), never the items converted as one
+ * amount, which often comes out lower: the server's own amount for these totals when it sent one,
+ * else the bag's line by line when the server's items come to the same pounds, else the items
+ * converted as one amount (the server then refuses with its amount, which is shown next).
+ */
+function serverItemsDisplay(
+  shown: { readonly shippingEgp: number | null; readonly totalEgp: number },
+  shippingDisplay: number,
+  entry: CurrencyEntry,
+  bag: { readonly subtotalEgp: number; readonly subtotalDisplay: number },
+  serverPayIn: ServerPayIn | null,
+): number {
+  const itemsEgp = shown.totalEgp - (shown.shippingEgp ?? 0);
+  if (
+    serverPayIn &&
+    serverPayIn.currency === entry.code &&
+    serverPayIn.forShippingEgp === shown.shippingEgp &&
+    serverPayIn.forTotalEgp === shown.totalEgp
+  ) {
+    return Math.max(0, Number((serverPayIn.amount - shippingDisplay).toFixed(displayDecimals(entry.code))));
+  }
+  if (itemsEgp === bag.subtotalEgp) return bag.subtotalDisplay;
+  return toDisplayAmount(itemsEgp, entry);
 }
 
 /** The server's shipping fee and total, after it refused the same ones twice in a row. */
@@ -1269,11 +1342,19 @@ function serverTotalsSummary(
   server: ServerTotals,
   entry: CurrencyEntry,
   freeShippingOfferId: string | null,
+  bag: { readonly subtotalEgp: number; readonly subtotalDisplay: number },
+  serverPayIn: ServerPayIn | null,
 ): ReadySummary {
   const decimals = displayDecimals(entry.code);
   const subtotalEgp = server.totalEgp - server.shippingEgp;
-  const subtotalDisplay = toDisplayAmount(subtotalEgp, entry);
-  const shippingDisplay = toDisplayAmount(server.shippingEgp, entry);
+  const shippingDisplay = toDisplayAmount(server.shippingEgp, shippingEntry(entry));
+  const subtotalDisplay = serverItemsDisplay(
+    { shippingEgp: server.shippingEgp, totalEgp: server.totalEgp },
+    shippingDisplay,
+    entry,
+    bag,
+    serverPayIn,
+  );
   return {
     state: 'ready',
     feeToBeAgreed: false,
@@ -1284,7 +1365,11 @@ function serverTotalsSummary(
     codShippingEgp: server.shippingEgp,
     codShipping: formatMoney(server.shippingEgp, 'EGP', 0),
     codCash: formatMoney(subtotalEgp, 'EGP', 0),
-    shown: { shippingEgp: server.shippingEgp, totalEgp: server.totalEgp },
+    shown: {
+      shippingEgp: server.shippingEgp,
+      totalEgp: server.totalEgp,
+      payIn: shownPayIn(entry, subtotalDisplay + shippingDisplay),
+    },
     freeShippingOfferId,
   };
 }

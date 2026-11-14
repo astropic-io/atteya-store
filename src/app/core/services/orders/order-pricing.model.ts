@@ -1,11 +1,11 @@
 /**
  * Prices are re-computed server-side at checkout from Firestore + settings, never trusted from the client.
  *
- * Paymob Egypt Accept charges whole EGP (amount_cents = totalEgp * 100).
+ * Paymob Egypt Accept charges whole EGP: `totalEgp` in Egypt, `chargeEgp` for an order shipped abroad.
  * Cash on delivery and InstaPay are Egypt shipping only; Bank Transfer is outside Egypt only.
  * `isInternational` is decided by the shipping country, not a visitor display toggle.
- * Shipping stays a separate line. Product markup is never applied to that line for Paymob/COD
- * (payable currency is always EGP at the gateway).
+ * Shipping stays a separate line. The abroad markup is never applied to it: abroad it is converted
+ * at the plain rate (`shippingEntry()`, ATS-311).
  */
 export interface OrderPricingSnapshot {
   readonly isInternational: boolean;
@@ -26,12 +26,14 @@ export interface OrderPricingSnapshot {
     | 'domestic-paymob'
     | 'international-paymob'
     | 'international-bank-transfer';
-  /** Bank Transfer only: the amount to send in the shopper's currency, worked out by the server. */
+  /** Orders shipped abroad (Bank Transfer, and Card from ATS-311): the amount in the shopper's currency. */
   readonly payIn?: OrderPayIn;
+  /** Card orders shipped abroad (ATS-311): whole pounds Paymob charges. `totalEgp` stays the Egypt price. */
+  readonly chargeEgp?: number;
 }
 
 /**
- * Bank Transfer: what the shopper sends, in their currency. Outside EGP, orders from ATS-304 on
+ * An order shipped abroad (Bank Transfer and Card): what the shopper pays, in their currency. Outside EGP, orders from ATS-304 on
  * also keep each line's amount (index-matched to `lines`, 0 for gifts), the shipping amount and the
  * factor. The markup and rate behind the factor are staff-only (`orderStaffNotes.payInRate`).
  */
@@ -41,6 +43,8 @@ export interface OrderPayIn {
   readonly lines?: readonly number[];
   readonly shipping?: number;
   readonly factor?: number;
+  /** The plain rate the shipping fee was converted with, no markup (orders from ATS-311 on). */
+  readonly shippingFactor?: number;
 }
 
 export interface OrderLinePrice {

@@ -102,7 +102,7 @@ export const OrderPricingSnapshotSchema = v.object({
     'international-third-party',
     'international-bank-transfer',
   ]),
-  /** Bank Transfer: the amount to send in the shopper's currency (worked out by the server). */
+  /** Orders shipped abroad (Bank Transfer, and Card from ATS-311): the amount in the shopper's currency. */
   payIn: v.optional(
     v.object({
       currency: v.pipe(v.string(), v.regex(/^[A-Z]{3}$/)),
@@ -112,8 +112,12 @@ export const OrderPricingSnapshotSchema = v.object({
       shipping: v.optional(v.pipe(v.number(), v.finite(), v.minValue(0))),
       /** The public factor `amount` was worked out with (shopper currency per EGP, markup in). */
       factor: v.optional(v.pipe(v.number(), v.finite(), v.gtValue(0))),
+      /** The plain rate the shipping fee was converted with, no markup (orders from ATS-311 on). */
+      shippingFactor: v.optional(v.pipe(v.number(), v.finite(), v.gtValue(0))),
     }),
   ),
+  /** Card orders shipped abroad (ATS-311): whole pounds Paymob charges. `totalEgp` stays the Egypt price. */
+  chargeEgp: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
 });
 
 export const OrderPaymobSchema = v.object({
