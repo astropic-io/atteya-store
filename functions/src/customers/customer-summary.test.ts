@@ -220,6 +220,32 @@ describe('reading docs', () => {
     assert.equal(customerOrderFrom('x', {}, null).totalEgp, 0);
   });
 
+  it('counts an order abroad at the pounds the store received (ATS-316)', () => {
+    const card = customerOrderFrom(
+      'c',
+      {
+        status: 'confirmed',
+        pricing: { totalEgp: 950, chargeEgp: 1200, payIn: { currency: 'USD', amount: 24 } },
+      },
+      1,
+    );
+    assert.equal(card.totalEgp, 1200);
+    const bank = customerOrderFrom(
+      'b',
+      {
+        status: 'confirmed',
+        pricing: {
+          totalEgp: 950,
+          payIn: { currency: 'USD', amount: 24, factor: 0.025, shippingFactor: 0.02 },
+        },
+      },
+      1,
+    );
+    assert.equal(bank.totalEgp, 1200);
+    const spent = buildCustomerSummary('a@b.com', [card, bank], null)?.spentEgp;
+    assert.equal(spent, 2400);
+  });
+
   it('reads an account doc, falling back to the saved address', () => {
     const input = customerAccountFrom(
       'u',

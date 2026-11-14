@@ -2,6 +2,7 @@ import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { DestroyRef, inject, PLATFORM_ID, Service } from '@angular/core';
 import { NavigationEnd, Router } from '@angular/router';
 import { filter } from 'rxjs';
+import { receivedEgp, type ReceivedEgpPricing } from '@core/services/offers/engine';
 import { environment } from '@env/environment';
 
 /** Meta standard events the store sends (ATS-290). */
@@ -184,7 +185,7 @@ export class MetaPixelService {
   }
 
   /**
-   * Purchase from an order's price snapshot: EGP total, paid lines only (free gifts are left out).
+   * Purchase from an order's price snapshot: EGP the store receives (`receivedEgp()`: the Egypt total, or for an order abroad what Card charged or Bank Transfer comes to at the plain rate; ATS-316), paid lines only (free gifts are left out).
    * Sent once per order in this browser.
    */
   trackOrderPurchase(
@@ -192,14 +193,13 @@ export class MetaPixelService {
     pricing: {
       readonly lines: readonly { productId: string; quantity: number; unitEgp: number; gift?: unknown }[];
       readonly subtotalEgp: number;
-      readonly totalEgp?: number;
-    },
+    } & ReceivedEgpPricing,
   ): void {
     const paid = pricing.lines.filter((line) => !line.gift);
     this.trackPurchase(orderId, {
       ...metaPixelContents(paid),
       currency: 'EGP',
-      value: pricing.totalEgp ?? pricing.subtotalEgp,
+      value: receivedEgp(pricing),
     });
   }
 

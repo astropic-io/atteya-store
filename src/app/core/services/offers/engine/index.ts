@@ -12,6 +12,7 @@ export * from './item-price';
 export * from './labels';
 export * from './match';
 export * from './read-conditions';
+export * from './received-egp';
 export * from './shipping';
 export * from './shopper-money';
 export * from './types';
