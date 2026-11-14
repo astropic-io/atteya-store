@@ -467,14 +467,39 @@ export function waitingForPaymentStartMs(saved: Readonly<Record<string, unknown>
   return timestampMs(saved['waitingForPaymentAt']) ?? timestampMs(saved['approvedAt']);
 }
 
-/** The last moment the courier fee may arrive before the request cancels itself, epoch ms. */
-export function returnFeeCancelAtMs(startMs: number): number {
-  return startMs + RETURN_FEE_AUTO_CANCEL_DAYS * DAY_MS;
+/**
+ * The last moment the courier fee may arrive before the request cancels itself, epoch ms: 5 days
+ * after it started waiting, but never sooner than 3 days after the reminder (a request approved
+ * before `waitingForPaymentAt` existed is reminded first and still gets those days).
+ */
+export function returnFeeCancelAtMs(startMs: number, reminderMs: number | null = null): number {
+  const byStart = startMs + RETURN_FEE_AUTO_CANCEL_DAYS * DAY_MS;
+  if (reminderMs === null) return byStart;
+  return Math.max(byStart, reminderMs + (RETURN_FEE_AUTO_CANCEL_DAYS - RETURN_FEE_REMINDER_DAYS) * DAY_MS);
 }
 
 /**
- * What the hourly schedule does with a request (ATS-307): `cancel` after 5 days still Waiting for
- * Payment, `remind` after 2 days when no reminder was sent yet, else `none`.
+ * The most Fee Sent Back may record, whole EGP (ATS-307): the saved `feeBackEgp`, or the whole fee
+ * for a request that cancelled itself (the shopper may have paid just before the cancel and told
+ * us on WhatsApp); 0 when there is nothing to send back.
+ */
+export function returnFeeBackLimitEgp(saved: Readonly<Record<string, unknown>>): number {
+  const owed = wholeOrZero(saved['feeBackEgp']);
+  if (owed > 0) return owed;
+  if (
+    saved['status'] === 'cancelled' &&
+    saved['cancelledBy'] === 'system' &&
+    returnPaysFirst(saved['feePaid'], saved['feeEgp'])
+  ) {
+    return wholeOrZero(saved['feeEgp']);
+  }
+  return 0;
+}
+
+/**
+ * What the hourly schedule does with a request (ATS-307): `remind` after 2 days still Waiting for
+ * Payment when no reminder was sent yet, `cancel` once reminded and past `returnFeeCancelAtMs()`,
+ * else `none`.
  */
 export function returnFeeChase(
   saved: Readonly<Record<string, unknown>>,
@@ -483,9 +508,11 @@ export function returnFeeChase(
   if (saved['status'] !== 'waiting-for-payment') return 'none';
   const start = waitingForPaymentStartMs(saved);
   if (start === null) return 'none';
-  if (nowMs >= returnFeeCancelAtMs(start)) return 'cancel';
-  if (nowMs >= start + RETURN_FEE_REMINDER_DAYS * DAY_MS && !saved['feeReminderSentAt']) return 'remind';
-  return 'none';
+  if (nowMs < start + RETURN_FEE_REMINDER_DAYS * DAY_MS) return 'none';
+  // The shopper is always reminded before the request cancels itself.
+  const reminderMs = timestampMs(saved['feeReminderSentAt']);
+  if (!saved['feeReminderSentAt']) return 'remind';
+  return nowMs >= returnFeeCancelAtMs(start, reminderMs) ? 'cancel' : 'none';
 }
 
 // ── Who and when ────────────────────────────────────────────────────────────

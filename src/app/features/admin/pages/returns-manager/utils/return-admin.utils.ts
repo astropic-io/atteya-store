@@ -25,7 +25,11 @@ const DATE_TIME = new Intl.DateTimeFormat('en-GB', {
   minute: '2-digit',
 });
 
-const SHORT_DATE = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
+const SHORT_DATE = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  timeZone: 'Africa/Cairo',
+});
 
 export function egp(amount: number): string {
   return formatMoney(amount, 'EGP', 0);
@@ -53,8 +57,10 @@ export interface ReturnListRow {
   readonly pieces: string;
   readonly chips: readonly ReturnKindChip[];
   readonly money: string;
-  /** "Fee to send back: EGP 115" while a paid courier fee is still to send back (ATS-307). */
+  /** "Fee to send back: EGP 115", then "Fee sent back: …" (ATS-307). */
   readonly feeBack: string | null;
+  /** Red while the fee is still to send back. */
+  readonly feeBackOwed: boolean;
   readonly createdAt: string;
   /** Lower-cased words the list search looks in. */
   readonly searchText: string;
@@ -77,6 +83,7 @@ export function returnListRow(request: ReturnRequestDoc): ReturnListRow {
     })),
     money: moneyLine(request),
     feeBack: feeBackLine(request),
+    feeBackOwed: feeBackOwed(request),
     createdAt: returnDate(request.createdAt),
     searchText: [
       request.ref,
@@ -120,7 +127,30 @@ export function feeBackLine(request: ReturnRequestDoc): string | null {
 
 /** True while a paid courier fee is still to send back (ATS-307). */
 export function feeBackOwed(request: ReturnRequestDoc): boolean {
-  return (request.feeBackEgp ?? 0) > 0 && !request.feeSentBackAt && request.feeSentBackEgp === null;
+  return (request.feeBackEgp ?? 0) > 0 && !feeSentBack(request);
+}
+
+function feeSentBack(request: ReturnRequestDoc): boolean {
+  return Boolean(request.feeSentBackAt) || request.feeSentBackEgp !== null;
+}
+
+/**
+ * The most Fee Sent Back may record (the server checks the same, `returnFeeBackLimitEgp`): the fee
+ * to send back, or the whole fee for a request that cancelled itself; 0 once sent or when none.
+ */
+export function feeBackLimit(request: ReturnRequestDoc): number {
+  if (feeSentBack(request)) return 0;
+  if ((request.feeBackEgp ?? 0) > 0) return request.feeBackEgp ?? 0;
+  return request.status === 'cancelled' &&
+    request.cancelledBy === 'system' &&
+    returnPaysFirst(request.feePaid, request.feeEgp)
+    ? request.feeEgp
+    : 0;
+}
+
+/** The customer ticked "I already sent the courier fee": staff check it arrived first. */
+export function feeBackNeedsCheck(request: ReturnRequestDoc): boolean {
+  return feeBackOwed(request) && request.feeBackClaimedBy === 'shopper';
 }
 
 /** How the courier fee is paid, in words. */
@@ -325,6 +355,9 @@ export function returnNextStep(request: ReturnRequestDoc): string | null {
       return request.hasRefund ? `Send ${egp(request.refundEgp)} by InstaPay, then press Refund Sent.` : null;
     default:
       // A paid courier fee to send back (ATS-307); an admin presses Fee Sent Back.
+      if (feeBackNeedsCheck(request)) {
+        return `The customer says they sent the ${egp(request.feeBackEgp ?? 0)} courier fee. Check it arrived in InstaPay, send it back, then an admin presses Fee Sent Back.`;
+      }
       return feeBackOwed(request)
         ? `Send the ${egp(request.feeBackEgp ?? 0)} courier fee back by InstaPay, then an admin presses Fee Sent Back.`
         : null;

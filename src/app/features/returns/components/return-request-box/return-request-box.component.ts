@@ -30,7 +30,11 @@ import { ReturnsService } from '../../services/returns.service';
 import { savedReturnRequest } from '../../utils/return-memory';
 import { lineDetails, readRequestDetails } from '../../utils/return-request.utils';
 
-const SHORT_DATE = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
+const SHORT_DATE = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  timeZone: 'Africa/Cairo',
+});
 
 /**
  * One return or exchange request on the order page (ATS-292): ref, status steps, the items and

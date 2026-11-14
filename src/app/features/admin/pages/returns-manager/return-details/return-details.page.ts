@@ -48,7 +48,9 @@ import { ReturnsAdminService, type SentPieceChoice } from '../services/returns-a
 import {
   customerWhatsappUrl,
   egp,
+  feeBackLimit,
   feeBackLine,
+  feeBackNeedsCheck,
   feeBackOwed,
   feeLine,
   notReturnedMessage,
@@ -192,8 +194,20 @@ export class ReturnDetailsPageComponent implements OnInit {
     const request = this.request();
     return request ? feeBackOwed(request) : false;
   });
-  /** Admin only; staff see the line but not the button (the server refuses staff too). */
-  readonly canSendFeeBack = computed(() => this.feeBackOwed() && this.isAdmin());
+  readonly #feeBackLimit = computed(() => {
+    const request = this.request();
+    return request ? feeBackLimit(request) : 0;
+  });
+  /** The customer only says they paid: staff check InstaPay before sending it back. */
+  readonly feeBackNeedsCheck = computed(() => {
+    const request = this.request();
+    return request ? feeBackNeedsCheck(request) : false;
+  });
+  /**
+   * Admin only; staff see the line but not the button (the server refuses staff too). Also on a
+   * request that cancelled itself, in case the fee arrived just before the cancel.
+   */
+  readonly canSendFeeBack = computed(() => this.#feeBackLimit() > 0 && this.isAdmin());
 
   ngOnInit(): void {
     this.#seo.setPageMetadata({
@@ -355,27 +369,28 @@ export class ReturnDetailsPageComponent implements OnInit {
   /** Fee Sent Back (admin only, ATS-307): the paid courier fee went back by InstaPay. */
   async feeSentBack(): Promise<void> {
     const request = this.request();
-    const fee = request?.feeBackEgp ?? 0;
+    const fee = this.#feeBackLimit();
     if (!request || this.busy() || fee <= 0) return;
     const ref = this.#dialog.open<FeeSentBackDialogComponent, FeeSentBackDialogData, FeeSentBackDialogResult>(
       FeeSentBackDialogComponent,
       {
-        data: { ref: request.ref, feeEgp: fee, feeLabel: egp(fee), refundTo: request.refundTo },
+        data: {
+          ref: request.ref,
+          feeEgp: fee,
+          feeLabel: egp(fee),
+          refundTo: request.refundTo,
+          checkFirst: feeBackNeedsCheck(request) || (request.feeBackEgp ?? 0) === 0,
+        },
         width: DIALOG_WIDTH,
       },
     );
     const result = await firstValueFrom(ref.afterClosed());
     if (!result) return;
-    this.busy.set('fee-back');
-    try {
-      await this.#returns.feeSentBack(request.id, result.amountEgp, result.sentTo, result.reference);
-      this.#snackbar.success(`Fee sent back saved. We emailed the customer.`);
-    } catch (error: unknown) {
-      this.#snackbar.error(returnActionError(error));
-    } finally {
-      this.busy.set(null);
-      this.dataResource.reload();
-    }
+    await this.#run(
+      'fee-back',
+      () => this.#returns.feeSentBack(request.id, result.amountEgp, result.sentTo, result.reference),
+      'Fee sent back saved. We emailed the customer.',
+    );
   }
 
   async #run(action: ReturnAction, call: () => Promise<ReturnStepResult>, done: string): Promise<void> {

@@ -13,6 +13,7 @@ import {
   nextReturnStatuses,
   returnApproveStatus,
   returnFeeBackEgp,
+  returnFeeBackLimitEgp,
   returnPaysFirst,
   returnStatusLabel,
   withReturnFeeSentBack,
@@ -324,7 +325,7 @@ export async function runFeeSentBack(
           "We couldn't find that request. Refresh the list and try again.",
         );
       }
-      const feeBack = typeof saved['feeBackEgp'] === 'number' ? Math.round(saved['feeBackEgp']) : 0;
+      const feeBack = returnFeeBackLimitEgp(saved);
       if ((status !== 'rejected' && status !== 'cancelled') || feeBack <= 0) {
         throw new ReturnStepError('failed-precondition', 'This request has no courier fee to send back.');
       }

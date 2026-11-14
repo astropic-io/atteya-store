@@ -7,7 +7,7 @@ import { runCancelReturn } from './return-cancel.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Requests handled per run; the next hourly run picks up the rest. */
-const BATCH = 100;
+const BATCH = 300;
 const WAITING: ReturnStatus = 'waiting-for-payment';
 
 /**

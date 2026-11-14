@@ -73,6 +73,9 @@ export const ReturnRequestSchema = v.object({
   paymentReceivedAt: v.optional(v.nullable(timestampSchema), null),
   /** A paid courier fee to send back (Rejected or Cancelled before pickup, ATS-307). */
   feeBackEgp: v.optional(v.nullable(whole), null),
+  /** Who said the fee was paid: `shopper` (check it arrived first) or `staff` (ATS-307). */
+  feeBackClaimedBy: text,
+  cancelledBy: text,
   /** Fee Sent Back (admin, ATS-307). */
   feeSentBackEgp: v.optional(v.nullable(whole), null),
   feeSentBackTo: text,

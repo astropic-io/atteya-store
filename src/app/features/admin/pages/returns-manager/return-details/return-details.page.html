@@ -137,6 +137,11 @@
       <p class="admin-order-box font-body-md font-bold!" [class.text-error]="feeBackOwed()">
         {{ line }}
       </p>
+      @if (feeBackNeedsCheck()) {
+        <p class="admin-order-box font-body-md">
+          The customer ticked that they already sent it. Check it arrived in InstaPay before sending it back.
+        </p>
+      }
     }
     @if (r.rejectReason && r.status === 'rejected') {
       <p class="admin-order-box break-words">Reason the customer sees: {{ r.rejectReason }}</p>

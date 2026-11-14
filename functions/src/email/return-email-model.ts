@@ -79,6 +79,8 @@ export interface ReturnEmailRequest {
   readonly cancelledBy: 'shopper' | 'system' | null;
   /** When the request started Waiting for Payment (`waitingForPaymentAt`, else `approvedAt`). */
   readonly waitingSinceMs: number | null;
+  /** When the fee reminder was saved (the cancel day can move later for older requests). */
+  readonly feeReminderAtMs: number | null;
   readonly createdAtMs: number | null;
   readonly deliveredAtMs: number | null;
   /** The order's secret view key, for a guest's "View Your Order" link; null for signed-in orders. */
@@ -158,6 +160,7 @@ export function readReturnForEmail(
     cancelledBy:
       data['cancelledBy'] === 'system' ? 'system' : data['cancelledBy'] === 'shopper' ? 'shopper' : null,
     waitingSinceMs: waitingForPaymentStartMs(data),
+    feeReminderAtMs: timestampMs(data['feeReminderSentAt']),
     createdAtMs: timestampMs(data['createdAt']),
     deliveredAtMs: timestampMs(data['orderDeliveredAt']),
     viewKey: viewKey || null,

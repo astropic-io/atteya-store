@@ -87,7 +87,9 @@
               <span class="elements-start-col col-span-2 @5xl:col-span-1">
                 <span class="font-body-md">{{ row.money }}</span>
                 @if (row.feeBack; as feeBack) {
-                  <span class="font-label-md font-bold! text-error">{{ feeBack }}</span>
+                  <span class="font-label-md font-bold!" [class.text-error]="row.feeBackOwed">{{
+                    feeBack
+                  }}</span>
                 }
               </span>
               <span class="hidden @5xl:block">

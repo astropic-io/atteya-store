@@ -458,7 +458,9 @@ function payParts(
 
 /** "19 Nov": the day an unpaid request cancels itself, or null when the start is unknown. */
 function feeDeadline(request: ReturnEmailRequest): string | null {
-  return request.waitingSinceMs === null ? null : shortDate(returnFeeCancelAtMs(request.waitingSinceMs));
+  return request.waitingSinceMs === null
+    ? null
+    : shortDate(returnFeeCancelAtMs(request.waitingSinceMs, request.feeReminderAtMs));
 }
 
 /** Shopper: 2 days after Approve, the courier fee is still to pay; the pay steps again. */

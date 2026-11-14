@@ -841,11 +841,19 @@ describe('courier fee sent back and the fee chase (ATS-307)', () => {
     assert.equal(shared.returnFeeChase(waiting, start + 2 * DAY), 'remind');
     assert.equal(shared.returnFeeChase({ ...waiting, feeReminderSentAt: 1 }, start + 3 * DAY), 'none');
     assert.equal(shared.returnFeeChase({ ...waiting, feeReminderSentAt: 1 }, start + 5 * DAY), 'cancel');
-    assert.equal(
-      shared.returnFeeChase({ status: 'waiting-for-payment', approvedAt: start }, start + 5 * DAY),
-      'cancel',
-    );
+    // Older requests (no waitingForPaymentAt) are reminded first and get 3 more days.
+    const legacy = { status: 'waiting-for-payment', approvedAt: start };
+    assert.equal(shared.returnFeeChase(legacy, start + 9 * DAY), 'remind');
+    const reminded = { ...legacy, feeReminderSentAt: start + 9 * DAY };
+    assert.equal(shared.returnFeeChase(reminded, start + 11 * DAY), 'none');
+    assert.equal(shared.returnFeeChase(reminded, start + 12 * DAY), 'cancel');
     assert.equal(shared.returnFeeChase({ ...waiting, status: 'approved' }, start + 6 * DAY), 'none');
+  });
+
+  it('Fee Sent Back may record the saved fee, or the whole fee after the automatic cancel', () => {
+    assert.equal(shared.returnFeeBackLimitEgp({ ...paid, status: 'rejected', feeBackEgp: 115 }), 115);
+    assert.equal(shared.returnFeeBackLimitEgp({ ...paid, status: 'cancelled', cancelledBy: 'system' }), 115);
+    assert.equal(shared.returnFeeBackLimitEgp({ ...paid, status: 'cancelled', cancelledBy: 'shopper' }), 0);
   });
 
   it('the order summary carries the fee to send back and the amount sent, never Sent to', () => {

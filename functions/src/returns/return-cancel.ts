@@ -63,7 +63,16 @@ export async function runCancelReturn(
     const order = orderSnap.exists ? orderSnap.data() : undefined;
     if (!opts.check(saved, order)) return false;
     const status = saved['status'];
-    if (status === 'cancelled') return false;
+    if (status === 'cancelled') {
+      // The claim must not be lost when the request already cancelled itself meanwhile.
+      if (opts.feeAlreadyPaid && saved['cancelledBy'] === 'system') {
+        throw new HttpsError(
+          'failed-precondition',
+          'This request was already cancelled because the courier fee did not arrive in time. If you sent it, please message us on WhatsApp.',
+        );
+      }
+      return false;
+    }
     if (
       !isReturnStatus(status) ||
       !nextReturnStatuses(status, saved['hasRefund'] === true, true).includes('cancelled')
@@ -96,7 +105,11 @@ export async function runCancelReturn(
       cancelledBy: opts.by,
       updatedAt: now,
     };
-    if (feeBackEgp > 0) patch['feeBackEgp'] = feeBackEgp;
+    if (feeBackEgp > 0) {
+      patch['feeBackEgp'] = feeBackEgp;
+      // The shopper's word only: staff check the fee arrived in InstaPay before sending it back.
+      patch['feeBackClaimedBy'] = opts.by === 'shopper' ? 'shopper' : 'staff';
+    }
     if (undo) {
       const moved = writeStockMoves(tx, db, products, undo, 'floor', opts.updatedBy);
       patch['stockUndoneAt'] = now;

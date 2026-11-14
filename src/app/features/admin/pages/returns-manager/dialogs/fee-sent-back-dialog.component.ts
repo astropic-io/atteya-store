@@ -13,6 +13,8 @@ export interface FeeSentBackDialogData {
   readonly feeLabel: string;
   /** The InstaPay number or address the customer gave for a refund, to start "Sent to" with. */
   readonly refundTo: string | null;
+  /** Only the customer's word (or a request that cancelled itself): check InstaPay first. */
+  readonly checkFirst: boolean;
 }
 
 export interface FeeSentBackDialogResult {
@@ -33,6 +35,11 @@ export interface FeeSentBackDialogResult {
     <form (submit)="$event.preventDefault(); save()">
       <mat-dialog-content>
         <div class="return-dialog-fields">
+          @if (data.checkFirst) {
+            <p class="font-body-md opacity-85">
+              Check the {{ data.feeLabel }} courier fee arrived in InstaPay before you send it back.
+            </p>
+          }
           <mat-form-field class="w-full" appearance="outline">
             <mat-label>Amount sent (EGP)</mat-label>
             <input
