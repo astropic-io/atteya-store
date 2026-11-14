@@ -1159,8 +1159,8 @@ interface StaffAbroad {
   readonly subjectAmount: string;
   readonly headerAmount: string;
   readonly headerNote: string;
-  /** Items in the customer's currency, with pounds and the Egypt price as a note (fee to be agreed). */
-  readonly items: { readonly customer: string; readonly note: string };
+  /** The items in the customer's currency (the strip's Items Total while the fee is to be agreed). */
+  readonly items: string;
   readonly total: { readonly customer: string; readonly pounds: string | null; readonly egypt: string };
   /** Subtotal, Shipping and Total: [customer, in pounds, price in Egypt]; a null cell is unknown. */
   readonly rows: readonly { readonly label: string; readonly cells: readonly (string | null)[] }[];
@@ -1181,9 +1181,11 @@ function staffAbroad(order: OrderEmailOrder): StaffAbroad | null {
   const rateLine = abroadRateLine(order, perUnit);
 
   if (order.feeToBeAgreed) {
-    if (shopper.subtotal === null) return null;
-    const items = money(shopper.subtotal);
-    const itemsPounds = pounds(shopper.subtotal);
+    // No fee yet, so the saved total is the items alone when the lines weren't saved.
+    const itemsAmount = shopper.subtotal ?? shopper.total;
+    if (itemsAmount === null) return null;
+    const items = money(itemsAmount);
+    const itemsPounds = pounds(itemsAmount);
     const egyptItems = formatEgp(order.subtotalEgp);
     const later = 'To be agreed';
     const plus = (value: string | null) => (value === null ? null : `${value} + shipping`);
@@ -1195,13 +1197,7 @@ function staffAbroad(order: OrderEmailOrder): StaffAbroad | null {
         [itemsPounds !== null ? `items about ${formatEgp(itemsPounds)}` : null, `${egyptItems} in Egypt`],
         ' · ',
       ),
-      items: {
-        customer: items,
-        note: joinWith(
-          [itemsPounds !== null ? `about ${formatEgp(itemsPounds)}` : null, `${egyptItems} in Egypt`],
-          ' · ',
-        ),
-      },
+      items,
       total: { customer: plus(items)!, pounds: plus(egp(itemsPounds)), egypt: plus(egyptItems)! },
       rows: [
         { label: 'Subtotal', cells: [items, egp(itemsPounds), egyptItems] },
@@ -1263,7 +1259,7 @@ function staffAbroad(order: OrderEmailOrder): StaffAbroad | null {
       ],
       ' · ',
     ),
-    items: { customer: total, note: `${egyptTotal} in Egypt` },
+    items: total,
     total: { customer: total, pounds: poundsText, egypt: egyptTotal },
     rows,
     rateLine,
@@ -1403,7 +1399,7 @@ function storePayment(order: OrderEmailOrder, abroad: StaffAbroad | null): Store
     return {
       cells: [
         abroad
-          ? { label: 'Items Total', amount: abroad.items.customer, note: abroad.items.note }
+          ? { label: 'Items Total', amount: abroad.items }
           : { label: 'Items Total', amount: formatEgp(order.subtotalEgp) },
         { label: 'Shipping Fee', amount: 'Not Set Yet' },
       ],
@@ -1624,8 +1620,11 @@ function packList(order: OrderEmailOrder, ctx: OrderEmailContext, abroad: StaffA
   const lines = order.lines;
   // Abroad (ATS-320): each line in the shopper's currency, as the customer saw it; EGP otherwise.
   const linePrice = (line: OrderEmailLine): string =>
-    (abroad && line.shopperAmount !== null ? abroad.money(line.shopperAmount) : null) ??
-    formatEgp(line.lineEgp);
+    !abroad
+      ? formatEgp(line.lineEgp)
+      : line.shopperAmount !== null
+        ? abroad.money(line.shopperAmount)
+        : `${formatEgp(line.lineEgp)} in Egypt`;
   const compactAfter = 4;
   const bought = lines.filter((line, index) => line.giftName === null || index === 0).length;
   const width = bought > compactAfter ? 128 : 520;

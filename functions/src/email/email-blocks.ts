@@ -515,7 +515,8 @@ ${extra}
 /**
  * Staff totals of an order shipped abroad (ATS-320): a label column and one column per price
  * (Customer Pays / In Pounds / Price in Egypt), the last row the total in bold under a 3px black rule
- * like `totals()`, and an optional grey note under the table. `null` cells show a dash.
+ * like `totals()`, and an optional grey note under the table. `null` cells show a dash. The header
+ * row is the first row, so `table-layout:fixed` takes the column widths from it.
  */
 export function priceTable(
   headers: readonly string[],
@@ -527,7 +528,7 @@ export function priceTable(
   const head = headers
     .map(
       (header) =>
-        `<td align="right" valign="bottom" width="${cellWidth}" style="padding:0 0 8px 8px;${FONT}font-size:11px;font-weight:600;letter-spacing:1px;line-height:1.3;color:${TEXT_MUTED};">${escapeHtml(header.toUpperCase())}</td>`,
+        `<td align="right" valign="bottom" width="${cellWidth}" style="padding:12px 0 8px 8px;${FONT}font-size:11px;font-weight:600;letter-spacing:1px;line-height:1.3;color:${TEXT_MUTED};">${escapeHtml(header.toUpperCase())}</td>`,
     )
     .join('\n');
   const body = rows
@@ -549,9 +550,8 @@ ${cells}
     ? `<tr><td colspan="${headers.length + 1}" style="padding:10px 0 0;${FONT}font-size:13px;line-height:1.5;color:${TEXT_MUTED};">${escapeHtml(note)}</td></tr>`
     : '';
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:3px solid ${INK};table-layout:fixed;">
-<tr><td colspan="${headers.length + 1}" style="height:12px;font-size:0;line-height:0;">&nbsp;</td></tr>
 <tr>
-<td width="${labelWidth}%" style="padding:0 0 8px;">&nbsp;</td>
+<td width="${labelWidth}%" style="padding:12px 0 8px;">&nbsp;</td>
 ${head}
 </tr>
 ${body}
