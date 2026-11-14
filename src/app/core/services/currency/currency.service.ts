@@ -45,9 +45,11 @@ const PENDING_TIMEOUT_MS = 2500;
 const VISITOR_LOCATION_PATH = '/api/visitor-location';
 /** Server could not find the country; the browser decides by its time zone (ATS-313). */
 const BY_ZONE_ATTR = 'data-cur-by-zone';
+/** Prices hidden while the currency resolves; the rules are in the inline `<style>` of `index.html`. */
+const PENDING_ATTR = 'data-cur-pending';
 /**
  * Prices now differ from the server HTML (ATS-323). Blocks still waiting to hydrate keep the
- * server's prices, so `_base.scss` hides any price that is not marked `data-cur-live`.
+ * server's prices, so the inline `<style>` in `index.html` hides any price not marked `data-cur-live`.
  */
 const MOVED_ATTR = 'data-cur-moved';
 
@@ -271,7 +273,8 @@ export class CurrencyService {
     }
     if (target.country !== null || this.#queryCode === null) this.#visitorCountry.set(target.country);
     if (this.#settled && this.#settledFor === target.currency) {
-      this.#syncDocumentHints(this.#visitorCountry(), true, false);
+      // A reveal may still wait for the render (`#showSettled`): never show the prices before it.
+      this.#showSettled(this.#generation);
       return;
     }
     this.#settled = false;
@@ -358,11 +361,7 @@ export class CurrencyService {
       const generation = ++this.#generation;
       this.#apply(EGP_ENTRY);
       this.#settled = true;
-      if (this.#pricesHidden()) {
-        this.#revealAfterRender(generation);
-        return;
-      }
-      this.#syncDocumentHints(this.#visitorCountry(), true, false);
+      this.#showSettled(generation);
       return;
     }
     if (options.pendingIntl) {
@@ -383,25 +382,24 @@ export class CurrencyService {
     const entry = entryFor(code, map);
     this.#apply(entry);
     this.#settled = true;
-    if (this.#pricesHidden()) {
-      this.#revealAfterRender(generation);
-      return;
-    }
-    this.#syncDocumentHints(this.#visitorCountry(), true, false);
+    this.#showSettled(generation);
   }
 
   /** In the browser, prices are hidden (`data-cur-pending`) while the currency resolves. */
   #pricesHidden(): boolean {
-    return (
-      isPlatformBrowser(this.#platformId) && this.#document.documentElement.hasAttribute('data-cur-pending')
-    );
+    return isPlatformBrowser(this.#platformId) && this.#document.documentElement.hasAttribute(PENDING_ATTR);
   }
 
   /**
-   * Shows the prices only once Angular has drawn the new currency (ATS-321 time zone, ATS-323 a
-   * remembered country), so the price the server rendered never shows for a frame.
+   * Marks the settled currency on `<html>`. Prices hidden in the browser show only once Angular has
+   * drawn the new currency (ATS-321 time zone, ATS-323 a remembered country), so the price the
+   * server rendered never shows for a frame.
    */
-  #revealAfterRender(generation: number): void {
+  #showSettled(generation: number): void {
+    if (!this.#pricesHidden()) {
+      this.#syncDocumentHints(this.#visitorCountry(), true, false);
+      return;
+    }
     afterNextRender(
       () => {
         if (generation === this.#generation && this.#settled) {
@@ -496,11 +494,7 @@ export class CurrencyService {
     this.#settled = true;
     console.warn('Currency rates took too long. Showing EGP prices.');
     this.#apply(EGP_ENTRY);
-    if (this.#pricesHidden()) {
-      this.#revealAfterRender(generation);
-      return;
-    }
-    this.#syncDocumentHints(this.#visitorCountry(), true, false);
+    this.#showSettled(generation);
   }
 
   #clearTimer(): void {
@@ -515,8 +509,8 @@ export class CurrencyService {
     else root.removeAttribute('data-visitor-country');
     if (ready) root.setAttribute('data-currency-ready', '');
     else root.removeAttribute('data-currency-ready');
-    if (pendingIntl) root.setAttribute('data-cur-pending', '');
-    else root.removeAttribute('data-cur-pending');
+    if (pendingIntl) root.setAttribute(PENDING_ATTR, '');
+    else root.removeAttribute(PENDING_ATTR);
     if (ready) root.removeAttribute(BY_ZONE_ATTR);
     const moved =
       ready && !pendingIntl && this.#renderedCode !== null && this.#selected() !== this.#renderedCode;
