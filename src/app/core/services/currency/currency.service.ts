@@ -179,21 +179,21 @@ export class CurrencyService {
         });
         return;
       }
-      if (transferred.code === null && !transferred.prerendered) {
-        // The server already tried every lookup; go straight to the time zone.
-        const choice = await visitorBrowsingChoice(null, readTimeZone());
-        await this.#finishWithCode(choice.currency, choice.country, {
-          pendingIntl: choice.currency !== 'EGP',
-        });
-        return;
-      }
-      if (transferred.code === 'EGP') {
+      if (transferred.code === null) {
+        if (!transferred.prerendered) {
+          // The server already tried every lookup; go straight to the time zone.
+          const choice = await visitorBrowsingChoice(null, readTimeZone());
+          await this.#finishWithCode(choice.currency, choice.country, {
+            pendingIntl: choice.currency !== 'EGP',
+          });
+          return;
+        }
+      } else if (transferred.code === 'EGP') {
         this.#apply(EGP_ENTRY);
         this.#settled = true;
         this.#syncDocumentHints(this.#visitorCountry(), true, false);
         return;
-      }
-      if (this.#map) {
+      } else if (this.#map) {
         this.#apply(entryFor(transferred.code, this.#map));
         this.#settled = true;
         this.#syncDocumentHints(this.#visitorCountry(), true, false);
