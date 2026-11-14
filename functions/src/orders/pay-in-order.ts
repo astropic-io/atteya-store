@@ -20,7 +20,7 @@ import {
  * what the order comes to in pounds (ATS-304). The rate never changes the shopper's amount, and it
  * is null when it can't be read or no longer rebuilds the factor. Refused (`details.payInChanged`)
  * when the amount comes out higher than the total checkout showed (`shown`): checkout reads the
- * factors again and shows the new total.
+ * factors again and shows the new total. The refusal carries the amount (`details.payIn`).
  */
 export async function withPayIn(
   db: Firestore,
@@ -48,7 +48,9 @@ export async function withPayIn(
     throw new HttpsError(
       'failed-precondition',
       'Prices in your currency were just updated. Check the new total, then place your order again.',
-      { payInChanged: true },
+      // The amount itself, so checkout can show it when it can't add the order up line by line
+      // the way `payInFor()` does (the server's own totals after a refusal).
+      { payInChanged: true, payIn: { currency: priced.payIn.currency, amount: priced.payIn.amount } },
     );
   }
   return { pricing: priced, payInRate };
