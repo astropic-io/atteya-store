@@ -5,6 +5,7 @@
 import {
   isReturnKind,
   isReturnStatus,
+  readCourierFeePaid,
   timestampMs,
   type CourierFeePaid,
   type ReturnKind,
@@ -102,7 +103,6 @@ export function readReturnForEmail(
   if (items.length === 0) return null;
   const customer = isRecord(data['customer']) ? data['customer'] : {};
   const email = text(customer['email']);
-  const feePaid = data['feePaid'];
   return {
     id: requestId,
     ref: text(data['ref']) || `#R-${requestId.slice(0, 6).toUpperCase()}`,
@@ -126,7 +126,7 @@ export function readReturnForEmail(
     storeFault: data['storeFault'] === true,
     itemsEgp: whole(data['itemsEgp']),
     feeEgp: whole(data['feeEgp']),
-    feePaid: feePaid === 'off-refund' || feePaid === 'cash' ? feePaid : 'free',
+    feePaid: readCourierFeePaid(data['feePaid']),
     refundEgp: whole(data['refundEgp']),
     cashAtDoorEgp: whole(data['cashAtDoorEgp']),
     rejectReason: text(data['rejectReason']) || null,

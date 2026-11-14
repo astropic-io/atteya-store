@@ -300,21 +300,22 @@ export class ReturnRequestDialogComponent {
         value: refund ? egp(preview.refundByLine.get(line.index) ?? 0) : 'Exchange',
       };
     });
-    let fee: { label: string; value: string };
-    if (money.feePaid === 'free') {
-      fee = { label: 'Courier fee', value: "Free, we're sorry about this" };
-    } else if (money.feePaid === 'off-refund') {
-      fee = { label: 'Courier fee, taken off your refund', value: `− ${egp(money.feeEgp)}` };
-    } else {
-      fee = { label: 'Courier fee, paid in cash at the door', value: egp(money.feeEgp) };
-    }
-    // Until the shipping settings arrive the fee (and so the refund after it) isn't known yet.
+    // ATS-303: the shopper pays the courier fee by InstaPay after Approve, so the refund is the
+    // full paid share and nothing is paid at the door.
+    const fee: { label: string; value: string; note: string | null } =
+      money.feePaid === 'free'
+        ? { label: 'Courier fee', value: "Free, we're sorry about this", note: null }
+        : {
+            label: 'Courier fee',
+            value: egp(money.feeEgp),
+            note: 'You pay it by InstaPay once we approve your request.',
+          };
+    // Until the shipping settings arrive the fee isn't known yet.
     const known = preview.storeFault || !this.#feeUnknown();
     return {
       rows,
       fee: known ? fee : null,
       refund: preview.hasRefund && known ? egp(money.refundEgp) : null,
-      cashAtDoor: preview.hasRefund && known && money.cashAtDoorEgp > 0 ? egp(money.cashAtDoorEgp) : null,
     };
   });
 

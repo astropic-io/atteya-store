@@ -1,6 +1,7 @@
 import { shopperWhatsappNumber } from '@core/config/order-messages';
 import {
   returnKindLabel,
+  returnPaysFirst,
   returnStaffWhatsappText,
   returnStatusLabel,
   type ReturnStatus,
@@ -84,16 +85,23 @@ export function returnListRow(request: ReturnRequestDoc): ReturnListRow {
   };
 }
 
-/** "Refund EGP 950", "Exchange · EGP 70 cash at the door", "Exchange · free visit". */
+/**
+ * "Refund EGP 950", "Exchange · EGP 70 courier fee by InstaPay", "Exchange · EGP 70 cash at the
+ * door" (saved before ATS-303), "Exchange · free visit".
+ */
 export function moneyLine(request: ReturnRequestDoc): string {
   if (request.hasRefund) return `Refund ${egp(request.refundEgp)}`;
   if (request.cashAtDoorEgp > 0) return `Exchange · ${egp(request.cashAtDoorEgp)} cash at the door`;
+  if (returnPaysFirst(request.feePaid, request.feeEgp)) {
+    return `Exchange · ${egp(request.feeEgp)} courier fee by InstaPay`;
+  }
   return 'Exchange · free visit';
 }
 
 /** How the courier fee is paid, in words. */
 export function feeLine(request: ReturnRequestDoc): string {
   if (request.feePaid === 'free' || request.feeEgp === 0) return 'Free, the store pays';
+  if (request.feePaid === 'instapay-first') return `${egp(request.feeEgp)} by InstaPay before pickup`;
   if (request.feePaid === 'off-refund') return `${egp(request.feeEgp)} off the refund`;
   return `${egp(request.feeEgp)} cash at the door`;
 }
@@ -158,7 +166,7 @@ function stockFacts(
   products: ReadonlyMap<string, ReturnProductLookup>,
 ): StockFact[] {
   const facts: StockFact[] = [];
-  const open = status === 'requested' || status === 'approved';
+  const open = status === 'requested' || status === 'waiting-for-payment' || status === 'approved';
   const add = (label: string, productId: string, selection: Record<string, string>, plan: string) => {
     facts.push({
       label: `${label}: ${pieceName(products.get(productId), selection)}`,
@@ -281,7 +289,11 @@ export function productIdsOfRequest(request: ReturnRequestDoc): string[] {
 export function returnNextStep(request: ReturnRequestDoc): string | null {
   switch (request.status) {
     case 'requested':
-      return 'Check the request, then Approve or Reject it. Message the customer on WhatsApp to agree a courier visit.';
+      return returnPaysFirst(request.feePaid, request.feeEgp)
+        ? `Check the request, then Approve or Reject it. After Approve, the customer pays the ${egp(request.feeEgp)} courier fee by InstaPay.`
+        : 'Check the request, then Approve or Reject it. Message the customer on WhatsApp to agree a courier visit.';
+    case 'waiting-for-payment':
+      return `When the ${egp(request.feeEgp)} courier fee arrives by InstaPay, press Payment Received, then send the courier.`;
     case 'approved':
       return 'When the courier brings the items back, press Item Received.';
     case 'received':

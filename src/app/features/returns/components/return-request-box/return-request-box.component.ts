@@ -6,6 +6,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { firstValueFrom } from 'rxjs';
 import {
   readReturnOrderLines,
+  returnPaymentWhatsappText,
   returnPhotosWhatsappText,
   returnStatusLabel,
   type ReturnStatus,
@@ -72,13 +73,22 @@ export class ReturnRequestBoxComponent {
       storeFault: fromOrder.storeFault ?? saved.storeFault ?? false,
       refundEgp: fromOrder.refundEgp ?? saved.refundEgp ?? null,
       rejectReason: fromOrder.rejectReason ?? null,
+      payFeeEgp: fromOrder.payFeeEgp ?? null,
     };
   });
 
-  /** Requested → Approved → Received (→ Refund Sent when there is a refund). */
+  /** The courier fee is paid by InstaPay before the courier comes (ATS-303). */
+  readonly #paysFirst = computed(() => this.#details().payFeeEgp !== null);
+
+  /**
+   * Requested → (Waiting for Payment when the shopper pays the courier fee first) → Approved →
+   * Received (→ Refund Sent when there is a refund).
+   */
   readonly steps = computed(() => {
     const request = this.request();
-    const all: ReturnStatus[] = ['requested', 'approved', 'received'];
+    const all: ReturnStatus[] = this.#paysFirst()
+      ? ['requested', 'waiting-for-payment', 'approved', 'received']
+      : ['requested', 'approved', 'received'];
     if (request.hasRefund) all.push('refund-sent');
     const reached = all.indexOf(request.status);
     return all.map((status, index) => ({ status, label: returnStatusLabel(status), done: index <= reached }));
@@ -104,6 +114,57 @@ export class ReturnRequestBoxComponent {
     });
   });
 
+  /** Waiting for Payment: how to pay the courier fee, and the prewritten WhatsApp message. */
+  readonly pay = computed(() => {
+    const request = this.request();
+    const fee = this.#details().payFeeEgp;
+    if (request.status !== 'waiting-for-payment' || fee === null) return null;
+    const amount = formatMoney(fee, 'EGP', 0);
+    const info = STORE_INFO.payments.instapay;
+    const to = [info.address.trim(), info.number.trim()].filter(Boolean);
+    const hasDetails = to.length > 0;
+    // Without InstaPay details there is nothing to pay to yet: ask for them, never "I paid".
+    const whatsappUrl = hasDetails
+      ? whatsappChatUrl(
+          STORE_INFO.contact.whatsapp,
+          returnPaymentWhatsappText(request.ref, shortOrderRef(this.orderId()), fee),
+        )
+      : whatsappChatUrl(STORE_INFO.contact.whatsapp);
+    return {
+      whatsappUrl,
+      buttonLabel: hasDetails ? 'Send Screenshot on WhatsApp' : 'Message Us on WhatsApp',
+      steps: [
+        {
+          title: `Send ${amount} by InstaPay`,
+          note:
+            to.length > 0
+              ? `To ${to.join(' or ')}`
+              : whatsappUrl
+                ? "We'll send you the InstaPay details on WhatsApp."
+                : "We'll send you the InstaPay details.",
+          amount,
+        },
+        {
+          title: whatsappUrl ? 'Send the screenshot on WhatsApp' : 'Send us the screenshot',
+          note: 'With your request number',
+          amount: null,
+        },
+        {
+          title: 'We send the courier',
+          note: 'To your delivery address, once your payment arrives.',
+          amount: null,
+        },
+      ],
+    };
+  });
+
+  /** The shopper can cancel while Requested or Waiting for Payment. */
+  readonly canCancel = computed(() => ['requested', 'waiting-for-payment'].includes(this.request().status));
+
+  readonly refundLabel = computed(() =>
+    this.#paysFirst() ? 'Your refund' : 'Your refund after the courier fee',
+  );
+
   readonly refund = computed(() => {
     const amount = this.#details().refundEgp;
     // EGP 0 (the courier fee took it all) is never shown as a refund on its way.
@@ -116,7 +177,11 @@ export class ReturnRequestBoxComponent {
     const refund = this.refund();
     switch (request.status) {
       case 'requested':
-        return "We're looking at your request and will message you on WhatsApp to arrange the courier.";
+        return this.#paysFirst()
+          ? "We're looking at your request. Once we approve it, you pay the courier fee by InstaPay."
+          : "We're looking at your request and will message you on WhatsApp to arrange the courier.";
+      case 'waiting-for-payment':
+        return "We approved your request. Please send the courier fee by InstaPay, and we'll send the courier once it arrives.";
       case 'approved':
         return 'Our courier will come to your delivery address to collect the items.';
       case 'received':
@@ -147,7 +212,11 @@ export class ReturnRequestBoxComponent {
 
   readonly photosUrl = computed(() => {
     const request = this.request();
-    if (!this.#details().storeFault || !['requested', 'approved'].includes(request.status)) return null;
+    if (
+      !this.#details().storeFault ||
+      !['requested', 'waiting-for-payment', 'approved'].includes(request.status)
+    )
+      return null;
     return whatsappChatUrl(
       STORE_INFO.contact.whatsapp,
       returnPhotosWhatsappText(request.ref, shortOrderRef(this.orderId())),
@@ -162,7 +231,9 @@ export class ReturnRequestBoxComponent {
         data: {
           title: 'Cancel this request?',
           message:
-            'We will stop your return or exchange. You can send a new request while the 14 days are open.',
+            this.request().status === 'waiting-for-payment'
+              ? 'We will stop your return or exchange. If you already sent the courier fee, message us on WhatsApp. You can send a new request while the 14 days are open.'
+              : 'We will stop your return or exchange. You can send a new request while the 14 days are open.',
           confirmText: 'Cancel Request',
           cancelText: 'Keep Request',
         },

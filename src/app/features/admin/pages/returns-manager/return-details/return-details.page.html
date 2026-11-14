@@ -62,6 +62,21 @@
             }
           </button>
         }
+        @if (canConfirmPayment()) {
+          <button
+            matButton="filled"
+            type="button"
+            [disabled]="busy() !== null"
+            [attr.aria-label]="busy() === 'payment' ? 'Saving…' : null"
+            (click)="confirmPayment()"
+          >
+            @if (busy() === 'payment') {
+              <mat-progress-spinner mode="indeterminate" diameter="18" />
+            } @else {
+              <span>Payment Received</span>
+            }
+          </button>
+        }
         @if (canReceive()) {
           <button
             matButton="filled"

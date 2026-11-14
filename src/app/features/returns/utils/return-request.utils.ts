@@ -280,11 +280,16 @@ export interface ReturnRequestDetails {
   /** Refund after the courier fee, whole EGP; null when unknown. */
   readonly refundEgp: number | null;
   readonly rejectReason: string | null;
+  /**
+   * The courier fee the shopper pays by InstaPay before the courier comes (ATS-303), whole EGP;
+   * null for requests with no fee to pay first (store fault, or saved before ATS-303).
+   */
+  readonly payFeeEgp: number | null;
 }
 
 /**
  * Extra fields the server may add to an entry of the order's `returns` summary (`askedLabel`
- * per item, `storeFault`, `refundEgp`, `refundSentEgp`, `rejectReason`). `readReturnSummaries()` keeps only the
+ * per item, `storeFault`, `refundEgp`, `refundSentEgp`, `rejectReason`, `payFeeEgp`). `readReturnSummaries()` keeps only the
  * fields every entry has, so these are read here; anything missing is null.
  */
 export function readRequestDetails(raw: unknown, requestId: string): Partial<ReturnRequestDetails> {
@@ -312,6 +317,8 @@ export function readRequestDetails(raw: unknown, requestId: string): Partial<Ret
   if (refund !== undefined) out.refundEgp = Math.max(0, Math.round(refund));
   const reason = entry['rejectReason'];
   if (typeof reason === 'string' && reason.trim()) out.rejectReason = reason.trim();
+  const payFee = entry['payFeeEgp'];
+  if (typeof payFee === 'number' && Number.isFinite(payFee) && payFee > 0) out.payFeeEgp = Math.round(payFee);
   return out;
 }
 

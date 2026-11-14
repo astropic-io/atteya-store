@@ -99,10 +99,15 @@ export class ReturnsAdminService {
     };
   }
 
-  /** How many requests wait for Approve or Reject (the admin menu count). */
+  /**
+   * How many requests wait for staff (the admin menu count): Approve or Reject, or Payment
+   * Received for Waiting for Payment (ATS-303).
+   */
   async countRequested(): Promise<number> {
     const col = collection(this.#firestore, RETURN_REQUESTS_COLLECTION);
-    const snap = await getCountFromServer(query(col, where('status', '==', 'requested')));
+    const snap = await getCountFromServer(
+      query(col, where('status', 'in', ['requested', 'waiting-for-payment'])),
+    );
     return snap.data().count;
   }
 
@@ -155,6 +160,11 @@ export class ReturnsAdminService {
 
   approve(requestId: string, sent: readonly SentPieceChoice[]): Promise<ReturnStepResult> {
     return this.#step('approveReturnRequest', { requestId, sent });
+  }
+
+  /** Payment Received (ATS-303): the courier fee arrived by InstaPay. */
+  confirmPayment(requestId: string): Promise<ReturnStepResult> {
+    return this.#step('confirmReturnPayment', { requestId });
   }
 
   reject(requestId: string, reason: string): Promise<ReturnStepResult> {

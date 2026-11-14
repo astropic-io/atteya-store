@@ -29,6 +29,7 @@ import { returnListRow, type ReturnListRow } from './utils/return-admin.utils';
 
 const FILTER_TABS: readonly { readonly id: ReturnStatusFilter; readonly label: string }[] = [
   { id: 'requested', label: 'Requested' },
+  { id: 'waiting-for-payment', label: 'Waiting for Payment' },
   { id: 'approved', label: 'Approved' },
   { id: 'received', label: 'Received' },
   { id: 'refund-sent', label: 'Refund Sent' },

@@ -10,8 +10,13 @@ export type ReturnEmailKind =
   | 'store-return-request'
   /** Shopper: "Request Sent". */
   | 'return-requested'
-  /** Shopper: "Request Approved" (Requested → Approved). */
+  /**
+   * Shopper: "Request Approved" (Requested → Approved), or its pay version when the shopper pays
+   * the courier fee by InstaPay first (Requested → Waiting for Payment, ATS-303).
+   */
   | 'return-approved'
+  /** Shopper: "Payment Received" (Waiting for Payment → Approved, ATS-303). */
+  | 'return-payment-received'
   /** Shopper: "We Can't Take It Back" (Requested or Approved → Rejected). */
   | 'return-rejected'
   /** Shopper: "Items Received" (Approved → Received). */
@@ -31,8 +36,9 @@ export function returnClaimId(kind: ReturnEmailKind, request: Pick<ReturnEmailRe
 const STATUS_EMAILS: Partial<
   Record<ReturnStatus, { readonly kind: ReturnEmailKind; readonly from: readonly ReturnStatus[] }>
 > = {
+  'waiting-for-payment': { kind: 'return-approved', from: ['requested'] },
   approved: { kind: 'return-approved', from: ['requested'] },
-  rejected: { kind: 'return-rejected', from: ['requested', 'approved'] },
+  rejected: { kind: 'return-rejected', from: ['requested', 'waiting-for-payment', 'approved'] },
   received: { kind: 'return-received', from: ['approved'] },
   'refund-sent': { kind: 'return-refund-sent', from: ['received'] },
 };
@@ -51,6 +57,10 @@ export function returnEmailsForWrite(
     return after.status === 'requested' ? ['store-return-request', 'return-requested'] : [];
   }
   if (before.status === after.status) return [];
+  // Payment Received: Waiting for Payment → Approved sends its own email, not a second Approved.
+  if (before.status === 'waiting-for-payment' && after.status === 'approved') {
+    return ['return-payment-received'];
+  }
   const step = STATUS_EMAILS[after.status];
   if (!step || !step.from.includes(before.status)) return [];
   if (step.kind === 'return-refund-sent' && after.refundSentEgp <= 0) return [];

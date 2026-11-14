@@ -5,7 +5,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { nextReturnStatuses, returnStatusLabel } from '@core/config/returns';
+import { nextReturnStatuses, returnPaysFirst, returnStatusLabel } from '@core/config/returns';
 import { AuthService } from '@core/services/auth/auth.service';
 import { SeoService } from '@core/services/seo';
 import { SnackbarService } from '@core/services/snack-bar/snack-bar.service';
@@ -54,7 +54,7 @@ import {
   returnNextStep,
 } from '../utils/return-admin.utils';
 
-type ReturnAction = 'approve' | 'reject' | 'receive' | 'refund';
+type ReturnAction = 'approve' | 'payment' | 'reject' | 'receive' | 'refund';
 
 const DIALOG_WIDTH = '480px';
 
@@ -165,7 +165,12 @@ export class ReturnDetailsPageComponent implements OnInit {
     const request = this.request();
     return request ? nextReturnStatuses(request.status, request.hasRefund) : [];
   });
-  readonly canApprove = computed(() => this.#moves().includes('approved'));
+  /** Approve only from Requested: Waiting for Payment moves on with Payment Received (ATS-303). */
+  readonly canApprove = computed(() => this.request()?.status === 'requested');
+  readonly canConfirmPayment = computed(() => {
+    const request = this.request();
+    return request?.status === 'waiting-for-payment' && returnPaysFirst(request.feePaid, request.feeEgp);
+  });
   readonly canReject = computed(() => this.#moves().includes('rejected'));
   readonly canReceive = computed(() => this.#moves().includes('received'));
   readonly canRefund = computed(() => this.#moves().includes('refund-sent') && this.isAdmin());
@@ -216,10 +221,32 @@ export class ReturnDetailsPageComponent implements OnInit {
       });
       if (!ok) return;
     }
+    const paysFirst = returnPaysFirst(request.feePaid, request.feeEgp);
     await this.#run(
       'approve',
       () => this.#returns.approve(request.id, sent),
-      `Request ${request.ref} approved.`,
+      paysFirst
+        ? `Request ${request.ref} approved. We asked the customer to pay the courier fee.`
+        : `Request ${request.ref} approved.`,
+    );
+  }
+
+  /** Payment Received (ATS-303): the courier fee arrived by InstaPay. */
+  async confirmPayment(): Promise<void> {
+    const request = this.request();
+    if (!request || this.busy()) return;
+    const ok = await this.#ask({
+      title: `Did the ${egp(request.feeEgp)} arrive by InstaPay?`,
+      message: `Request ${request.ref} moves to Approved and the customer gets an email that the courier is coming.`,
+      confirmText: 'Payment Received',
+      cancelText: 'Not Yet',
+      theme: 'primary',
+    });
+    if (!ok) return;
+    await this.#run(
+      'payment',
+      () => this.#returns.confirmPayment(request.id),
+      `Payment saved. Send the courier for ${request.ref}.`,
     );
   }
 
@@ -233,7 +260,8 @@ export class ReturnDetailsPageComponent implements OnInit {
     >(RejectReturnDialogComponent, {
       data: {
         ref: request.ref,
-        approved: request.status === 'approved',
+        // Approve took the new pieces, also while Waiting for Payment (ATS-303).
+        approved: request.status === 'approved' || request.status === 'waiting-for-payment',
         stockLines: rejectStockLines(request, this.dataResource.value()?.products ?? new Map()),
       },
       width: DIALOG_WIDTH,

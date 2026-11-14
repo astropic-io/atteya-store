@@ -10,6 +10,8 @@ import type { RequiredCaller } from '../auth/require-role.js';
 import {
   isReturnStatus,
   nextReturnStatuses,
+  returnApproveStatus,
+  returnPaysFirst,
   returnStatusLabel,
   withReturnStatus,
   type ReturnKeptItem,
@@ -31,6 +33,7 @@ import {
   sentProductIds,
   withSentPieces,
   type ApproveInput,
+  type ConfirmPaymentInput,
   type ReceiveInput,
   type RefundSentInput,
   type RejectInput,
@@ -46,6 +49,7 @@ export const RETURN_STAFF_NOTES_COLLECTION = 'returnStaffNotes';
 
 export type ReturnStepCall =
   | { readonly step: 'approve'; readonly input: ApproveInput }
+  | { readonly step: 'confirm-payment'; readonly input: ConfirmPaymentInput }
   | { readonly step: 'reject'; readonly input: RejectInput }
   | { readonly step: 'receive'; readonly input: ReceiveInput }
   | { readonly step: 'refund-sent'; readonly input: RefundSentInput };
@@ -59,12 +63,21 @@ export interface ReturnStepResult {
   readonly notReturned: number;
 }
 
-const TARGET: Record<ReturnStepCall['step'], ReturnStatus> = {
-  approve: 'approved',
+const TARGET: Record<Exclude<ReturnStepCall['step'], 'approve'>, ReturnStatus> = {
+  'confirm-payment': 'approved',
   reject: 'rejected',
   receive: 'received',
   'refund-sent': 'refund-sent',
 };
+
+/**
+ * Where a step moves the request. Approve goes to Waiting for Payment when the shopper pays the
+ * courier fee by InstaPay first (ATS-303), else to Approved.
+ */
+function targetFor(call: ReturnStepCall, saved: DocumentData): ReturnStatus {
+  if (call.step === 'approve') return returnApproveStatus(saved['feePaid'], saved['feeEgp']);
+  return TARGET[call.step];
+}
 
 /**
  * One staff step on a return or exchange request, in a transaction against the live request,
@@ -81,7 +94,6 @@ export async function runReturnStep(
   actor: RequiredCaller,
 ): Promise<ReturnStepResult> {
   const requestId = call.input.requestId;
-  const target = TARGET[call.step];
   const requestRef = db.collection(RETURN_REQUESTS_COLLECTION).doc(requestId);
 
   try {
@@ -99,8 +111,25 @@ export async function runReturnStep(
       if (!isReturnStatus(current)) {
         throw new ReturnStepError('failed-precondition', "This request's status can't be changed here.");
       }
+      const target = targetFor(call, saved);
       if (current === target) {
         return { requestId, status: target, changed: false, notReturned: 0 };
+      }
+      // Approve pressed again after Payment Received already moved it on: nothing to do.
+      if (call.step === 'approve' && current === 'approved') {
+        return { requestId, status: current, changed: false, notReturned: 0 };
+      }
+      // Payment Received only from Waiting for Payment, and only when the shopper pays first.
+      if (
+        call.step === 'confirm-payment' &&
+        (current !== 'waiting-for-payment' || !returnPaysFirst(saved['feePaid'], saved['feeEgp']))
+      ) {
+        throw new ReturnStepError(
+          'failed-precondition',
+          current === 'requested'
+            ? 'Approve this request first. The customer pays the courier fee after that.'
+            : `This request is ${returnStatusLabel(current)}, so there is no payment to confirm.`,
+        );
       }
       const hasRefund = saved['hasRefund'] === true;
       if (!nextReturnStatuses(current, hasRefund).includes(target)) {
@@ -152,6 +181,10 @@ export async function runReturnStep(
         patch['items'] = mergeItemChoices(rawItems, items);
         patch['approvedAt'] = now;
         patch['approvedBy'] = actor.uid;
+      } else if (call.step === 'confirm-payment') {
+        // No stock moves: Approve already took the new pieces (ATS-303).
+        patch['paymentReceivedAt'] = now;
+        patch['paymentReceivedBy'] = actor.uid;
       } else if (call.step === 'reject') {
         const undo = rejectStockFor(saved);
         if (undo) {
@@ -258,11 +291,11 @@ export async function runReturnStep(
   }
 }
 
-function productRef(db: Firestore, productId: string): DocumentReference {
+export function productRef(db: Firestore, productId: string): DocumentReference {
   return db.collection('products').doc(productId);
 }
 
-function stepProduct(data: DocumentData): StepProduct {
+export function stepProduct(data: DocumentData): StepProduct {
   return {
     stock: data['stock'],
     stockBySize: data['stockBySize'],

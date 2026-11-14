@@ -62,7 +62,7 @@ export const ReturnRequestSchema = v.object({
   storeFault: v.optional(v.boolean(), false),
   itemsEgp: v.optional(whole, 0),
   feeEgp: v.optional(whole, 0),
-  feePaid: v.optional(v.picklist(['free', 'off-refund', 'cash']), 'free'),
+  feePaid: v.optional(v.picklist(['free', 'instapay-first', 'off-refund', 'cash']), 'free'),
   refundEgp: v.optional(whole, 0),
   cashAtDoorEgp: v.optional(whole, 0),
   rejectReason: text,
@@ -100,6 +100,7 @@ export type ReturnStatusFilter = ReturnStatus | 'all';
 /** Status badge names and colours for requests (same names the shopper sees). */
 export const RETURN_STATUS_CONFIG: Record<string, StatusConfig> = {
   requested: { label: 'Requested', color: 'yellow' },
+  'waiting-for-payment': { label: 'Waiting for Payment', color: 'yellow' },
   approved: { label: 'Approved', color: 'blue' },
   received: { label: 'Received', color: 'primary' },
   'refund-sent': { label: 'Refund Sent', color: 'green' },
