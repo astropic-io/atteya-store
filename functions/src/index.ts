@@ -54,6 +54,8 @@ export { confirmReturnPayment } from './returns/confirm-return-payment.fn.js';
 export { rejectReturnRequest } from './returns/reject-return-request.fn.js';
 export { receiveReturnRequest } from './returns/receive-return-request.fn.js';
 export { markRefundSent } from './returns/mark-refund-sent.fn.js';
+export { markFeeSentBack } from './returns/mark-fee-sent-back.fn.js';
+export { chaseReturnFees } from './returns/return-fee-chase.schedule.js';
 export { subscribeToEmails } from './marketing/subscribe-to-emails.fn.js';
 export { onHomeSettingsWrite, onNavigationSettingsWrite } from './settings/settings-history.trigger.js';
 export {

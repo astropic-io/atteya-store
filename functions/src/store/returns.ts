@@ -78,6 +78,15 @@ export const REFUND_REFERENCE_MAX = 100;
 /** Requests one order can ever have (cancelled and rejected ones included), so a loop can't flood staff. */
 export const RETURN_REQUESTS_PER_ORDER_MAX = 10;
 
+/** Days after Approve (entering Waiting for Payment) before the fee reminder email (ATS-307). */
+export const RETURN_FEE_REMINDER_DAYS = 2;
+
+/** Days after Approve before an unpaid Waiting for Payment request cancels itself (ATS-307). */
+export const RETURN_FEE_AUTO_CANCEL_DAYS = 5;
+
+/** Fee Sent Back: the most characters for "Sent to" and the reference (ATS-307). */
+export const FEE_SENT_BACK_TEXT_MAX = 100;
+
 export function isReturnKind(value: unknown): value is ReturnKind {
   return typeof value === 'string' && (RETURN_KINDS as readonly string[]).includes(value);
 }
@@ -315,6 +324,17 @@ export interface ReturnSummary {
   /** Why staff rejected it, as the shopper sees it (Rejected only). */
   readonly rejectReason?: string;
   /**
+   * A courier fee the shopper already paid that we send back by InstaPay (Rejected or Cancelled
+   * before pickup, ATS-307), whole EGP. Never the InstaPay details or the reference.
+   */
+  readonly feeBackEgp?: number;
+  /** Fee Sent Back: what staff sent back, whole EGP (ATS-307). */
+  readonly feeSentBackEgp?: number;
+  /** Fee Sent Back: when, as a Timestamp from the function's clock (arrays can't hold server time). */
+  readonly feeSentBackAt?: unknown;
+  /** Cancelled by itself: the courier fee didn't arrive in 5 days (ATS-307). */
+  readonly autoCancelled?: boolean;
+  /**
    * Rejected after Approve: the Wrong Item Sent line pieces whose stock corrections were kept, so
    * they stay held (`piecesLeft`, `hasReturnHoldingPieces`). Absent otherwise.
    */
@@ -367,6 +387,10 @@ export interface ReturnStatusExtras {
   readonly refundSentEgp?: number | null;
   /** Rejected after Approve: the line pieces whose stock corrections were kept (saved as `keptItems`). */
   readonly keptItems?: readonly ReturnKeptItem[] | null;
+  /** Rejected or Cancelled: a paid courier fee we send back (saved as `feeBackEgp`, ATS-307). */
+  readonly feeBackEgp?: number | null;
+  /** Cancelled by the hourly schedule: the fee didn't arrive in 5 days (saved as `autoCancelled`). */
+  readonly autoCancelled?: boolean;
 }
 
 /**
@@ -391,9 +415,77 @@ export function withReturnStatus(
   }
   const kept = readKeptItems(extras.keptItems);
   if (status === 'rejected' && kept.length > 0) patch['keptItems'] = kept;
+  const feeBack = wholeOrZero(extras.feeBackEgp);
+  if ((status === 'rejected' || status === 'cancelled') && feeBack > 0) patch['feeBackEgp'] = feeBack;
+  if (status === 'cancelled' && extras.autoCancelled === true) patch['autoCancelled'] = true;
   return raw.map((entry: unknown) =>
     isRecord(entry) && entry['id'] === requestId ? { ...entry, ...patch } : entry,
   );
+}
+
+/**
+ * The order's raw `returns` array with one request's Fee Sent Back saved (ATS-307): the amount and
+ * when, for the shopper's request box. Never "Sent to" or the reference: shoppers and guests
+ * (`orderViews`) read the summary. `at` is a Timestamp from the function's clock.
+ */
+export function withReturnFeeSentBack(
+  raw: unknown,
+  requestId: string,
+  feeSentBackEgp: number,
+  at: unknown,
+): unknown[] {
+  if (!Array.isArray(raw)) return [];
+  const patch = { feeSentBackEgp: wholeOrZero(feeSentBackEgp), feeSentBackAt: at };
+  return raw.map((entry: unknown) =>
+    isRecord(entry) && entry['id'] === requestId ? { ...entry, ...patch } : entry,
+  );
+}
+
+// ── Courier fee sent back (ATS-307) ─────────────────────────────────────────
+
+/**
+ * The paid courier fee to send back when a request ends before pickup, whole EGP (ATS-307):
+ * - Cancel or Reject from Waiting for Payment: the fee when the shopper or staff tick that it was
+ *   already paid (`feeAlreadyPaid`).
+ * - Reject from Approved: the fee when staff confirmed the payment (`paymentReceivedAt`), always.
+ * - Anything else: 0 (no fee paid first, or the request had not reached payment).
+ */
+export function returnFeeBackEgp(
+  saved: Readonly<Record<string, unknown>>,
+  from: ReturnStatus,
+  feeAlreadyPaid: boolean,
+): number {
+  if (!returnPaysFirst(saved['feePaid'], saved['feeEgp'])) return 0;
+  const fee = wholeOrZero(saved['feeEgp']);
+  if (from === 'waiting-for-payment') return feeAlreadyPaid ? fee : 0;
+  if (from === 'approved') return saved['paymentReceivedAt'] ? fee : 0;
+  return 0;
+}
+
+/** When a Waiting for Payment request started waiting, epoch ms: `waitingForPaymentAt`, else `approvedAt`. */
+export function waitingForPaymentStartMs(saved: Readonly<Record<string, unknown>>): number | null {
+  return timestampMs(saved['waitingForPaymentAt']) ?? timestampMs(saved['approvedAt']);
+}
+
+/** The last moment the courier fee may arrive before the request cancels itself, epoch ms. */
+export function returnFeeCancelAtMs(startMs: number): number {
+  return startMs + RETURN_FEE_AUTO_CANCEL_DAYS * DAY_MS;
+}
+
+/**
+ * What the hourly schedule does with a request (ATS-307): `cancel` after 5 days still Waiting for
+ * Payment, `remind` after 2 days when no reminder was sent yet, else `none`.
+ */
+export function returnFeeChase(
+  saved: Readonly<Record<string, unknown>>,
+  nowMs: number,
+): 'none' | 'remind' | 'cancel' {
+  if (saved['status'] !== 'waiting-for-payment') return 'none';
+  const start = waitingForPaymentStartMs(saved);
+  if (start === null) return 'none';
+  if (nowMs >= returnFeeCancelAtMs(start)) return 'cancel';
+  if (nowMs >= start + RETURN_FEE_REMINDER_DAYS * DAY_MS && !saved['feeReminderSentAt']) return 'remind';
+  return 'none';
 }
 
 // ── Who and when ────────────────────────────────────────────────────────────

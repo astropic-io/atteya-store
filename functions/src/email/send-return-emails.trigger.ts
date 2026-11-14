@@ -110,7 +110,7 @@ async function sendOnce(
 }
 
 function recipientFor(kind: ReturnEmailKind, request: ReturnEmailRequest): string | null {
-  if (kind === 'store-return-request') {
+  if (kind === 'store-return-request' || kind === 'store-return-fee-reminder') {
     const alert = STORE_ALERT_EMAIL.value().trim();
     return alert.includes('@') ? alert : null;
   }

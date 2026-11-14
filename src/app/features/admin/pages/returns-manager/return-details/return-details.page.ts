@@ -24,6 +24,11 @@ import {
   type ApproveWrongItemDialogResult,
 } from '../dialogs/approve-wrong-item-dialog.component';
 import {
+  FeeSentBackDialogComponent,
+  type FeeSentBackDialogData,
+  type FeeSentBackDialogResult,
+} from '../dialogs/fee-sent-back-dialog.component';
+import {
   ReceiveReturnDialogComponent,
   type ReceiveReturnDialogData,
   type ReceiveReturnDialogResult,
@@ -43,6 +48,8 @@ import { ReturnsAdminService, type SentPieceChoice } from '../services/returns-a
 import {
   customerWhatsappUrl,
   egp,
+  feeBackLine,
+  feeBackOwed,
   feeLine,
   notReturnedMessage,
   productIdsOfRequest,
@@ -54,7 +61,7 @@ import {
   returnNextStep,
 } from '../utils/return-admin.utils';
 
-type ReturnAction = 'approve' | 'payment' | 'reject' | 'receive' | 'refund';
+type ReturnAction = 'approve' | 'payment' | 'reject' | 'receive' | 'refund' | 'fee-back';
 
 const DIALOG_WIDTH = '480px';
 
@@ -176,6 +183,18 @@ export class ReturnDetailsPageComponent implements OnInit {
   readonly canRefund = computed(() => this.#moves().includes('refund-sent') && this.isAdmin());
   readonly refundWaitsForAdmin = computed(() => this.#moves().includes('refund-sent') && !this.isAdmin());
 
+  /** "Fee to send back: EGP 115", then "Fee sent back: EGP 115 · 14 Nov" (ATS-307). */
+  readonly feeBack = computed(() => {
+    const request = this.request();
+    return request ? feeBackLine(request) : null;
+  });
+  readonly feeBackOwed = computed(() => {
+    const request = this.request();
+    return request ? feeBackOwed(request) : false;
+  });
+  /** Admin only; staff see the line but not the button (the server refuses staff too). */
+  readonly canSendFeeBack = computed(() => this.feeBackOwed() && this.isAdmin());
+
   ngOnInit(): void {
     this.#seo.setPageMetadata({
       title: 'Return Request | Atteya Admin',
@@ -263,6 +282,9 @@ export class ReturnDetailsPageComponent implements OnInit {
         // Approve took the new pieces, also while Waiting for Payment (ATS-303).
         approved: request.status === 'approved' || request.status === 'waiting-for-payment',
         stockLines: rejectStockLines(request, this.dataResource.value()?.products ?? new Map()),
+        feeLabel: returnPaysFirst(request.feePaid, request.feeEgp) ? egp(request.feeEgp) : null,
+        askFeePaid: request.status === 'waiting-for-payment',
+        feeComesBack: request.status === 'approved' && request.paymentReceivedAt !== null,
       },
       width: DIALOG_WIDTH,
     });
@@ -270,7 +292,7 @@ export class ReturnDetailsPageComponent implements OnInit {
     if (!result) return;
     await this.#run(
       'reject',
-      () => this.#returns.reject(request.id, result.reason),
+      () => this.#returns.reject(request.id, result.reason, result.feeAlreadyPaid),
       `Request ${request.ref} rejected.`,
     );
   }
@@ -328,6 +350,32 @@ export class ReturnDetailsPageComponent implements OnInit {
       () => this.#returns.refundSent(request.id, result.amountEgp, result.reference),
       `Refund saved. Request ${request.ref} is done.`,
     );
+  }
+
+  /** Fee Sent Back (admin only, ATS-307): the paid courier fee went back by InstaPay. */
+  async feeSentBack(): Promise<void> {
+    const request = this.request();
+    const fee = request?.feeBackEgp ?? 0;
+    if (!request || this.busy() || fee <= 0) return;
+    const ref = this.#dialog.open<FeeSentBackDialogComponent, FeeSentBackDialogData, FeeSentBackDialogResult>(
+      FeeSentBackDialogComponent,
+      {
+        data: { ref: request.ref, feeEgp: fee, feeLabel: egp(fee), refundTo: request.refundTo },
+        width: DIALOG_WIDTH,
+      },
+    );
+    const result = await firstValueFrom(ref.afterClosed());
+    if (!result) return;
+    this.busy.set('fee-back');
+    try {
+      await this.#returns.feeSentBack(request.id, result.amountEgp, result.sentTo, result.reference);
+      this.#snackbar.success(`Fee sent back saved. We emailed the customer.`);
+    } catch (error: unknown) {
+      this.#snackbar.error(returnActionError(error));
+    } finally {
+      this.busy.set(null);
+      this.dataResource.reload();
+    }
   }
 
   async #run(action: ReturnAction, call: () => Promise<ReturnStepResult>, done: string): Promise<void> {

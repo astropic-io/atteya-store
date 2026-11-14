@@ -56,12 +56,17 @@ export class ReturnsService {
     return (await call(data)).data;
   }
 
-  async cancelReturnRequest(requestId: string, viewKey: string | null): Promise<void> {
-    const call = await callableFrom<{ requestId: string; viewKey?: string }, unknown>(
-      this.#functions(),
-      'cancelReturnRequest',
-    );
-    await call(viewKey ? { requestId, viewKey } : { requestId });
+  /** `feeAlreadyPaid`: the shopper already sent the courier fee (Waiting for Payment only, ATS-307). */
+  async cancelReturnRequest(
+    requestId: string,
+    viewKey: string | null,
+    feeAlreadyPaid = false,
+  ): Promise<void> {
+    const call = await callableFrom<
+      { requestId: string; viewKey?: string; feeAlreadyPaid?: boolean },
+      unknown
+    >(this.#functions(), 'cancelReturnRequest');
+    await call({ requestId, ...(viewKey ? { viewKey } : {}), ...(feeAlreadyPaid ? { feeAlreadyPaid } : {}) });
   }
 
   /**

@@ -25,6 +25,8 @@ const DATE_TIME = new Intl.DateTimeFormat('en-GB', {
   minute: '2-digit',
 });
 
+const SHORT_DATE = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
+
 export function egp(amount: number): string {
   return formatMoney(amount, 'EGP', 0);
 }
@@ -51,6 +53,8 @@ export interface ReturnListRow {
   readonly pieces: string;
   readonly chips: readonly ReturnKindChip[];
   readonly money: string;
+  /** "Fee to send back: EGP 115" while a paid courier fee is still to send back (ATS-307). */
+  readonly feeBack: string | null;
   readonly createdAt: string;
   /** Lower-cased words the list search looks in. */
   readonly searchText: string;
@@ -72,6 +76,7 @@ export function returnListRow(request: ReturnRequestDoc): ReturnListRow {
       strong: kind === 'damaged' || kind === 'wrong-item',
     })),
     money: moneyLine(request),
+    feeBack: feeBackLine(request),
     createdAt: returnDate(request.createdAt),
     searchText: [
       request.ref,
@@ -96,6 +101,26 @@ export function moneyLine(request: ReturnRequestDoc): string {
     return `Exchange · ${egp(request.feeEgp)} courier fee by InstaPay`;
   }
   return 'Exchange · free visit';
+}
+
+/**
+ * The paid courier fee coming back (ATS-307): "Fee to send back: EGP 115" until Fee Sent Back,
+ * then "Fee sent back: EGP 115 · 14 Nov"; null when there is none.
+ */
+export function feeBackLine(request: ReturnRequestDoc): string | null {
+  const owed = request.feeBackEgp ?? 0;
+  if (owed <= 0) return null;
+  if (request.feeSentBackAt || request.feeSentBackEgp !== null) {
+    const date = orderDate(request.feeSentBackAt);
+    const sent = egp(request.feeSentBackEgp ?? owed);
+    return date ? `Fee sent back: ${sent} · ${SHORT_DATE.format(date)}` : `Fee sent back: ${sent}`;
+  }
+  return `Fee to send back: ${egp(owed)}`;
+}
+
+/** True while a paid courier fee is still to send back (ATS-307). */
+export function feeBackOwed(request: ReturnRequestDoc): boolean {
+  return (request.feeBackEgp ?? 0) > 0 && !request.feeSentBackAt && request.feeSentBackEgp === null;
 }
 
 /** How the courier fee is paid, in words. */
@@ -299,7 +324,10 @@ export function returnNextStep(request: ReturnRequestDoc): string | null {
     case 'received':
       return request.hasRefund ? `Send ${egp(request.refundEgp)} by InstaPay, then press Refund Sent.` : null;
     default:
-      return null;
+      // A paid courier fee to send back (ATS-307); an admin presses Fee Sent Back.
+      return feeBackOwed(request)
+        ? `Send the ${egp(request.feeBackEgp ?? 0)} courier fee back by InstaPay, then an admin presses Fee Sent Back.`
+        : null;
   }
 }
 
@@ -330,7 +358,7 @@ export function returnHistory(
     reason: null,
   };
   const staff = (notes?.history ?? []).map((entry) => ({
-    label: returnStatusLabel(entry.status),
+    label: entry.label || returnStatusLabel(entry.status),
     when: returnDate(entry.at),
     by: entry.byEmail || null,
     reason: entry.reason || null,

@@ -92,6 +92,21 @@
             }
           </button>
         }
+        @if (canSendFeeBack()) {
+          <button
+            matButton="filled"
+            type="button"
+            [disabled]="busy() !== null"
+            [attr.aria-label]="busy() === 'fee-back' ? 'Saving…' : null"
+            (click)="feeSentBack()"
+          >
+            @if (busy() === 'fee-back') {
+              <mat-progress-spinner mode="indeterminate" diameter="18" />
+            } @else {
+              <span>Fee Sent Back</span>
+            }
+          </button>
+        }
         @if (canRefund()) {
           <button
             matButton="filled"
@@ -116,6 +131,11 @@
         @if (refundWaitsForAdmin()) {
           An admin marks the refund as sent.
         }
+      </p>
+    }
+    @if (feeBack(); as line) {
+      <p class="admin-order-box font-body-md font-bold!" [class.text-error]="feeBackOwed()">
+        {{ line }}
       </p>
     }
     @if (r.rejectReason && r.status === 'rejected') {
@@ -179,6 +199,16 @@
             @if (m.sent; as sent) {
               <div class="admin-order-pair">
                 <span>Refund sent</span><span>{{ sent }}</span>
+              </div>
+            }
+            @if (r.feeSentBackTo; as to) {
+              <div class="admin-order-pair">
+                <span>Fee sent to</span><span class="break-all" dir="auto">{{ to }}</span>
+              </div>
+            }
+            @if (r.feeSentBackReference; as reference) {
+              <div class="admin-order-pair">
+                <span>Fee reference</span><span class="break-all">{{ reference }}</span>
               </div>
             }
             @if (r.refundReference; as reference) {

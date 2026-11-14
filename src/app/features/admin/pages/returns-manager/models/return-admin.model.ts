@@ -69,6 +69,15 @@ export const ReturnRequestSchema = v.object({
   refundSentEgp: v.optional(v.nullable(whole), null),
   refundReference: text,
   stockNotReturned: v.optional(v.nullable(whole), null),
+  /** Payment Received (ATS-303): a Reject after it saves the courier fee to send back (ATS-307). */
+  paymentReceivedAt: v.optional(v.nullable(timestampSchema), null),
+  /** A paid courier fee to send back (Rejected or Cancelled before pickup, ATS-307). */
+  feeBackEgp: v.optional(v.nullable(whole), null),
+  /** Fee Sent Back (admin, ATS-307). */
+  feeSentBackEgp: v.optional(v.nullable(whole), null),
+  feeSentBackTo: text,
+  feeSentBackReference: text,
+  feeSentBackAt: v.optional(v.nullable(timestampSchema), null),
   /** What Reject moves after Approve (saved at Approve since ATS-298); only its presence is read. */
   rejectStock: v.optional(v.nullable(v.unknown()), null),
   createdAt: v.optional(v.nullable(timestampSchema), null),
@@ -86,6 +95,8 @@ export const ReturnStaffNotesSchema = v.object({
         by: v.optional(v.string(), ''),
         byEmail: text,
         reason: text,
+        /** Words the server chose for this row ("Fee sent back: EGP 115", ATS-307). */
+        label: text,
       }),
     ),
     [],

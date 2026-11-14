@@ -6,6 +6,7 @@ import {
   approvePlan,
   mergeItemChoices,
   parseApprove,
+  parseFeeSentBack,
   parseRefundSent,
   parseReject,
   parseReceive,
@@ -367,6 +368,7 @@ describe('staff steps: refusals, undo and double clicks', () => {
     assert.deepEqual(parseReject({ requestId: 'abc123', reason: '  Worn  ' }), {
       requestId: 'abc123',
       reason: 'Worn',
+      feeAlreadyPaid: false,
     });
     assert.throws(() => parseReject({ requestId: 'abc123', reason: '' }), ReturnStepError);
     assert.throws(() => parseReject({ requestId: 'abc123', reason: 'x'.repeat(301) }), ReturnStepError);
@@ -479,5 +481,34 @@ describe('a Wrong Item Sent request rejected after Approve keeps holding its pie
     assert.deepEqual(rejectKeptItems({ ...request, stockUndoneAt: 'set' }), []);
     const { rejectStock: _legacy, ...older } = request;
     assert.deepEqual(rejectKeptItems(older), []);
+  });
+});
+
+describe('Fee Sent Back and the Reject checkbox (ATS-307)', () => {
+  it('reads the Reject checkbox', () => {
+    assert.equal(parseReject({ requestId: 'abc', reason: 'No', feeAlreadyPaid: true }).feeAlreadyPaid, true);
+    assert.equal(parseReject({ requestId: 'abc', reason: 'No' }).feeAlreadyPaid, false);
+  });
+
+  it('needs an amount and Sent to, and keeps the reference short', () => {
+    assert.deepEqual(
+      parseFeeSentBack({ requestId: 'abc', amountEgp: 115, sentTo: ' 0101 ', reference: '' }),
+      {
+        requestId: 'abc',
+        amountEgp: 115,
+        sentTo: '0101',
+        reference: null,
+      },
+    );
+    assert.throws(
+      () => parseFeeSentBack({ requestId: 'abc', amountEgp: 0, sentTo: '0101' }),
+      ReturnStepError,
+    );
+    assert.throws(() => parseFeeSentBack({ requestId: 'abc', amountEgp: 115, sentTo: ' ' }), ReturnStepError);
+    assert.throws(
+      () =>
+        parseFeeSentBack({ requestId: 'abc', amountEgp: 115, sentTo: '0101', reference: 'x'.repeat(101) }),
+      ReturnStepError,
+    );
   });
 });

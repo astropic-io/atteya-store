@@ -8,6 +8,8 @@
  */
 import { hasInstapayDetails, shopperWhatsappNumber } from '../store/order-messages.js';
 import {
+  RETURN_FEE_AUTO_CANCEL_DAYS,
+  returnFeeCancelAtMs,
   returnPaymentWhatsappText,
   returnPaysFirst,
   returnPhotosWhatsappText,
@@ -68,6 +70,14 @@ export function renderReturnEmail(
       return returnReceived(request, ctx);
     case 'return-refund-sent':
       return returnRefundSent(request, ctx);
+    case 'return-fee-reminder':
+      return returnFeeReminder(request, ctx);
+    case 'store-return-fee-reminder':
+      return storeReturnFeeReminder(request, ctx);
+    case 'return-auto-cancelled':
+      return returnAutoCancelled(request, ctx);
+    case 'return-fee-sent-back':
+      return returnFeeSentBack(request, ctx);
   }
 }
 
@@ -355,6 +365,30 @@ function returnApproved(request: ReturnEmailRequest, ctx: OrderEmailContext): Re
  */
 function returnApprovedPay(request: ReturnEmailRequest, ctx: OrderEmailContext): RenderedEmail {
   const fee = formatEgp(request.feeEgp);
+  const pay = payParts(request, ctx);
+  const body: EmailPart[] = [
+    ...pay.body,
+    labelled('Hand Over', handOverText(request)),
+    labelled('You Get', youGetText(request), 20),
+  ];
+  return shopperStatusEmail(request, ctx, {
+    subject: `Your return or exchange ${request.ref} is approved: please pay the courier fee`,
+    status: ['Request', 'Approved'],
+    sentence: `Please send the ${fee} courier fee by InstaPay. We send the courier once it arrives.`,
+    body,
+    hasWhatsappButton: pay.hasWhatsappButton,
+  });
+}
+
+/**
+ * The pay steps shared by the Approved (pay version) and fee reminder emails: the amount, how to
+ * send it by InstaPay, the screenshot step and **Send Screenshot on WhatsApp**.
+ */
+function payParts(
+  request: ReturnEmailRequest,
+  ctx: OrderEmailContext,
+): { body: EmailPart[]; hasWhatsappButton: boolean } {
+  const fee = formatEgp(request.feeEgp);
   const waNumber = ctx.whatsappNumber.trim();
   const hasDetails = hasInstapayDetails(ctx.instapay);
   // Without InstaPay details there is nothing to pay to yet: ask for them, never "I paid".
@@ -417,14 +451,123 @@ function returnApprovedPay(request: ReturnEmailRequest, ctx: OrderEmailContext):
       text: `${button.label}: ${waNumber} (${button.url})`,
     });
   }
-  body.push(labelled('Hand Over', handOverText(request)), labelled('You Get', youGetText(request), 20));
+  return { body, hasWhatsappButton: button !== null };
+}
+
+// Fee reminder, automatic cancel and Fee Sent Back (ATS-307)
+
+/** "19 Nov": the day an unpaid request cancels itself, or null when the start is unknown. */
+function feeDeadline(request: ReturnEmailRequest): string | null {
+  return request.waitingSinceMs === null ? null : shortDate(returnFeeCancelAtMs(request.waitingSinceMs));
+}
+
+/** Shopper: 2 days after Approve, the courier fee is still to pay; the pay steps again. */
+function returnFeeReminder(request: ReturnEmailRequest, ctx: OrderEmailContext): RenderedEmail {
+  const fee = formatEgp(request.feeEgp);
+  const by = feeDeadline(request);
+  const pay = payParts(request, ctx);
   return shopperStatusEmail(request, ctx, {
-    subject: `Your return or exchange ${request.ref} is approved: please pay the courier fee`,
-    status: ['Request', 'Approved'],
-    sentence: `Please send the ${fee} courier fee by InstaPay. We send the courier once it arrives.`,
-    body,
-    hasWhatsappButton: button !== null,
+    subject: `Your return ${request.ref} is waiting for the courier fee`,
+    status: ['Waiting for', 'Payment'],
+    sentence: `We're holding your request. Please send the ${fee} courier fee by InstaPay. ${
+      by
+        ? `If it doesn't arrive by ${by}, we'll cancel the request.`
+        : `If it doesn't arrive within ${RETURN_FEE_AUTO_CANCEL_DAYS} days of approval, we'll cancel the request.`
+    }`,
+    body: pay.body,
+    hasWhatsappButton: pay.hasWhatsappButton,
   });
+}
+
+/** Shopper: the request cancelled itself because the courier fee didn't arrive in 5 days. */
+function returnAutoCancelled(request: ReturnEmailRequest, ctx: OrderEmailContext): RenderedEmail {
+  const waNumber = ctx.whatsappNumber.trim();
+  const waLink = whatsappChatUrl(waNumber);
+  const wa: EmailButton | null = waLink ? { label: 'Message Us on WhatsApp', url: waLink } : null;
+  const body: EmailPart[] = [];
+  if (wa) {
+    body.push({
+      html: section(fullWidthLink(wa, 'outlined'), 24),
+      text: `${wa.label}: ${waNumber} (${wa.url})`,
+    });
+  }
+  return shopperStatusEmail(request, ctx, {
+    subject: `Your return ${request.ref} was cancelled`,
+    status: ['Request', 'Cancelled'],
+    sentence: `The courier fee didn't arrive within ${RETURN_FEE_AUTO_CANCEL_DAYS} days, so we cancelled this request. You can send a new one while your 14 days are open. If you already sent the fee, message us on WhatsApp.`,
+    body,
+    hasWhatsappButton: wa !== null,
+  });
+}
+
+/** Shopper: Fee Sent Back, the paid courier fee went back by InstaPay. */
+function returnFeeSentBack(request: ReturnEmailRequest, ctx: OrderEmailContext): RenderedEmail {
+  const amount = formatEgp(request.feeSentBackEgp);
+  const to = lastFour(request.feeSentBackTo);
+  const sentence = `We sent your ${amount} courier fee back by InstaPay${to ? ` to …${to}` : ''}.`;
+  const body: EmailPart[] = request.feeSentBackReference
+    ? [greyBox(`Reference: ${request.feeSentBackReference}`, null)]
+    : [];
+  return shopperStatusEmail(request, ctx, {
+    subject: `We sent your courier fee back for ${request.ref}`,
+    status: ['Fee Sent', 'Back'],
+    sentence,
+    body,
+  });
+}
+
+/** "We'll send your EGP 115 courier fee back by InstaPay." while a paid fee is still to send back. */
+function feeBackLine(request: ReturnEmailRequest): string | null {
+  return request.feeBackEgp > 0 && !request.feeSentBack
+    ? `We'll send your ${formatEgp(request.feeBackEgp)} courier fee back by InstaPay.`
+    : null;
+}
+
+/** Staff: 2 days after Approve the courier fee hasn't been marked as paid. */
+function storeReturnFeeReminder(request: ReturnEmailRequest, ctx: OrderEmailContext): RenderedEmail {
+  const fee = formatEgp(request.feeEgp);
+  const by = feeDeadline(request);
+  const subject = `Still Waiting for the Courier Fee: ${request.ref} – Order ${request.orderRef}`;
+  const kicker = 'Waiting for Payment';
+  const refLine = `For order ${request.orderRef} · courier fee ${fee}`;
+  const note = by
+    ? `If nothing arrives, the request cancels itself on ${by} and the held pieces go back into stock.`
+    : `If nothing arrives, the request cancels itself ${RETURN_FEE_AUTO_CANCEL_DAYS} days after approval and the held pieces go back into stock.`;
+  const action = 'Still waiting for the courier fee. If it arrived, press Payment Received.';
+  const customer = staffCustomer(request, ctx);
+  const button = ctx.storefrontUrl
+    ? { label: 'Open Request', url: `${ctx.storefrontUrl}/admin/returns/${encodeURIComponent(request.id)}` }
+    : null;
+  const html = emailDocument(subject, [
+    staffHeader({
+      storeName: ctx.storeName,
+      kicker,
+      amount: request.ref,
+      amountNote: null,
+      refLine,
+      sentence: null,
+    }),
+    section(nextStepBox(action, note), 32),
+    customer.html,
+    button ? mainButton(button) : '',
+    SPACER,
+    footer({
+      storeName: ctx.storeName,
+      line: STAFF_FOOTER,
+      button: null,
+      site: '',
+      siteUrl: '',
+      wordmark: false,
+    }),
+  ]);
+  const text = joinText([
+    joinLines([kicker, request.ref, refLine]),
+    joinLines([`Next Step: ${action}`, note]),
+    customer.text,
+    button ? `${button.label}: ${button.url}` : null,
+    STAFF_FOOTER,
+  ]);
+  return { subject, html, text };
 }
 
 /** Payment Received (ATS-303): Waiting for Payment → Approved; the courier is on the way. */
@@ -501,6 +644,8 @@ function returnRejected(request: ReturnEmailRequest, ctx: OrderEmailContext): Re
   const wa: EmailButton | null = waLink ? { label: 'Message Us on WhatsApp', url: waLink } : null;
   const body: EmailPart[] = [];
   if (request.rejectReason) body.push(greyBox(`"${request.rejectReason}"`, 'Our Reason'));
+  const feeBack = feeBackLine(request);
+  if (feeBack) body.push(greyBox(feeBack, null, 16));
   if (wa) {
     body.push({
       html: section(fullWidthLink(wa, 'outlined'), 24),

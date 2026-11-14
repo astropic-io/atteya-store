@@ -22,7 +22,24 @@ export type ReturnEmailKind =
   /** Shopper: "Items Received" (Approved → Received). */
   | 'return-received'
   /** Shopper: "Refund Sent" (Received → Refund Sent). */
-  | 'return-refund-sent';
+  | 'return-refund-sent'
+  /** Shopper: the courier fee is still to pay, 2 days after Approve (ATS-307). */
+  | 'return-fee-reminder'
+  /** Staff alert: still waiting for the courier fee, 2 days after Approve (ATS-307). */
+  | 'store-return-fee-reminder'
+  /** Shopper: the request cancelled itself, the fee didn't arrive in 5 days (ATS-307). */
+  | 'return-auto-cancelled'
+  /** Shopper: "Fee Sent Back", the paid courier fee went back by InstaPay (ATS-307). */
+  | 'return-fee-sent-back';
+
+/** What the choice of email reads from the request before and after a write. */
+export type ReturnEmailState = Pick<ReturnEmailRequest, 'status'> &
+  Partial<
+    Pick<
+      ReturnEmailRequest,
+      'refundSentEgp' | 'feeReminderSent' | 'feeSentBack' | 'feeSentBackEgp' | 'cancelledBy'
+    >
+  >;
 
 /** `returnEmails` document id: one per (request, email). */
 export function returnClaimId(kind: ReturnEmailKind, request: Pick<ReturnEmailRequest, 'id'>): string {
@@ -47,16 +64,37 @@ const STATUS_EMAILS: Partial<
  * A new request (created as Requested) sends the staff alert and the shopper's "Request Sent".
  * A staff step forward sends the matching shopper email (`STATUS_EMAILS`). A Refund Sent of
  * EGP 0 (the courier fee used up the refund) sends nothing: the Received email already said so.
+ * ATS-307: the schedule's fee reminder sends the shopper and staff reminders, its automatic cancel
+ * sends "was cancelled", and Fee Sent Back sends the shopper its email; the shopper's own Cancel
+ * still sends nothing.
  */
 export function returnEmailsForWrite(
-  before: Pick<ReturnEmailRequest, 'status'> | null,
-  after: Pick<ReturnEmailRequest, 'status' | 'refundSentEgp'> | null,
+  before: ReturnEmailState | null,
+  after: (ReturnEmailState & Pick<ReturnEmailRequest, 'refundSentEgp'>) | null,
 ): ReturnEmailKind[] {
   if (!after) return [];
   if (before === null) {
     return after.status === 'requested' ? ['store-return-request', 'return-requested'] : [];
   }
+  if (after.feeSentBack === true && before.feeSentBack !== true && (after.feeSentBackEgp ?? 0) > 0) {
+    return ['return-fee-sent-back'];
+  }
+  if (
+    before.status === 'waiting-for-payment' &&
+    after.status === 'waiting-for-payment' &&
+    after.feeReminderSent === true &&
+    before.feeReminderSent !== true
+  ) {
+    return ['return-fee-reminder', 'store-return-fee-reminder'];
+  }
   if (before.status === after.status) return [];
+  if (
+    before.status === 'waiting-for-payment' &&
+    after.status === 'cancelled' &&
+    after.cancelledBy === 'system'
+  ) {
+    return ['return-auto-cancelled'];
+  }
   // Payment Received: Waiting for Payment → Approved sends its own email, not a second Approved.
   if (before.status === 'waiting-for-payment' && after.status === 'approved') {
     return ['return-payment-received'];

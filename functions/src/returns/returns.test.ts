@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import * as shared from '../../lib/store/returns.js';
 import {
   courierFeeEgp,
   giftsBack,
@@ -819,3 +820,47 @@ function summary(status: ReturnSummary['status'], hasRefund: boolean): ReturnSum
     createdAtMs: null,
   };
 }
+
+describe('courier fee sent back and the fee chase (ATS-307)', () => {
+  const paid = { feePaid: 'instapay-first', feeEgp: 115 };
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it('the fee comes back only when it was paid', () => {
+    assert.equal(shared.returnFeeBackEgp(paid, 'waiting-for-payment', true), 115);
+    assert.equal(shared.returnFeeBackEgp(paid, 'waiting-for-payment', false), 0);
+    assert.equal(shared.returnFeeBackEgp({ ...paid, paymentReceivedAt: 1 }, 'approved', false), 115);
+    assert.equal(shared.returnFeeBackEgp(paid, 'approved', false), 0);
+    assert.equal(shared.returnFeeBackEgp(paid, 'requested', true), 0);
+    assert.equal(shared.returnFeeBackEgp({ feePaid: 'free', feeEgp: 0 }, 'waiting-for-payment', true), 0);
+  });
+
+  it('reminds after 2 days once and cancels after 5, from waitingForPaymentAt or approvedAt', () => {
+    const start = Date.UTC(2026, 10, 14);
+    const waiting = { status: 'waiting-for-payment', waitingForPaymentAt: start };
+    assert.equal(shared.returnFeeChase(waiting, start + DAY), 'none');
+    assert.equal(shared.returnFeeChase(waiting, start + 2 * DAY), 'remind');
+    assert.equal(shared.returnFeeChase({ ...waiting, feeReminderSentAt: 1 }, start + 3 * DAY), 'none');
+    assert.equal(shared.returnFeeChase({ ...waiting, feeReminderSentAt: 1 }, start + 5 * DAY), 'cancel');
+    assert.equal(
+      shared.returnFeeChase({ status: 'waiting-for-payment', approvedAt: start }, start + 5 * DAY),
+      'cancel',
+    );
+    assert.equal(shared.returnFeeChase({ ...waiting, status: 'approved' }, start + 6 * DAY), 'none');
+  });
+
+  it('the order summary carries the fee to send back and the amount sent, never Sent to', () => {
+    const raw = [{ id: 'r1', status: 'waiting-for-payment' }];
+    const rejected = shared.withReturnStatus(raw, 'r1', 'rejected', { feeBackEgp: 115 });
+    assert.equal((rejected[0] as Record<string, unknown>)['feeBackEgp'], 115);
+    const none = shared.withReturnStatus(raw, 'r1', 'approved', { feeBackEgp: 115 });
+    assert.equal((none[0] as Record<string, unknown>)['feeBackEgp'], undefined);
+    const sent = shared.withReturnFeeSentBack(rejected, 'r1', 115, 'AT') as Record<string, unknown>[];
+    assert.deepEqual(Object.keys(sent[0]!).sort(), [
+      'feeBackEgp',
+      'feeSentBackAt',
+      'feeSentBackEgp',
+      'id',
+      'status',
+    ]);
+  });
+});

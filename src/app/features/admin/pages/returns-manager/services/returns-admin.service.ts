@@ -167,8 +167,9 @@ export class ReturnsAdminService {
     return this.#step('confirmReturnPayment', { requestId });
   }
 
-  reject(requestId: string, reason: string): Promise<ReturnStepResult> {
-    return this.#step('rejectReturnRequest', { requestId, reason });
+  /** `feeAlreadyPaid`: Waiting for Payment only, the customer already paid the courier fee (ATS-307). */
+  reject(requestId: string, reason: string, feeAlreadyPaid = false): Promise<ReturnStepResult> {
+    return this.#step('rejectReturnRequest', { requestId, reason, feeAlreadyPaid });
   }
 
   receive(
@@ -181,6 +182,16 @@ export class ReturnsAdminService {
   /** Admin only (the server checks the role too). */
   refundSent(requestId: string, amountEgp: number, reference: string | null): Promise<ReturnStepResult> {
     return this.#step('markRefundSent', { requestId, amountEgp, reference });
+  }
+
+  /** Fee Sent Back (admin only, the server checks the role too; ATS-307). */
+  feeSentBack(
+    requestId: string,
+    amountEgp: number,
+    sentTo: string,
+    reference: string | null,
+  ): Promise<ReturnStepResult> {
+    return this.#step('markFeeSentBack', { requestId, amountEgp, sentTo, reference });
   }
 
   async #step(name: string, payload: object): Promise<ReturnStepResult> {
