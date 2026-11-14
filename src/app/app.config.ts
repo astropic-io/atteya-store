@@ -1,9 +1,7 @@
-import { isPlatformBrowser } from '@angular/common';
 import {
   ApplicationConfig,
   ErrorHandler,
   inject,
-  PLATFORM_ID,
   provideAppInitializer,
   provideBrowserGlobalErrorListeners,
 } from '@angular/core';
@@ -17,7 +15,6 @@ import {
   withNavigationErrorHandler,
 } from '@angular/router';
 import { AppErrorHandler, isChunkLoadError, PageLoadErrorService } from '@core/services/errors';
-import { BrowsingAccountService } from '@core/services/currency/browsing-account.service';
 import { MetaPixelService } from '@core/services/analytics/meta-pixel.service';
 import { StorefrontPreloadingStrategy } from '@core/routing/storefront-preloading.strategy';
 import { provideClientHydration } from '@angular/platform-browser';
@@ -81,9 +78,5 @@ export const appConfig: ApplicationConfig = {
 
     // Meta Pixel for the client's ads: browser only, live store only (ATS-290).
     provideAppInitializer(() => inject(MetaPixelService).start()),
-    // Browsing prices follow the signed-in shopper's saved address (ATS-317).
-    provideAppInitializer(() => {
-      if (isPlatformBrowser(inject(PLATFORM_ID))) inject(BrowsingAccountService);
-    }),
   ],
 };

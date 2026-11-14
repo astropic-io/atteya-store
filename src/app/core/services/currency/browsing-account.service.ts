@@ -7,7 +7,7 @@ import { CurrencyService } from './currency.service';
 /**
  * ATS-317: tells `CurrencyService` who is signed in and the country of their saved address, so
  * browsing prices follow it on a phone or browser that remembers no later choice. One read of
- * `users/{uid}` per sign-in. Created once in the browser by `provideAppInitializer` in `app.config.ts`.
+ * `users/{uid}` per sign-in. Created by `MainLayoutComponent`, so store pages only (never `/admin`).
  */
 @Service()
 export class BrowsingAccountService {
@@ -34,9 +34,9 @@ export class BrowsingAccountService {
         return;
       }
       if (this.#savedCountry.isLoading()) return;
-      // A failed read: no saved country this visit (the remembered country or the guess decide).
+      // A failed read keeps the saved country last seen for this account (`undefined`).
       const loaded = this.#savedCountry.hasValue() ? this.#savedCountry.value() : null;
-      const country = loaded?.uid === uid ? loaded.country : null;
+      const country = loaded?.uid === uid ? loaded.country : undefined;
       untracked(() => this.#currency.setAccount(uid, country));
     });
   }

@@ -15,7 +15,7 @@ import { injectFirestore } from '@core/firebase';
 import { environment } from '@env/environment';
 import { EGP_ENTRY, isUnreliableCurrency, type CurrencyEntry } from '@core/services/offers/engine';
 import { SIGNED_IN_HINT_KEY } from '@core/services/auth/signed-in-hint';
-import { browsingTarget, preferredCountry, type BrowsingChoice } from './browsing-currency';
+import { browsingTarget, isoCountry, preferredCountry, type BrowsingChoice } from './browsing-currency';
 import { COUNTRY_CURRENCY } from './country-currency';
 import {
   currencyFromCountry,
@@ -83,6 +83,10 @@ export class CurrencyService {
   /** The guess from geo and time zone; null until worked out in the browser. */
   #guess: BrowsingChoice | null = null;
   #booted = false;
+  /** The currency the last settled render was asked for (a fallback may show USD or EGP instead). */
+  #settledFor: string | null = null;
+  #bootTransfer: CurrencyBootTransfer | null = null;
+  #guessing: Promise<void> | null = null;
   /** Signed-in account and its saved address country (`setAccount`); first from the stored hint. */
   #uid: string | null = null;
   #savedCountry: string | null = null;
@@ -120,9 +124,11 @@ export class CurrencyService {
    * ATS-317: the signed-in account (null when signed out) and the country of its saved address
    * (null when it has none). Browsing prices follow it when this browser remembers no later choice.
    */
-  setAccount(uid: string | null, savedCountry: string | null): void {
+  setAccount(uid: string | null, savedCountry: string | null | undefined): void {
     if (!isPlatformBrowser(this.#platformId)) return;
-    const country = savedCountry?.trim().toUpperCase() || null;
+    // `undefined`: the read failed, so keep what was last seen for this same account.
+    const kept = uid !== null && uid === this.#uid ? this.#savedCountry : null;
+    const country = savedCountry === undefined ? kept : isoCountry(savedCountry);
     this.#uid = uid;
     this.#savedCountry = uid ? country : null;
     storeSavedCountryHint(uid ? { uid, country: this.#savedCountry } : null);
@@ -131,18 +137,20 @@ export class CurrencyService {
 
   /** ATS-317: the shopper picked this delivery country at checkout; browsing prices follow it. */
   rememberCheckoutCountry(country: string): void {
-    if (!isPlatformBrowser(this.#platformId)) return;
-    storeRememberedCountry(country, this.#uid);
+    const iso = isoCountry(country);
+    if (!isPlatformBrowser(this.#platformId) || !iso) return;
+    storeRememberedCountry(iso, this.#uid);
     void this.#reconcile();
   }
 
   /** ATS-317: the shopper saved an address in this country (Account, or the first order). */
   rememberSavedAddressCountry(uid: string, country: string): void {
-    if (!isPlatformBrowser(this.#platformId)) return;
-    storeRememberedCountry(country, uid);
+    const iso = isoCountry(country);
+    if (!isPlatformBrowser(this.#platformId) || !iso) return;
+    storeRememberedCountry(iso, uid);
     if (uid === this.#uid) {
-      this.#savedCountry = country;
-      storeSavedCountryHint({ uid, country });
+      this.#savedCountry = iso;
+      storeSavedCountryHint({ uid, country: iso });
     }
     void this.#reconcile();
   }
@@ -203,10 +211,9 @@ export class CurrencyService {
     const transferred = this.#transfer.get(CURRENCY_BOOT_KEY, null);
     this.#transfer.remove(CURRENCY_BOOT_KEY);
     if (transferred?.map) this.#map ??= transferred.map;
+    this.#bootTransfer = transferred;
     this.#booted = true;
-    // `?cur=` or a country the shopper told us needs no guess: show it straight away.
-    await this.#reconcile();
-    this.#guess = await this.#resolveGuess(transferred);
+    // `?cur=` or a country the shopper told us needs no guess (and no lookup): shown straight away.
     await this.#reconcile();
   }
 
@@ -243,10 +250,18 @@ export class CurrencyService {
   /** Moves the prices to `#target()` when it differs from what is shown. */
   async #reconcile(): Promise<void> {
     if (!this.#booted) return;
-    const target = this.#target();
-    if (!target) return;
+    let target = this.#target();
+    if (!target) {
+      // Only now is the guess needed (geo lookup or time zone); worked out once per visit.
+      this.#guessing ??= this.#resolveGuess(this.#bootTransfer).then((guess) => {
+        this.#guess = guess;
+      });
+      await this.#guessing;
+      target = this.#target();
+      if (!target) return;
+    }
     if (target.country !== null || this.#queryCode === null) this.#visitorCountry.set(target.country);
-    if (this.#settled && this.#selected() === target.currency) {
+    if (this.#settled && this.#settledFor === target.currency) {
       this.#syncDocumentHints(this.#visitorCountry(), true, false);
       return;
     }
@@ -297,6 +312,7 @@ export class CurrencyService {
       return;
     }
     const differs = this.#preferenceDiffers(transferred.code);
+    this.#settledFor = transferred.code;
     if (transferred.code === 'EGP') {
       this.#apply(EGP_ENTRY);
       this.#settled = !differs;
@@ -326,6 +342,7 @@ export class CurrencyService {
     options: { pendingIntl: boolean },
   ): Promise<void> {
     this.#clearTimer();
+    this.#settledFor = code;
     if (country !== null) this.#visitorCountry.set(country);
     if (code === 'EGP') {
       this.#generation += 1;

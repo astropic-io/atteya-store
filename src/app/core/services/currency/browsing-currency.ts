@@ -131,7 +131,8 @@ export function browsingTarget(
   return guess;
 }
 
-function isoCountry(country: string | null | undefined): string | null {
+/** A two-letter ISO country in capitals, or null. */
+export function isoCountry(country: string | null | undefined): string | null {
   const iso = country?.trim().toUpperCase() ?? '';
   return /^[A-Z]{2}$/.test(iso) ? iso : null;
 }

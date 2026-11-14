@@ -1854,11 +1854,22 @@ describe('browsing currency follows the country the shopper told us (ATS-317)', 
     );
   });
 
-  it('Scenario C: picking Qatar again at checkout brings QAR back', () => {
-    assert.deepEqual(target(null, { uid: 'u1', savedCountry: 'QA', remembered: remembered('QA', 'u1', 0) }), {
+  it('Scenario C: after picking Egypt, picking Qatar again or editing the saved address brings QAR back', () => {
+    const afterEgypt = { uid: 'u1', savedCountry: 'QA', remembered: remembered('EG', 'u1', 2) };
+    assert.deepEqual(target(null, afterEgypt), egyptGuess);
+    // The newer pick replaces the remembered country (one per browser).
+    assert.deepEqual(target(null, { ...afterEgypt, remembered: remembered('QA', 'u1', 0) }), {
       country: 'QA',
       currency: 'QAR',
     });
+    // Editing the saved address to Saudi Arabia remembers that country too.
+    assert.deepEqual(
+      target(null, { ...afterEgypt, savedCountry: 'SA', remembered: remembered('SA', 'u1', 0) }),
+      {
+        country: 'SA',
+        currency: 'SAR',
+      },
+    );
   });
 
   it('a guest who picks Qatar at checkout sees QAR, and Egypt again brings the Egypt price', () => {

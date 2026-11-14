@@ -1134,7 +1134,8 @@ export class CheckoutPageComponent implements OnInit {
    */
   async #saveFirstAddress(shipping: CheckoutShippingInput): Promise<void> {
     const uid = this.#auth.user()?.uid;
-    if (!uid) return;
+    // Already known to have a saved address: nothing to read or write.
+    if (!uid || (this.#savedAddress.hasValue() && this.#savedAddress.value() !== null)) return;
     try {
       const saved = await this.#profiles.saveAddressIfNone(uid, {
         fullName: shipping.fullName,
@@ -1273,8 +1274,12 @@ export class CheckoutPageComponent implements OnInit {
           guest: guest ? { email: guest } : null,
         });
         if (guest) rememberGuestOrder(result.orderId, { key: result.viewKey ?? null, email: guest });
-        // Wait for the account bag (and a first saved address) to save before the redirect to Paymob.
-        await Promise.all([this.#cart.clear(), this.#saveFirstAddress(shipping)]);
+        // Wait for the account bag to save before the full-page redirect to Paymob, and give a first
+        // saved address a moment (never more than 1.5 s: paying matters more).
+        await Promise.all([
+          this.#cart.clear(),
+          Promise.race([this.#saveFirstAddress(shipping), new Promise((done) => setTimeout(done, 1500))]),
+        ]);
         if (isPlatformBrowser(this.#platformId)) {
           window.location.assign(result.checkoutUrl);
           return;

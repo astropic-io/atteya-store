@@ -59,6 +59,7 @@
               if (!uid || !rc.uid || rc.uid === uid) pref = rc.country;
             }
             if (!pref && sc && typeof sc.country === 'string') pref = sc.country;
+            if (!/^[A-Z]{2}$/.test(pref)) pref = '';
           } catch (e) {}
           var shown = r.hasAttribute('data-cur-by-zone') ? '' : r.getAttribute('data-visitor-country') || '';
           if (pref === 'EG' && (shown === 'EG' || r.hasAttribute('data-cur-by-zone'))) {
