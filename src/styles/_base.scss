@@ -20,25 +20,8 @@
     border-radius: 12px;
   }
 }
-// Hide storefront prices until a foreign currency is applied.
-// visibility keeps the reserved box, so the page does not jump.
-html[data-cur-pending] app-product-price,
-html[data-cur-pending] .product-card__bundle-tag--money {
-  visibility: hidden;
-}
-
-// The domestic shipping bar is in the server HTML as EGP. Drop it before
-// first paint while a foreign currency is still resolving, so it does not
-// flash and then collapse. Egypt never sets data-cur-pending.
-/* EGP-only shipping message in the announcement bar: hidden while the currency is pending. */
-html[data-cur-pending] app-announcement-bar[data-shipping-only],
-html[data-cur-pending] .announcement-bar__slide--shipping {
-  display: none;
-}
-
-html[data-cur-pending] .pdp-shipping-line {
-  display: none;
-}
+// The price-hiding rules for `html[data-cur-pending]` / `html[data-cur-moved]` live in the inline
+// <style> in src/index.html (ATS-323): first paint has to have them, and this file loads after it.
 
 body {
   height: 100%;

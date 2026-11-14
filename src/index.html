@@ -14,6 +14,25 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Atteya" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <!--
+      Currency first paint (ATS-323), the only home of these rules: the script below sets
+      data-cur-pending before the first frame, and the full stylesheet loads after it.
+      data-cur-moved (CurrencyService): prices differ from the server HTML, so a price a waiting
+      @defer block still shows from the server stays hidden until that block hydrates.
+    -->
+    <style>
+      html[data-cur-pending] app-product-price,
+      html[data-cur-pending] .product-card__bundle-tag--money,
+      html[data-cur-moved] app-product-price:not([data-cur-live]),
+      html[data-cur-moved] .product-card__bundle-tag--money:not([data-cur-live]) {
+        visibility: hidden;
+      }
+      html[data-cur-pending] app-announcement-bar[data-shipping-only],
+      html[data-cur-pending] .announcement-bar__slide--shipping,
+      html[data-cur-pending] .pdp-shipping-line {
+        display: none;
+      }
+    </style>
     <script>
       try {
         var r = document.documentElement;

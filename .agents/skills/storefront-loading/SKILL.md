@@ -34,6 +34,13 @@ Shared chrome that depends on **client Firebase** or **async settings**:
 | Announcement bar (offer slides) | `bannerOffersResolver` → `banner-offers`; `BannerOffersService.shellReady()` (seed, first `OffersService` snapshot, or 2.5 s timeout) |
 | Navigation | `navigationSettingsResolver` → `navigation-settings`; `catalogSettingsResolver` → `catalog-settings`; `NavService.shellReady()`; CSR `getDoc` before `onSnapshot` on both docs; desktop nav waits for `navLinksReady()` (nav + `CatalogService.shellReady()`) |
 
+**Currency first paint (<KEY>-323), one fact per line:**
+
+- The `html[data-cur-pending]` and `html[data-cur-moved]` price rules live only in the inline `<style>` in `src/index.html`, next to the early script. Critical CSS never includes them (server HTML has neither attribute) and the full stylesheet loads after first paint, so they cannot live in `_base.scss`.
+- `CurrencyService` removes `data-cur-pending` only after Angular has drawn the new prices (`#showSettled`, `afterNextRender`) whenever prices were hidden in the browser: time zone, remembered country, saved address, or the EGP fallback. Visitors in Egypt with no remembered country abroad never have it set, so nothing waits for them.
+- `html[data-cur-moved]` is set while the shown currency differs from the server HTML's. A `@defer (hydrate on viewport)` block (home rows) keeps the server's prices until it hydrates, so any `app-product-price` or money bundle tag without `data-cur-live` stays hidden until its block hydrates. Other money text inside a `hydrate on viewport` block is not covered: add the mark and a selector in `index.html` for it.
+- A new storefront price element mounts `data-cur-live` with `injectCurrencyLiveMark()` (`@core/services/currency/currency-live`), as `app-product-price` and the product card's money tag do.
+
 **Policy:** On **initial storefront load**, do not show shipping/nav-dependent chrome until **`ShellReadyService.chromeReady()`** is true. **`ready()`** also waits for auth in the browser. `MainLayoutComponent` uses a one-time `<app-loader>` overlay until `chromeReady()` (route changes keep the top pulse only). Focus-chrome routes (`data: FOCUS_CHROME`: `/login`, `/checkout`) show only the logo bar and skip that overlay, so a page there must handle its own loading (checkout waits for `CurrencyService.ready()`).
 
 **SSR:** Seed settings the chrome shows via `getDoc` + `TransferState` so first HTML matches Egypt/EGP paths where applicable.
