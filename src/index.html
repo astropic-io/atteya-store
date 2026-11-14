@@ -30,6 +30,15 @@
           } else {
             r.setAttribute('data-cur-pending', '');
           }
+          // Country unknown on the server (ATS-313): it rendered the Egypt price, which is right
+          // for a browser in Egypt, so show it now; elsewhere the app picks by time zone.
+          if (!c && r.hasAttribute('data-cur-by-zone')) {
+            var tz = '';
+            try {
+              tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+            } catch (e) {}
+            if (tz === 'Africa/Cairo') r.removeAttribute('data-cur-pending');
+          }
         }
       } catch (e) {}
       // Signed in on this device (signed-in-hint.ts, ATS-287): footer.css hides the email sign-up.

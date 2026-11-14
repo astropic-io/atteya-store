@@ -28,7 +28,7 @@ Shared chrome that depends on **client Firebase** or **async settings**:
 
 | Source | Gate / seed |
 |--------|-------------|
-| Currency | `CurrencyService.ready()`; EGP-only copy hidden while pending (`html[data-cur-pending]`) |
+| Currency | `CurrencyService.ready()`; EGP-only copy hidden while pending (`html[data-cur-pending]`). Unknown country on the server: SSR renders EGP with prices hidden (`data-cur-pending` + `data-cur-by-zone`, transfer `code: null`); the inline script shows them at once for an `Africa/Cairo` browser and the app picks by time zone elsewhere, so no price flashes. Offer text that names an EGP amount is not hidden while pending |
 | Auth | `AuthService.isAuthReady()` (browser only; account control) |
 | Announcement bar (shipping slide) | `shippingSettingsResolver` → `shipping-settings`; `ShippingSettingsService.shellReady()` |
 | Announcement bar (offer slides) | `bannerOffersResolver` → `banner-offers`; `BannerOffersService.shellReady()` (seed, first `OffersService` snapshot, or 2.5 s timeout) |
