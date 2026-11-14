@@ -1,5 +1,16 @@
 import { isPlatformBrowser } from '@angular/common';
-import { Component, effect, inject, OnInit, PLATFORM_ID, resource, signal, untracked } from '@angular/core';
+import {
+  Component,
+  computed,
+  effect,
+  inject,
+  OnInit,
+  PLATFORM_ID,
+  resource,
+  signal,
+  untracked,
+} from '@angular/core';
+import { MatAutocompleteModule, type MatAutocompleteSelectedEvent } from '@angular/material/autocomplete';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatCheckboxModule } from '@angular/material/checkbox';
@@ -12,6 +23,7 @@ import { injectFirestore } from '@core/firebase';
 import { AuthService } from '@core/services/auth/auth.service';
 import { SeoService } from '@core/services/seo';
 import {
+  DEFAULT_DELIVERY_COUNTRIES,
   EGYPT_GOVERNORATES,
   formatCairoDateTimeInput,
   governorateSetting,
@@ -30,6 +42,7 @@ import { SnackbarService } from '@core/services/snack-bar/snack-bar.service';
 import { SharedIconModule } from '@shared/ui/mat-icon';
 import { SkeletonComponent } from '@shared/ui/skeleton';
 import { createValibotConverter } from '@shared/utils/firebase/firestore-converter';
+import { countryLabel, filterCheckoutCountries } from '@features/checkout/utils/checkout-countries';
 
 type RegionTab = 'egypt' | 'international';
 
@@ -57,6 +70,8 @@ interface ShippingDraft {
   note: string;
   /** Egypt extra fee (as typed) and switch per governorate id. */
   governorates: Record<string, GovernorateDraft>;
+  /** Countries abroad with a set shipping price (ATS-314), ISO codes, A to Z by name. */
+  deliveryCountries: string[];
 }
 
 interface GovernorateDraft {
@@ -100,6 +115,7 @@ const EMPTY_DRAFT: ShippingDraft = {
   promoBanner: '',
   note: '',
   governorates: governorateDrafts({}),
+  deliveryCountries: byCountryName(DEFAULT_DELIVERY_COUNTRIES),
 };
 
 function toDate(raw: unknown): Date | null {
@@ -119,6 +135,11 @@ function toDate(raw: unknown): Date | null {
   return null;
 }
 
+/** ISO codes sorted A to Z by country name. */
+function byCountryName(codes: readonly string[]): string[] {
+  return [...codes].sort((a, b) => countryLabel(a).localeCompare(countryLabel(b), 'en'));
+}
+
 /** Whole pounds from 0 to 1,000, or null for anything else (an empty box included). */
 function parseExtraFee(raw: string): number | null {
   const text = raw.trim();
@@ -131,6 +152,7 @@ function parseExtraFee(raw: string): number | null {
   selector: 'app-shipping-tab',
   host: { class: 'block w-full' },
   imports: [
+    MatAutocompleteModule,
     MatButtonModule,
     MatButtonToggleModule,
     MatCheckboxModule,
@@ -164,6 +186,16 @@ export class ShippingTabComponent implements OnInit {
   readonly formatInput = formatCairoDateTimeInput;
   readonly governorateList = EGYPT_GOVERNORATES;
   readonly maxExtraFee = MAX_GOVERNORATE_EXTRA_FEE_EGP;
+  readonly countryName = countryLabel;
+  /** What is typed in Delivery Countries → Add a Country. */
+  readonly countryQuery = signal('');
+  /** Countries that can still be added: every country but Egypt and the ones already listed. */
+  readonly countryOptions = computed(() => {
+    const listed = new Set(this.draft().deliveryCountries);
+    return filterCheckoutCountries(this.countryQuery()).filter(
+      (option) => option.code !== 'EG' && !listed.has(option.code),
+    );
+  });
 
   readonly settingsResource = resource({
     loader: async () => {
@@ -194,6 +226,7 @@ export class ShippingTabComponent implements OnInit {
           promoBanner: data.promo.banner ?? '',
           note: data.note,
           governorates: governorateDrafts(data.egyptGovernorates),
+          deliveryCountries: byCountryName(data.deliveryCountries ?? DEFAULT_DELIVERY_COUNTRIES),
         }),
       );
     });
@@ -253,6 +286,25 @@ export class ShippingTabComponent implements OnInit {
     this.draft.update((prev) => ({
       ...prev,
       governorates: { ...prev.governorates, [id]: { ...prev.governorates[id], ...change } },
+    }));
+  }
+
+  /** Delivery Countries: a country picked from the search box is added to the list. */
+  addDeliveryCountry(event: MatAutocompleteSelectedEvent, input: HTMLInputElement): void {
+    const code = String(event.option.value);
+    this.draft.update((prev) =>
+      code === 'EG' || prev.deliveryCountries.includes(code)
+        ? prev
+        : { ...prev, deliveryCountries: byCountryName([...prev.deliveryCountries, code]) },
+    );
+    this.countryQuery.set('');
+    input.value = '';
+  }
+
+  removeDeliveryCountry(code: string): void {
+    this.draft.update((prev) => ({
+      ...prev,
+      deliveryCountries: prev.deliveryCountries.filter((entry) => entry !== code),
     }));
   }
 
@@ -333,6 +385,8 @@ export class ShippingTabComponent implements OnInit {
               ];
             }),
           ),
+          // Countries abroad with a set shipping price (ATS-314); any other country agrees on WhatsApp.
+          deliveryCountries: [...d.deliveryCountries].sort(),
           // Drop legacy zone / flat-fee fields on the next admin save.
           baseFee: deleteField(),
           zones: deleteField(),

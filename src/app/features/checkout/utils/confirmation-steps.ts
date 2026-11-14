@@ -25,6 +25,11 @@ export interface ConfirmationStepAmounts {
   /** Payment method name, e.g. "InstaPay". */
   readonly paymentMethod: string;
   readonly cashOnDelivery: boolean;
+  /**
+   * Bank Transfer order abroad whose delivery is still to be confirmed (ATS-314): the delivery
+   * country's name ("Brazil"). Missing for every other order.
+   */
+  readonly agreeDeliveryTo?: string;
   /** "2:14 pm, 10 Nov 2026" when the order was sent (`shippedAt`), or empty. */
   readonly shippedAt?: string;
   /** "2:14 pm, 12 Nov 2026" when the order arrived (`deliveredAt`), or empty. */
@@ -85,6 +90,24 @@ export function confirmationSteps(
         step('confirm', 'We confirm and ship', 'Usually 1–3 working days after you send it.', 'next'),
       ];
     case 'fee-to-be-agreed':
+      if (amounts.agreeDeliveryTo) {
+        return [
+          placed,
+          step(
+            'agree',
+            'We agree delivery on WhatsApp',
+            `We'll confirm delivery to ${amounts.agreeDeliveryTo} and the shipping fee with you on WhatsApp. You pay once we agree.`,
+            'current',
+          ),
+          step(
+            'pay',
+            'Send the total from your bank',
+            'Once we agree, this page shows what to send.',
+            'next',
+          ),
+          step('confirm', 'We confirm and ship', '', 'next'),
+        ];
+      }
       return [
         placed,
         step(

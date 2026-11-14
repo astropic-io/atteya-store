@@ -3,6 +3,7 @@ export * from './bundle-price.js';
 export * from './bundle-set.js';
 export * from './buy-x-get-y.js';
 export * from './cairo-time.js';
+export * from './delivery-countries.js';
 export * from './currency.js';
 export * from './gifts.js';
 export * from './governorates.js';

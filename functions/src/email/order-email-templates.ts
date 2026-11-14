@@ -389,6 +389,7 @@ function instapayPlaced(order: OrderEmailOrder, ctx: OrderEmailContext): Rendere
 }
 
 function bankTransferPlaced(order: OrderEmailOrder, ctx: OrderEmailContext): RenderedEmail {
+  if (order.feeToBeAgreed) return abroadAgreedPlaced(order, ctx);
   const due = dueFor(order);
   const pay = due?.reason === 'bank-transfer' ? bankSteps(order, ctx, due) : null;
   return renderShopper(order, ctx, {
@@ -409,6 +410,50 @@ function bankTransferPlaced(order: OrderEmailOrder, ctx: OrderEmailContext): Ren
   });
 }
 
+/** Said on every email of an order abroad whose delivery and fee are agreed on WhatsApp (ATS-314). */
+function abroadAgreeLine(order: OrderEmailOrder): string {
+  return `We'll confirm delivery to ${countryName(order.address.country)} and the shipping fee with you on WhatsApp. You pay once we agree.`;
+}
+
+/**
+ * Bank Transfer order abroad whose delivery and shipping fee are agreed on WhatsApp first
+ * (ATS-314): nothing to pay yet. Amounts only in the shopper's currency.
+ */
+function abroadAgreedPlaced(order: OrderEmailOrder, ctx: OrderEmailContext): RenderedEmail {
+  return renderShopper(order, ctx, {
+    subject: `We got your order ${order.ref}`,
+    kicker: 'Bank Transfer',
+    status: ['Order', 'Placed'],
+    sentence: `Thanks, ${firstName(order)}. ${abroadAgreeLine(order)}`,
+    blocks: [
+      amountRow([
+        {
+          label: 'To pay now',
+          amount: 'Nothing yet',
+          note: "We'll message you on WhatsApp with the shipping fee and the total.",
+        },
+      ]),
+      stepsRow([
+        placeStep(order),
+        {
+          state: 'current',
+          title: 'We agree delivery on WhatsApp',
+          note: 'Shipping fee and total',
+        },
+        {
+          state: 'next',
+          title: 'Send the total from your bank',
+          note: "We'll confirm your order as soon as the money arrives.",
+        },
+      ]),
+      ...orderSummary(order, ctx, {
+        payment: ['Bank Transfer', 'Shipping fee coming soon'],
+        viewAsButton: true,
+      }),
+    ],
+  });
+}
+
 /**
  * A Bank Transfer amount in the shopper's currency. The items and totals below are in the same
  * currency (ATS-309), so no EGP amount is shown next to it.
@@ -423,6 +468,7 @@ function sentAmount(order: OrderEmailOrder, label: string): AmountCell {
  * later correction of that fee; the amounts to pay are the new ones).
  */
 function deliveryFeeSet(order: OrderEmailOrder, ctx: OrderEmailContext, changed: boolean): RenderedEmail {
+  if (order.paymentMethod === 'bank-transfer') return abroadFeeSet(order, ctx, changed);
   const now = changed ? 'now ' : '';
   const fee = order.shippingEgp > 0 ? formatEgp(order.shippingEgp) : null;
   const cod = order.paymentMethod === 'cash-on-delivery';
@@ -485,6 +531,54 @@ function deliveryFeeSet(order: OrderEmailOrder, ctx: OrderEmailContext, changed:
         ? noteRow("If you've already sent a different amount, message us on WhatsApp and we'll sort it out.")
         : null,
       ...orderSummary(order, ctx, { payment: null, delivery: false, viewAsButton: !pay?.button }),
+    ],
+  });
+}
+
+/**
+ * Staff saved the shipping fee they agreed for a Bank Transfer order abroad (ATS-314): the fee and
+ * the total to send, in the shopper's currency only (never EGP, ATS-309), then the bank details.
+ */
+function abroadFeeSet(order: OrderEmailOrder, ctx: OrderEmailContext, changed: boolean): RenderedEmail {
+  const now = changed ? 'now ' : '';
+  const money = order.shopper;
+  const fee =
+    money.shipping === null ? null : money.shipping > 0 ? shopperAmount(order, money.shipping) : 'Free';
+  const due = dueFor(order);
+  const pay = due?.reason === 'bank-transfer' ? bankSteps(order, ctx, due) : null;
+  let sentence =
+    fee === 'Free'
+      ? `Good news: shipping is ${now}free on your order ${order.ref}.`
+      : fee
+        ? `The shipping fee for your order ${order.ref} is ${now}${fee}.`
+        : `We've ${changed ? 'updated' : 'set'} the shipping fee for your order ${order.ref}.`;
+  if (pay)
+    sentence += " Send the total from your bank and we'll confirm your order as soon as the money arrives.";
+  const agreed: EmailStep = {
+    state: 'done',
+    title: 'We agree delivery on WhatsApp',
+    note: fee ? `Done. Shipping ${fee}` : 'Done.',
+  };
+  return renderShopper(order, ctx, {
+    subject: changed
+      ? `Updated shipping fee for your order ${order.ref}`
+      : `Shipping fee for your order ${order.ref}`,
+    kicker: 'Shipping fee',
+    status: changed ? ['Fee', 'Updated'] : ['Fee', 'Ready'],
+    sentence,
+    blocks: [
+      pay ? amountRow([sentAmount(order, 'Send from your bank')]) : null,
+      pay ? stepsRow([placeStep(order), agreed, ...pay.steps]) : null,
+      pay?.button ? buttonRow(pay.button) : null,
+      changed
+        ? noteRow("If you've already sent a different amount, message us on WhatsApp and we'll sort it out.")
+        : null,
+      ...orderSummary(order, ctx, {
+        payment: ['Bank Transfer', 'Waiting for Payment'],
+        delivery: false,
+        youSend: order.payIn ? ['You send', formatPayIn(order.payIn)] : null,
+        viewAsButton: !pay?.button,
+      }),
     ],
   });
 }
@@ -918,6 +1012,12 @@ function shopperTotals(order: OrderEmailOrder, totalLabel: string): [string, str
   const rows: [string, string][] = [];
   const subtotal = shopperAmount(order, money.subtotal);
   if (subtotal) rows.push(['Subtotal', subtotal]);
+  // Delivery and the fee still to be agreed on WhatsApp (ATS-314): no fee, items total + shipping.
+  if (order.feeToBeAgreed) {
+    rows.push(['Shipping', 'To be agreed']);
+    if (subtotal) rows.push([totalLabel, `${subtotal} + shipping`]);
+    return rows;
+  }
   if (money.shipping !== null) {
     rows.push([
       shippingLabel(order),
@@ -950,8 +1050,9 @@ function totalsFor(
   ];
 }
 
-/** "Delivery" for a large order whose fee is agreed with us, "Shipping" for the rest. */
+/** "Delivery" for a large Egypt order whose fee is agreed with us, "Shipping" for the rest. */
 function shippingLabel(order: OrderEmailOrder): string {
+  if (order.isInternational) return 'Shipping';
   return order.feeToBeAgreed || order.deliveryFeeAgreed ? 'Delivery' : 'Shipping';
 }
 
@@ -1134,6 +1235,19 @@ interface StorePayment {
 
 function storePayment(order: OrderEmailOrder): StorePayment {
   const total = formatEgp(order.totalEgp);
+  if (order.feeToBeAgreed && order.isInternational) {
+    const country = countryName(order.address.country);
+    return {
+      cells: [
+        { label: 'Items Total', amount: formatEgp(order.subtotalEgp) },
+        { label: 'Shipping Fee', amount: 'Not Set Yet' },
+      ],
+      step: {
+        action: `Delivery to be confirmed · ${country}`,
+        note: `Check that we can deliver to ${country}, agree the shipping fee with the customer on WhatsApp, then use Set Delivery Fee.`,
+      },
+    };
+  }
   if (order.feeToBeAgreed) {
     return {
       cells: [
@@ -1230,7 +1344,8 @@ function staffTop(
     };
   }
   if (order.feeToBeAgreed) {
-    return { kicker: 'Agree the Delivery Fee', amount, amountNote, sentence: payment.step?.note ?? null };
+    const kicker = order.isInternational ? 'Confirm Delivery' : 'Agree the Delivery Fee';
+    return { kicker, amount, amountNote, sentence: payment.step?.note ?? null };
   }
   const when = cairoDateTime(order.createdAtMs);
   return { kicker: when ? `New Order · ${when}` : 'New Order', amount, amountNote, sentence: null };

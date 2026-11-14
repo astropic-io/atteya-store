@@ -110,6 +110,9 @@ export function orderEmailsForWrite(
     if (before === null && after.status === 'pending') {
       kinds.push('bank-transfer-placed', 'store-new-order');
     }
+    // Abroad with delivery to be confirmed (ATS-314): staff saved the agreed fee.
+    if (feeJustSet) kinds.push('delivery-fee-set');
+    if (feeChanged) kinds.push('delivery-fee-changed');
     if (becameConfirmed && statusBefore === 'pending') {
       kinds.push('bank-transfer-confirmed');
     }

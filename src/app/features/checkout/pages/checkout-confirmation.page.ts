@@ -23,6 +23,7 @@ import {
   cashOnDeliveryEgp,
   hasBankTransferDetails,
   hasInstapayDetails,
+  isDeliveryFeeToBeAgreed,
   orderStage,
   paymentDue,
   shopperWhatsappText,
@@ -297,7 +298,9 @@ export class CheckoutConfirmationPageComponent implements OnInit {
   readonly bandLine = computed(() => {
     switch (this.stage()) {
       case 'fee-to-be-agreed':
-        return "We'll message you on WhatsApp to agree the delivery fee.";
+        return this.#agreeDeliveryAbroad()
+          ? "Nothing to pay yet. We'll contact you on WhatsApp."
+          : "We'll message you on WhatsApp to agree the delivery fee.";
       case 'instapay-total-due':
         return 'One step left: send your payment.';
       case 'instapay-fee-due':
@@ -328,6 +331,17 @@ export class CheckoutConfirmationPageComponent implements OnInit {
         return '';
     }
   });
+
+  /**
+   * A Bank Transfer order abroad whose delivery and shipping fee are still agreed on WhatsApp
+   * (ATS-314): nothing to pay yet.
+   */
+  readonly #agreeDeliveryAbroad = computed(
+    () =>
+      this.stage() === 'fee-to-be-agreed' &&
+      this.order()?.paymentMethod === 'bank-transfer' &&
+      this.order()?.shipping.country !== 'EG',
+  );
 
   /** "Order #A1B2C3 · 9 Nov 2026" in the band. */
   readonly #placed = computed(() => orderDate(this.order()?.createdAt));
@@ -375,6 +389,11 @@ export class CheckoutConfirmationPageComponent implements OnInit {
           ? [box('Order total', total), box('At your door', cash)]
           : [box('At your door', cash ?? total)];
       case 'fee-to-be-agreed':
+        // Abroad (ATS-314) the items are in the shopper's currency, never EGP.
+        if (this.#agreeDeliveryAbroad()) {
+          const items = formatShopperAmount(money, money.subtotal);
+          return [...(items ? [box('Items', items)] : []), box('Shipping fee', 'To be agreed')];
+        }
         return [
           box(
             'Items',
@@ -399,6 +418,7 @@ export class CheckoutConfirmationPageComponent implements OnInit {
       cash: this.#cash(),
       paymentMethod: this.paymentLabel(),
       cashOnDelivery: order?.paymentMethod === 'cash-on-delivery',
+      ...(this.#agreeDeliveryAbroad() ? { agreeDeliveryTo: countryName(order?.shipping.country ?? '') } : {}),
       shippedAt: order && 'shippedAt' in order ? stepTime(orderDate(order.shippedAt)) : '',
       deliveredAt: order && 'deliveredAt' in order ? stepTime(orderDate(order.deliveredAt)) : '',
     });
@@ -528,7 +548,8 @@ export class CheckoutConfirmationPageComponent implements OnInit {
     const pricing = this.order()?.pricing;
     const money = this.#money();
     if (!pricing?.shipping || !money) return null;
-    if (this.stage() === 'fee-to-be-agreed') return 'To be agreed';
+    // The fee was never set (also once such an order is cancelled): never "Free".
+    if (isDeliveryFeeToBeAgreed(pricing.shipping)) return 'To be agreed';
     if (money.shipping === null) return null;
     if (money.shipping === 0) return 'Free';
     return formatShopperAmount(money, money.shipping);
@@ -553,7 +574,7 @@ export class CheckoutConfirmationPageComponent implements OnInit {
     const money = this.#money();
     const total = money ? formatShopperAmount(money, money.total) : null;
     if (!total) return '—';
-    return this.stage() === 'fee-to-be-agreed' ? `${total} + shipping` : total;
+    return isDeliveryFeeToBeAgreed(this.order()?.pricing?.shipping) ? `${total} + shipping` : total;
   });
 
   constructor() {

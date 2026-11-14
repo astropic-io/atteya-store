@@ -55,7 +55,10 @@ export function formatPlacedAt(order: OrderDoc): string {
 
 export function formatOrderTotal(order: OrderDoc, abroad = abroadPrices(order)): string {
   // Bank Transfer from abroad in another currency: what the customer pays (ATS-304).
-  if (abroad) return customerMoney(abroad, abroad.amount);
+  if (abroad) {
+    const amount = customerMoney(abroad, abroad.amount);
+    return isDeliveryFeeToBeAgreed(order.pricing.shipping) ? `${amount} + shipping` : amount;
+  }
   const total = formatMoney(
     order.pricing.totalDisplay,
     order.pricing.currency,
@@ -141,10 +144,14 @@ export function orderActions(
   const text = staffWhatsappText(stage, input, order.shipping.fullName);
   const due = paymentDue(stage, input);
   const open = order.status === 'pending';
-  // Only Egypt orders (Cash on Delivery, InstaPay) can have a delivery fee agreed later.
+  // A delivery fee agreed later: Egypt large orders (Cash on Delivery, InstaPay) and Bank Transfer
+  // orders abroad whose delivery is confirmed on WhatsApp (ATS-314).
   const manual = order.paymentMethod === 'cash-on-delivery' || order.paymentMethod === 'instapay';
   const shipping = order.pricing.shipping;
-  const agreedLine = manual && open && shipping?.kind === 'domestic-agreed';
+  const agreedLine =
+    open &&
+    ((manual && shipping?.kind === 'domestic-agreed') ||
+      (order.paymentMethod === 'bank-transfer' && shipping?.kind === 'international-agreed'));
   // Confirm waits until the delivery fee of a large order is saved.
   const canConfirm = open && stage !== 'fee-to-be-agreed';
   return {

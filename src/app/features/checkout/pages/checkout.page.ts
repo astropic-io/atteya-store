@@ -37,7 +37,7 @@ import { CartService } from '@core/services/cart/cart.service';
 import { CurrencyService } from '@core/services/currency/currency.service';
 import { MetaPixelService, metaPixelContents } from '@core/services/analytics/meta-pixel.service';
 import { injectFirestore } from '@core/firebase';
-import { isEgyptMobile } from '@core/config/order-messages';
+import { ABROAD_PHONE_MESSAGE, isEgyptMobile, shopperWhatsappNumber } from '@core/config/order-messages';
 import { isBankTransferLive, isCardOrWalletLive, STORE_INFO, whatsappChatUrl } from '@core/config/store-info';
 import { toPricedProduct } from '@core/services/offers/offer.model';
 import { OffersService } from '@core/services/offers/offers.service';
@@ -49,6 +49,7 @@ import {
   governorateById,
   governorateOfAddress,
   displayDecimals,
+  hasSetShippingPrice,
   parcelWeight,
   planDelivery,
   shippingEntry,
@@ -87,6 +88,7 @@ import { createValibotConverter } from '@shared/utils/firebase/firestore-convert
 import { normalizeImageKitPath } from '@shared/utils/image';
 import { formatMoney } from '@shared/utils/money';
 import {
+  agreedBankTransferSteps,
   bankTransferSteps,
   cashOnDeliverySteps,
   currencyPluralName,
@@ -111,7 +113,6 @@ import {
 } from '@shared/ui/forms/governorate-input/governorate-input.component';
 import { BagOfferNotesComponent } from '@shared/components/bag-offer-notes/bag-offer-notes.component';
 
-const TOO_HEAVY_MESSAGE = 'This order is too heavy to send abroad. Remove an item or message us.';
 const ABROAD_COMING_SOON_MESSAGE =
   "Ordering from outside Egypt is coming soon. Message us on WhatsApp and we'll help you order.";
 const DELIVERY_UNAVAILABLE_MESSAGE = 'We could not work out delivery for this order. Please try again later.';
@@ -212,13 +213,14 @@ type CheckoutSummary =
   | { readonly state: 'need-governorate'; readonly subtotal: string }
   | { readonly state: 'loading' }
   | { readonly state: 'missing-item' }
-  | { readonly state: 'too-heavy' }
   | { readonly state: 'unavailable' }
   | {
       readonly state: 'ready';
       /**
-       * Egypt order heavier than the biggest box: we message the shopper on WhatsApp to agree
-       * the delivery fee. Card is hidden; `shipping` reads "We'll contact you".
+       * Staff agree the delivery fee with the shopper on WhatsApp after Place Order. Card is
+       * hidden. Egypt: an order heavier than the biggest box, `shipping` reads "We'll contact
+       * you". Abroad (ATS-314): a country with no set shipping price or an order heavier than the
+       * biggest abroad box, `shipping` reads "To be agreed" and only Bank Transfer is offered.
        */
       readonly feeToBeAgreed: boolean;
       readonly subtotal: string;
@@ -307,6 +309,8 @@ export class CheckoutPageComponent implements OnInit {
    */
   readonly paymentMethod = computed<CheckoutPaymentMethod | null>(() => {
     if (!this.isEgypt()) {
+      // Delivery and the fee agreed on WhatsApp first (ATS-314): Bank Transfer only.
+      if (this.feeToBeAgreed()) return this.bankTransferLive ? 'bank-transfer' : null;
       if (this.cardOrWalletLive && (this.#chosenMethod() === 'paymob' || !this.bankTransferLive))
         return 'paymob';
       return this.bankTransferLive ? 'bank-transfer' : null;
@@ -391,11 +395,17 @@ export class CheckoutPageComponent implements OnInit {
   readonly checkoutCurrency = computed(() => this.#entry()?.code ?? null);
   /** InstaPay and cash on delivery are Egypt-only. */
   readonly localMethodsAvailable = computed(() => this.isEgypt());
-  /** A country outside Egypt is chosen while neither Card nor Bank Transfer can be used: order on WhatsApp. */
+  /**
+   * A country outside Egypt is chosen while no way to pay can be used (neither Card nor Bank
+   * Transfer, or only Card while delivery is agreed first): order on WhatsApp.
+   */
   readonly abroadOrderingClosed = computed(() => {
     const country = this.shipping().country;
-    return !this.cardOrWalletLive && !this.bankTransferLive && isCheckoutCountry(country) && country !== 'EG';
+    if (!isCheckoutCountry(country) || country === 'EG' || this.bankTransferLive) return false;
+    return !this.cardOrWalletLive || this.feeToBeAgreed();
   });
+  /** The delivery country's name ("Brazil"), for the notes about agreeing delivery abroad. */
+  readonly deliveryCountryName = computed(() => countryLabel(this.shipping().country));
 
   readonly productsResource = resource({
     params: () => this.lines(),
@@ -657,8 +667,10 @@ export class CheckoutPageComponent implements OnInit {
 
     const region = this.isEgypt() ? 'egypt' : 'international';
     const boxes = this.isEgypt() ? settings.egyptBoxes : settings.internationalBoxes;
-    const plan = planDelivery(boxes, region, parcelWeight(parcelLines));
-    if (plan.kind === 'too-heavy') return { state: 'too-heavy' };
+    // Abroad, only the Delivery Countries list has a set shipping price (ATS-314); any other
+    // country, or a parcel over every abroad box, is placed with the fee agreed on WhatsApp.
+    const setPrice = hasSetShippingPrice(settings, this.shipping().country);
+    const plan = planDelivery(boxes, region, parcelWeight(parcelLines), setPrice);
     if (plan.kind === 'unavailable') return { state: 'unavailable' };
 
     const decimals = displayDecimals(entry.code);
@@ -676,9 +688,9 @@ export class CheckoutPageComponent implements OnInit {
           bag,
           this.#serverPayIn(),
         );
-        return feeToBeAgreedSummary(server.totalEgp, itemsDisplay, entry);
+        return feeToBeAgreedSummary(server.totalEgp, itemsDisplay, entry, region);
       }
-      return feeToBeAgreedSummary(subtotalEgp, subtotalDisplay, entry);
+      return feeToBeAgreedSummary(subtotalEgp, subtotalDisplay, entry, region);
     }
 
     // Egypt: the delivery fee depends on the governorate (box fee + its extra).
@@ -775,7 +787,10 @@ export class CheckoutPageComponent implements OnInit {
     return formatMoney(bag.subtotalDisplay, entry.code, displayDecimals(entry.code));
   });
 
-  /** Large Egypt order: the delivery fee is agreed on WhatsApp after the order is placed. */
+  /**
+   * The delivery fee is agreed on WhatsApp after the order is placed: a large Egypt order, or an
+   * order abroad to a country with no set shipping price or over every abroad box (ATS-314).
+   */
   readonly feeToBeAgreed = computed(() => {
     const summary = this.orderSummary();
     return summary.state === 'ready' && summary.feeToBeAgreed;
@@ -809,6 +824,7 @@ export class CheckoutPageComponent implements OnInit {
   });
 
   readonly bankTransferSteps = computed(() => {
+    if (this.feeToBeAgreed()) return agreedBankTransferSteps();
     const amounts = this.bankTransfer();
     return amounts ? bankTransferSteps(amounts) : [];
   });
@@ -1102,7 +1118,7 @@ export class CheckoutPageComponent implements OnInit {
       return;
     }
     if (!isCheckoutCountry(draft.country)) {
-      this.#snackbar.error('Choose a delivery country from the list.');
+      this.#snackbar.error('Choose a delivery country.');
       return;
     }
     if (!draft.phone.trim()) {
@@ -1114,16 +1130,17 @@ export class CheckoutPageComponent implements OnInit {
       this.#snackbar.error('Enter an Egyptian mobile number, e.g. 010 1234 5678.');
       return;
     }
+    // Abroad we agree delivery and payment on WhatsApp, so the number needs its country code.
+    if (draft.country !== 'EG' && shopperWhatsappNumber(draft.phone, draft.country) === null) {
+      this.#snackbar.error(ABROAD_PHONE_MESSAGE);
+      return;
+    }
     const unavailable = this.unavailableMessage();
     if (unavailable) {
       this.#snackbar.error(unavailable);
       return;
     }
     const summary = this.orderSummary();
-    if (summary.state === 'too-heavy') {
-      this.#snackbar.error(TOO_HEAVY_MESSAGE);
-      return;
-    }
     if (summary.state === 'missing-item') {
       this.#snackbar.error('One item in your bag is no longer available.');
       return;
@@ -1274,18 +1291,24 @@ export class CheckoutPageComponent implements OnInit {
 type ReadySummary = Extract<CheckoutSummary, { readonly state: 'ready' }>;
 
 /**
- * A large Egypt order whose delivery fee is agreed on WhatsApp: the items total (whole EGP and in
- * the display currency) "+ shipping". The items total is sent as the shown total with no shipping
- * fee, so the server refuses rather than save more or add a box fee this summary never showed.
+ * An order whose delivery fee is agreed on WhatsApp (a large Egypt order, or abroad with no set
+ * shipping price, ATS-314): the items total (whole EGP and in the display currency) "+ shipping".
+ * The items total is sent as the shown total with no shipping fee, so the server refuses rather
+ * than save more or add a box fee this summary never showed.
  */
-function feeToBeAgreedSummary(itemsEgp: number, itemsDisplay: number, entry: CurrencyEntry): ReadySummary {
+function feeToBeAgreedSummary(
+  itemsEgp: number,
+  itemsDisplay: number,
+  entry: CurrencyEntry,
+  region: 'egypt' | 'international',
+): ReadySummary {
   const decimals = displayDecimals(entry.code);
   const items = formatMoney(itemsDisplay, entry.code, decimals);
   return {
     state: 'ready',
     feeToBeAgreed: true,
     subtotal: items,
-    shipping: "We'll contact you",
+    shipping: region === 'egypt' ? "We'll contact you" : 'To be agreed',
     total: `${items} + shipping`,
     instapayTotal: formatMoney(itemsEgp, 'EGP', 0),
     codShippingEgp: 0,

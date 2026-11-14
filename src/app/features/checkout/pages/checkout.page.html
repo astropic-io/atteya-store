@@ -171,7 +171,12 @@
                   <dd class="font-title-md font-bold!">{{ summary.total }}</dd>
                 </div>
               </dl>
-              @if (summary.feeToBeAgreed) {
+              @if (summary.feeToBeAgreed && !isEgypt()) {
+                <p class="font-body-sm" aria-live="polite">
+                  We'll confirm delivery to {{ deliveryCountryName() }} and the shipping fee with you on
+                  WhatsApp. You pay once we agree.
+                </p>
+              } @else if (summary.feeToBeAgreed) {
                 <p class="font-body-sm" aria-live="polite">
                   This is a large order, so we'll message you on WhatsApp to agree the delivery fee before we
                   send it.
@@ -230,6 +235,36 @@
         </div>
 
         <div class="grid gap-6">
+          <!-- Every visitor can choose any country, also on the Egypt form (ATS-314). -->
+          <mat-form-field class="w-full" subscriptSizing="dynamic" appearance="outline">
+            <mat-label>Country</mat-label>
+            <input
+              matInput
+              [matAutocomplete]="countryAuto"
+              [value]="countryQuery()"
+              (input)="onCountryQueryInput($event)"
+              (blur)="onCountryBlur()"
+              autocomplete="country-name"
+              placeholder="Start typing a country"
+            />
+            <mat-autocomplete
+              #countryAuto="matAutocomplete"
+              [displayWith]="displayCountryLabel"
+              (opened)="onCountryAutocompleteOpened()"
+              (closed)="onCountryAutocompleteClosed()"
+              (optionSelected)="onCountrySelected($event)"
+            >
+              @for (country of filteredCountries(); track country.code) {
+                <mat-option
+                  [value]="country.code"
+                  (mousedown)="$event.preventDefault()"
+                  (pointerdown)="onCountryOptionActivate()"
+                >
+                  {{ country.label }}
+                </mat-option>
+              }
+            </mat-autocomplete>
+          </mat-form-field>
           @if (isGuest()) {
             <mat-form-field class="w-full" subscriptSizing="dynamic" appearance="outline">
               <mat-label>Email</mat-label>
@@ -315,47 +350,15 @@
               </mat-form-field>
             </div>
 
-            <div class="grid gap-4 sm:grid-cols-2">
-              <mat-form-field class="w-full" subscriptSizing="dynamic" appearance="outline">
-                <mat-label>Postal code</mat-label>
-                <input
-                  matInput
-                  [value]="shipping().postalCode"
-                  (input)="patchShipping('postalCode', $any($event.target).value)"
-                  autocomplete="postal-code"
-                />
-              </mat-form-field>
-
-              <mat-form-field class="w-full" subscriptSizing="dynamic" appearance="outline">
-                <mat-label>Country</mat-label>
-                <input
-                  matInput
-                  [matAutocomplete]="countryAutoIntl"
-                  [value]="countryQuery()"
-                  (input)="onCountryQueryInput($event)"
-                  (blur)="onCountryBlur()"
-                  autocomplete="country-name"
-                  placeholder="Start typing a country"
-                />
-                <mat-autocomplete
-                  #countryAutoIntl="matAutocomplete"
-                  [displayWith]="displayCountryLabel"
-                  (opened)="onCountryAutocompleteOpened()"
-                  (closed)="onCountryAutocompleteClosed()"
-                  (optionSelected)="onCountrySelected($event)"
-                >
-                  @for (country of filteredCountries(); track country.code) {
-                    <mat-option
-                      [value]="country.code"
-                      (mousedown)="$event.preventDefault()"
-                      (pointerdown)="onCountryOptionActivate()"
-                    >
-                      {{ country.label }}
-                    </mat-option>
-                  }
-                </mat-autocomplete>
-              </mat-form-field>
-            </div>
+            <mat-form-field class="w-full" subscriptSizing="dynamic" appearance="outline">
+              <mat-label>Postal code</mat-label>
+              <input
+                matInput
+                [value]="shipping().postalCode"
+                (input)="patchShipping('postalCode', $any($event.target).value)"
+                autocomplete="postal-code"
+              />
+            </mat-form-field>
           }
 
           <mat-form-field class="w-full" subscriptSizing="dynamic" appearance="outline">
@@ -423,7 +426,10 @@
                       <span>Bank Transfer</span>
                     </span>
                   </mat-radio-button>
-                  @if (paymentMethod() === 'bank-transfer' && bankTransfer()?.total; as total) {
+                  @if (
+                    paymentMethod() === 'bank-transfer' && !feeToBeAgreed() && bankTransfer()?.total;
+                    as total
+                  ) {
                     <span class="font-body-lg font-bold!">{{ total }}</span>
                   }
                 </div>
@@ -494,7 +500,11 @@
         }
         @if (cardOrWalletLive && feeToBeAgreed()) {
           <p class="font-label-sm opacity-70">
-            Card isn't available for large orders, because we agree the delivery fee with you first.
+            @if (isEgypt()) {
+              Card isn't available for large orders, because we agree the delivery fee with you first.
+            } @else {
+              Card isn't available when we agree delivery with you first.
+            }
           </p>
         }
       </fieldset>
@@ -502,11 +512,7 @@
       @if (unavailableMessage(); as message) {
         <p class="font-body-sm text-error" role="alert">{{ message }}</p>
       } @else if (orderSummary(); as summary) {
-        @if (summary.state === 'too-heavy') {
-          <p class="font-body-sm text-error" role="alert">
-            This order is too heavy to send abroad. Remove an item or message us.
-          </p>
-        } @else if (summary.state === 'missing-item') {
+        @if (summary.state === 'missing-item') {
           <p class="font-body-sm text-error" role="alert">One item in your bag is no longer available.</p>
         } @else if (summary.state === 'unavailable') {
           <p class="font-body-sm text-error" role="alert">

@@ -6,6 +6,7 @@ import {
   liveOffers,
   parcelWeight,
   checkGovernorate,
+  hasSetShippingPrice,
   planDelivery,
   priceBagDeals,
   priceItem,
@@ -141,14 +142,28 @@ export interface OrderShippingLine {
    * `domestic-agreed`: an Egypt order heavier than the biggest box. Staff agree the fee with the
    * shopper on WhatsApp and save it with `setDeliveryFee`; until then `feeAgreed` is false and
    * the price is 0 (and the order total is the items only).
+   * `international-agreed` (ATS-314): the same for an order shipped abroad, to a country with no
+   * set shipping price or heavier than the biggest abroad box. Bank Transfer only; staff check we
+   * can deliver, agree the fee on WhatsApp and save it with `setDeliveryFee`.
    */
-  readonly kind: 'domestic-zone' | 'domestic-box' | 'international-box' | 'domestic-agreed';
+  readonly kind: OrderShippingKind;
   readonly boxId: string | null;
   readonly priceEgp: number;
   readonly priceDisplay: number;
-  /** Only on `domestic-agreed`: true once staff saved the fee. */
+  /** Only on `domestic-agreed` and `international-agreed`: true once staff saved the fee. */
   readonly feeAgreed?: boolean;
 }
+
+export type OrderShippingKind =
+  'domestic-zone' | 'domestic-box' | 'international-box' | 'domestic-agreed' | 'international-agreed';
+
+/** The shipping kinds whose fee staff agree with the shopper on WhatsApp after Place Order. */
+export function isAgreedShippingKind(kind: unknown): kind is 'domestic-agreed' | 'international-agreed' {
+  return kind === 'domestic-agreed' || kind === 'international-agreed';
+}
+
+/** Card is never offered while delivery and the fee are agreed on WhatsApp first (ATS-314). */
+export const CARD_AGREED_ABROAD_MESSAGE = "Card isn't available when we agree delivery with you first.";
 
 export interface OrderPricingSnapshot {
   readonly isInternational: boolean;
@@ -290,7 +305,12 @@ export function missedOrderTotal(
   totalEgp: number,
 ): MissedTotal | null {
   const totalHigher = shown.shownTotalEgp !== null && totalEgp > shown.shownTotalEgp;
-  if (shipping.kind === 'domestic-agreed') {
+  if (isAgreedShippingKind(shipping.kind)) {
+    // Checkout showed a set shipping fee but the fee is now to be agreed (the country was taken off
+    // the Delivery Countries list meanwhile, ATS-314): never place it silently on different terms.
+    if (shipping.kind === 'international-agreed' && shown.shownShippingEgp !== null) {
+      return { missedTotalEgp: totalEgp, shippingEgp: shipping.priceEgp };
+    }
     return totalHigher ? { missedTotalEgp: totalEgp, shippingEgp: shipping.priceEgp } : null;
   }
   const shownFeeToBeAgreed = shown.shownShippingEgp === null && shown.shownTotalEgp !== null;
@@ -512,7 +532,6 @@ async function priceWithOffers(
 
   const isInternational = input.shipping.country !== 'EG';
   const region = isInternational ? 'international' : 'egypt';
-  const regionBoxes = boxesForRegion(shippingConfig.settings, region);
   // Egypt: the governorate must be one we deliver to; its extra fee is added to the box fee.
   const governorateExtraEgp = isInternational
     ? 0
@@ -668,7 +687,7 @@ async function priceWithOffers(
   }
 
   // Client payloads cannot choose a box. A sent boxId is not on this input.
-  const plan = planDelivery(regionBoxes, region, parcelWeight(parcelLines));
+  const plan = planOrderDelivery(shippingConfig.settings, input.shipping.country, parcelLines);
   const { line: shippingLine, freeShippingOfferId } = quoteShippingLine(plan, {
     settings: shippingConfig.settings,
     region,
@@ -896,7 +915,7 @@ function resolveFulfilment(method: StorePaymentMethod, isInternational: boolean)
   return isInternational ? 'international-paymob' : 'domestic-paymob';
 }
 
-interface ShippingLineContext {
+export interface ShippingLineContext {
   readonly settings: ShippingSettings;
   readonly region: ShippingRegion;
   readonly isInternational: boolean;
@@ -923,12 +942,33 @@ export function egyptGovernorateExtraFee(settings: ShippingSettings, governorate
 }
 
 /**
+ * How an order to `country` is delivered: Egypt by its boxes; abroad by the abroad boxes only for
+ * a country on the Delivery Countries list, else with the fee agreed on WhatsApp (ATS-314). Decided
+ * from the saved settings, never from the client.
+ */
+export function planOrderDelivery(
+  settings: ShippingSettings,
+  country: string,
+  parcelLines: readonly ParcelLine[],
+): DeliveryPlan {
+  const region: ShippingRegion = country === 'EG' ? 'egypt' : 'international';
+  return planDelivery(
+    boxesForRegion(settings, region),
+    region,
+    parcelWeight(parcelLines),
+    hasSetShippingPrice(settings, country),
+  );
+}
+
+/**
  * The order's delivery line, plus the Free shipping offer that made it free (null when none did).
  * An Egypt order heavier than the biggest box is placed with the fee to be agreed (InstaPay or
- * Cash on Delivery only: a card can't be charged an unknown amount). Promotions and free shipping
- * don't apply to it; staff set the fee they agreed.
+ * Cash on Delivery only: a card can't be charged an unknown amount). Abroad (ATS-314), a country
+ * with no set shipping price or an order heavier than the biggest abroad box is placed the same
+ * way (`international-agreed`, Bank Transfer only). Promotions and free shipping don't apply to
+ * these; staff set the fee they agreed.
  */
-function quoteShippingLine(
+export function quoteShippingLine(
   plan: DeliveryPlan,
   c: ShippingLineContext,
 ): { line: OrderShippingLine; freeShippingOfferId: string | null } {
@@ -937,18 +977,21 @@ function quoteShippingLine(
       if (c.paymentMethod === 'paymob') {
         throw new HttpsError(
           'failed-precondition',
-          "Card isn't available for large orders, because we agree the delivery fee with you first. Choose InstaPay or Cash on Delivery.",
+          c.isInternational
+            ? CARD_AGREED_ABROAD_MESSAGE
+            : "Card isn't available for large orders, because we agree the delivery fee with you first. Choose InstaPay or Cash on Delivery.",
         );
       }
       return {
-        line: { kind: 'domestic-agreed', boxId: null, priceEgp: 0, priceDisplay: 0, feeAgreed: false },
+        line: {
+          kind: c.isInternational ? 'international-agreed' : 'domestic-agreed',
+          boxId: null,
+          priceEgp: 0,
+          priceDisplay: 0,
+          feeAgreed: false,
+        },
         freeShippingOfferId: null,
       };
-    case 'too-heavy':
-      throw new HttpsError(
-        'failed-precondition',
-        'This order is too heavy to send abroad. Remove an item or message us.',
-      );
     case 'unavailable':
       throw new HttpsError(
         'failed-precondition',

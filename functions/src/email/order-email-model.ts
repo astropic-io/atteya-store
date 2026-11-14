@@ -57,11 +57,15 @@ export interface OrderEmailOrder {
   /** Paid (Paymob) while an item had already sold out (see paymobWebhook). */
   readonly needsReview: boolean;
   /**
-   * Large Egypt order whose delivery fee staff haven't set yet. `shippingEgp` is then 0 and
+   * Delivery fee staff haven't set yet: a large Egypt order, or an order abroad whose delivery is
+   * still to be confirmed (`international-agreed`, ATS-314). `shippingEgp` is then 0 and
    * `totalEgp` is the items only; emails say the fee is to be agreed instead of showing them.
    */
   readonly feeToBeAgreed: boolean;
-  /** Large Egypt order whose delivery fee staff have saved (`domestic-agreed` + `feeAgreed`). */
+  /**
+   * Delivery fee staff have saved after agreeing it on WhatsApp (`domestic-agreed` or
+   * `international-agreed`, with `feeAgreed`).
+   */
   readonly deliveryFeeAgreed: boolean;
   /** When staff last saved the delivery fee (`deliveryFeeSetAt`, epoch ms), or null. */
   readonly deliveryFeeSetAtMs: number | null;
@@ -249,7 +253,9 @@ export function readOrderForEmail(
     totalEgp,
     needsReview: data['needsReview'] === true,
     feeToBeAgreed: isDeliveryFeeToBeAgreed(shipping),
-    deliveryFeeAgreed: shipping?.['kind'] === 'domestic-agreed' && shipping['feeAgreed'] === true,
+    deliveryFeeAgreed:
+      (shipping?.['kind'] === 'domestic-agreed' || shipping?.['kind'] === 'international-agreed') &&
+      shipping['feeAgreed'] === true,
     deliveryFeeSetAtMs: timestampMs(data['deliveryFeeSetAt']),
     shippedAtMs: timestampMs(data['shippedAt']),
     deliveredAtMs: timestampMs(data['deliveredAt']),

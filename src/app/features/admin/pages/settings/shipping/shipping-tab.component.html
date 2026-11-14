@@ -28,8 +28,9 @@
           than the biggest box can still be placed: you agree the delivery fee with the shopper on WhatsApp,
           then set it in Orders. Free shipping and promotions don't apply to those orders.
         } @else {
-          Rates for orders shipped outside Egypt, picked by the order's weight at checkout. Orders heavier
-          than the biggest box can't be placed.
+          Rates for orders shipped to the Delivery Countries below, picked by the order's weight at checkout.
+          Orders heavier than the biggest box can still be placed: you agree delivery and the shipping fee
+          with the customer on WhatsApp, then set it in Orders.
         }
       </p>
 
@@ -179,6 +180,65 @@
             </li>
           }
         </ul>
+      </div>
+    }
+
+    @if (region() === 'international') {
+      <div
+        class="w-full border-t border-outline-variant pt-4 elements-start-col gap-6"
+        role="group"
+        aria-labelledby="delivery-countries-heading"
+      >
+        <div>
+          <h3 id="delivery-countries-heading" class="font-title-sm font-bold!">Delivery Countries</h3>
+          <p class="font-body-sm text-on-surface-variant">
+            Countries with a set shipping price. Orders to other countries can still be placed. We agree
+            delivery and the shipping fee with the customer on WhatsApp.
+          </p>
+        </div>
+        <mat-form-field appearance="outline" class="w-full @3xl:max-w-md">
+          <mat-label>Add a Country</mat-label>
+          <input
+            #countryInput
+            matInput
+            type="text"
+            autocomplete="off"
+            placeholder="Start typing a country"
+            [matAutocomplete]="deliveryCountryAuto"
+            [value]="countryQuery()"
+            (input)="countryQuery.set(textFrom($event))"
+          />
+          <mat-autocomplete
+            #deliveryCountryAuto="matAutocomplete"
+            (optionSelected)="addDeliveryCountry($event, countryInput)"
+          >
+            @for (option of countryOptions(); track option.code) {
+              <mat-option [value]="option.code">{{ option.label }}</mat-option>
+            }
+          </mat-autocomplete>
+          <mat-hint>Pick a country to add it, then save</mat-hint>
+        </mat-form-field>
+        @if (d.deliveryCountries.length) {
+          <ul class="w-full" aria-label="Countries with a set shipping price">
+            @for (code of d.deliveryCountries; track code) {
+              <li class="w-full elements-between gap-3 border-b border-outline-variant py-1">
+                <span class="font-body-md">{{ countryName(code) }}</span>
+                <button
+                  matIconButton
+                  type="button"
+                  [attr.aria-label]="'Remove ' + countryName(code)"
+                  (click)="removeDeliveryCountry(code)"
+                >
+                  <mat-icon name="close" />
+                </button>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="font-body-sm">
+            No countries yet. Every order abroad will have its shipping fee agreed on WhatsApp.
+          </p>
+        }
       </div>
     }
 

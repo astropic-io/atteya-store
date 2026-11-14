@@ -39,6 +39,7 @@ export function toEngineShipping(docData: ShippingSettingsDoc): ShippingSettings
     },
     note: docData.note,
     egyptGovernorates: docData.egyptGovernorates,
+    ...(docData.deliveryCountries ? { deliveryCountries: docData.deliveryCountries } : {}),
   };
 }
 

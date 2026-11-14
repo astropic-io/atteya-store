@@ -42,6 +42,12 @@ export interface ShippingSettings {
    * deliver there. A governorate with no entry counts as `DEFAULT_GOVERNORATE_SETTING`.
    */
   readonly egyptGovernorates?: Readonly<Record<string, GovernorateSetting>>;
+  /**
+   * Countries abroad with a set shipping price (ATS-314, Settings → Shipping → Abroad → Delivery
+   * Countries), ISO codes. Missing = `DEFAULT_DELIVERY_COUNTRIES`. Any other country can still
+   * order: delivery and the fee are agreed on WhatsApp (`planDelivery()` → `to-be-agreed`).
+   */
+  readonly deliveryCountries?: readonly string[];
 }
 
 export type ShippingRegion = 'egypt' | 'international';
@@ -188,29 +194,32 @@ export function parcelWeight(lines: readonly ParcelLine[]): ParcelWeight {
 /**
  * How a bag is delivered:
  * - `box`: the assigned box. `quoteWeightGrams` is the parcel weight to pass to `shippingQuote`.
- * - `to-be-agreed`: Egypt only. Heavier than the largest Egypt box, so staff agree the
- *   delivery fee with the shopper on WhatsApp after the order is placed.
- * - `too-heavy`: abroad, heavier than the largest box. Cannot be ordered.
+ * - `to-be-agreed`: staff agree the delivery fee with the shopper on WhatsApp after the order is
+ *   placed. Egypt: heavier than the largest Egypt box. Abroad (ATS-314): heavier than the largest
+ *   abroad box, or a country with no set shipping price (`setPrice` false).
  * - `unavailable`: no boxes are set up.
  */
 export type DeliveryPlan =
   | { readonly kind: 'box'; readonly box: ShippingBox; readonly quoteWeightGrams: number }
   | { readonly kind: 'to-be-agreed' }
-  | { readonly kind: 'too-heavy' }
   | { readonly kind: 'unavailable' };
 
+/**
+ * `setPrice`: abroad only, false when the delivery country is not on the Delivery Countries list
+ * (`hasSetShippingPrice()`); the fee is then always agreed on WhatsApp. Ignored for Egypt.
+ */
 export function planDelivery(
   boxes: readonly ShippingBox[],
   region: ShippingRegion,
   weight: ParcelWeight,
+  setPrice = true,
 ): DeliveryPlan {
+  if (region === 'international' && !setPrice) return { kind: 'to-be-agreed' };
   const selection = assignShippingBox(boxes, weight.totalWeightGrams);
   if (selection.ok) {
     return { kind: 'box', box: selection.box, quoteWeightGrams: weight.totalWeightGrams };
   }
-  if (selection.code === 'too-heavy') {
-    return region === 'egypt' ? { kind: 'to-be-agreed' } : { kind: 'too-heavy' };
-  }
+  if (selection.code === 'too-heavy') return { kind: 'to-be-agreed' };
   return { kind: 'unavailable' };
 }
 

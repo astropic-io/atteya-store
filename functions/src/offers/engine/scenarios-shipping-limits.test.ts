@@ -496,10 +496,10 @@ describe('M8 large orders: the fee is agreed, so no free shipping applies', () =
     assert.throws(() => quote({ weight: 3_001, offers: [offer()] }), /too-heavy/);
   });
 
-  it('abroad too heavy cannot be ordered at all', () => {
+  it('abroad too heavy is placed with the fee to be agreed (ATS-314)', () => {
     assert.equal(
       planDelivery(ABROAD, 'international', parcelWeight([{ weightGrams: 2_001, quantity: 1 }])).kind,
-      'too-heavy',
+      'to-be-agreed',
     );
   });
 

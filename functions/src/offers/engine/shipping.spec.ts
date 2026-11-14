@@ -116,8 +116,20 @@ describe('client shipping examples (Egypt)', () => {
     );
   });
 
-  it('abroad, too heavy cannot be ordered', () => {
-    assert.equal(fee([{ weightGrams: HOODIE, quantity: 4 }], 'international'), 'too-heavy');
+  it('abroad, too heavy is placed with the fee to be agreed (ATS-314)', () => {
+    assert.equal(fee([{ weightGrams: HOODIE, quantity: 4 }], 'international'), 'to-be-agreed');
+  });
+
+  it('abroad, a country with no set shipping price always has its fee agreed (ATS-314)', () => {
+    assert.equal(
+      planDelivery(EGYPT, 'international', parcelWeight([{ weightGrams: TEE, quantity: 1 }]), false).kind,
+      'to-be-agreed',
+    );
+    // Egypt ignores the flag: its boxes always decide.
+    assert.equal(
+      planDelivery(EGYPT, 'egypt', parcelWeight([{ weightGrams: TEE, quantity: 1 }]), false).kind,
+      'box',
+    );
   });
 
   it('with no boxes delivery is unavailable', () => {

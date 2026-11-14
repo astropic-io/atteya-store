@@ -8,6 +8,7 @@ import type {
 import {
   EGYPT_GOVERNORATES,
   MAX_GOVERNORATE_EXTRA_FEE_EGP,
+  parseDeliveryCountries,
   SHIPPING_BOX_IDS,
 } from '../offers/engine/index.js';
 
@@ -120,7 +121,9 @@ export function parseCheckoutShippingConfig(data: DocumentData | undefined): Che
     note: typeof data['note'] === 'string' ? data['note'] : base.note,
     egyptGovernorates: parseEgyptGovernorates(data['egyptGovernorates']),
   };
-  return { settings };
+  // Countries abroad with a set shipping price (ATS-314). Not saved yet: the default list.
+  const deliveryCountries = parseDeliveryCountries(data['deliveryCountries']);
+  return { settings: deliveryCountries === null ? settings : { ...settings, deliveryCountries } };
 }
 
 /**
