@@ -351,7 +351,7 @@ service cloud.firestore {
 
     function validSavedAddress(address) {
       return address is map
-        && address.keys().hasOnly(['fullName', 'line1', 'line2', 'city', 'region', 'postalCode', 'country', 'phone'])
+        && address.keys().hasOnly(['fullName', 'line1', 'line2', 'city', 'region', 'postalCode', 'country', 'phone', 'governorateId'])
         && address.keys().hasAll(['fullName', 'line1', 'city', 'country', 'phone'])
         && address.fullName is string && address.fullName.size() >= 1 && address.fullName.size() <= 120
         && address.line1 is string && address.line1.size() >= 1 && address.line1.size() <= 200
@@ -360,7 +360,10 @@ service cloud.firestore {
         && optionalText(address, 'region', 80)
         && optionalText(address, 'postalCode', 20)
         && address.country is string && address.country.size() == 2
-        && address.phone is string && address.phone.size() >= 6 && address.phone.size() <= 20;
+        && address.phone is string && address.phone.size() >= 6 && address.phone.size() <= 20
+        // Egypt governorate id from the list (ATS-306); null or missing abroad and on old addresses.
+        && (!('governorateId' in address) || address.governorateId == null
+          || (address.governorateId is string && address.governorateId.size() >= 1 && address.governorateId.size() <= 40));
     }
 
     // Written only by Cloud Functions (offer pricing refresh bookkeeping). No client access.

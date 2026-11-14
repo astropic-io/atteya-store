@@ -1,11 +1,15 @@
 import { FieldValue, getFirestore, type DocumentData } from 'firebase-admin/firestore';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
+import type { GovernorateSetting } from '../offers/engine/index.js';
+import { parseEgyptGovernorates } from './shipping-settings.js';
 
 interface ShippingAuditSnapshot {
   readonly egyptBoxFees: readonly number[] | null;
   readonly internationalBoxFees: readonly number[] | null;
   readonly freeOver: { readonly active: boolean; readonly threshold: number | null } | null;
   readonly promoActive: boolean;
+  /** Egypt governorate extras and switches (`{ [id]: { extraFeeEgp, active } }`), as saved. */
+  readonly egyptGovernorates: Readonly<Record<string, GovernorateSetting>> | null;
 }
 
 export const onShippingSettingsWritten = onDocumentWritten(
@@ -43,6 +47,8 @@ function shippingAuditSnapshot(data: DocumentData | null): ShippingAuditSnapshot
     internationalBoxFees: readBoxFees(data['internationalBoxes']),
     freeOver: readFreeOver(data['freeOver']),
     promoActive: readPromoActive(data['promo']),
+    egyptGovernorates:
+      data['egyptGovernorates'] === undefined ? null : parseEgyptGovernorates(data['egyptGovernorates']),
   };
 }
 

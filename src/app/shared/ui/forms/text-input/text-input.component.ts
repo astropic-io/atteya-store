@@ -46,6 +46,9 @@ import { BaseFormControl } from '../base-form-control.directive';
           <mat-icon [name]="suffixIcon()!" />
         </button>
       }
+      @if (hint()) {
+        <mat-hint>{{ hint() }}</mat-hint>
+      }
       @if (showError()) {
         <mat-error>{{ errorMessage() }}</mat-error>
       }
@@ -56,6 +59,8 @@ export class TextInputComponent extends BaseFormControl<string | number> {
   readonly type = input<string>('text');
   readonly inputMode = input<InputMode>('text');
   readonly icon = input<string | null>(null);
+  /** Help text under the field (hidden while an error shows). */
+  readonly hint = input<string>('');
   readonly prefixIcon = input<string | null>(null);
   readonly prefixAriaLabel = input<string>();
   readonly prefixAction = output<void>();

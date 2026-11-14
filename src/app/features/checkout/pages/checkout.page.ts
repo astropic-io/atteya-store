@@ -42,8 +42,11 @@ import { isBankTransferLive, isCardOrWalletLive, STORE_INFO, whatsappChatUrl } f
 import { toPricedProduct } from '@core/services/offers/offer.model';
 import { OffersService } from '@core/services/offers/offers.service';
 import {
+  checkGovernorate,
   type CurrencyEntry,
   dealTag,
+  governorateById,
+  governorateFromCity,
   displayDecimals,
   parcelWeight,
   planDelivery,
@@ -98,6 +101,10 @@ import { guestEmail } from '../utils/guest-email';
 import { rememberGuestOrder } from '../utils/guest-order-storage';
 import { SharedIconModule } from '@shared/ui/mat-icon';
 import { PaymentMarkComponent } from '@shared/ui/payment-mark';
+import {
+  CHOOSE_GOVERNORATE_MESSAGE,
+  GovernorateInputComponent,
+} from '@shared/ui/forms/governorate-input/governorate-input.component';
 import { BagOfferNotesComponent } from '@shared/components/bag-offer-notes/bag-offer-notes.component';
 
 const TOO_HEAVY_MESSAGE = 'This order is too heavy to send abroad. Remove an item or message us.';
@@ -197,6 +204,8 @@ interface SummaryGift {
 
 type CheckoutSummary =
   | { readonly state: 'need-country' }
+  /** Egypt with no governorate picked: the Shipping line asks for one instead of a price. */
+  | { readonly state: 'need-governorate'; readonly subtotal: string }
   | { readonly state: 'loading' }
   | { readonly state: 'missing-item' }
   | { readonly state: 'too-heavy' }
@@ -243,6 +252,7 @@ type CheckoutSummary =
     MatRadioModule,
     SharedIconModule,
     PaymentMarkComponent,
+    GovernorateInputComponent,
     BagOfferNotesComponent,
   ],
   templateUrl: './checkout.page.html',
@@ -263,6 +273,10 @@ export class CheckoutPageComponent implements OnInit {
   readonly #notes = inject(BagOfferNotesService);
 
   readonly isSubmitting = signal(false);
+  /** Governorates we deliver to (Egypt Governorate field). */
+  readonly governorates = inject(ShippingSettingsService).governorates;
+  /** Shows "Choose your governorate." on the field after Place Order with none picked. */
+  readonly governorateError = signal(false);
   /** Phone only: the order summary folds into a bar above the form until tapped. */
   readonly summaryOpen = signal(false);
   /** The signed-in shopper's email; empty for a guest. */
@@ -623,6 +637,16 @@ export class CheckoutPageComponent implements OnInit {
       return feeToBeAgreedSummary(subtotalEgp, subtotalDisplay, entry);
     }
 
+    // Egypt: the delivery fee depends on the governorate (box fee + its extra).
+    let governorateExtraEgp = 0;
+    if (region === 'egypt') {
+      const governorate = checkGovernorate(settings, this.shipping().governorateId);
+      if (!governorate.ok) {
+        return { state: 'need-governorate', subtotal: formatMoney(subtotalDisplay, entry.code, decimals) };
+      }
+      governorateExtraEgp = governorate.extraFeeEgp;
+    }
+
     let feeEgp: number;
     let freeShippingOfferId: string | null;
     try {
@@ -634,13 +658,15 @@ export class CheckoutPageComponent implements OnInit {
           totalWeightGrams: plan.quoteWeightGrams,
           goodsSubtotal: subtotalEgp,
           lines: pricedLines,
+          governorateExtraEgp,
         },
         offers,
         ctx,
       );
       feeEgp = quote.fee;
       // Same test as the order callables (`freeShippingOfferIdOf`): the offer made shipping free.
-      const madeItFree = quote.reason === 'offer' && quote.fee === 0 && Math.round(quote.box.feeEgp) > 0;
+      const madeItFree =
+        quote.reason === 'offer' && quote.fee === 0 && Math.round(quote.box.feeEgp) + quote.extraFeeEgp > 0;
       freeShippingOfferId = madeItFree ? (quote.offerId ?? null) : null;
     } catch {
       return { state: 'unavailable' };
@@ -829,11 +855,23 @@ export class CheckoutPageComponent implements OnInit {
       if (key === 'country' && typeof value === 'string' && isCheckoutCountry(value)) {
         this.#lastValidCountry.set(value);
       }
-      if (key === 'country' && value !== 'EG') {
+      if (key === 'country' && value !== 'EG' && current.governorateId) {
+        // The governorate's name filled the city; abroad has its own typed city.
         next.governorateId = null;
+        next.city = '';
       }
       return next;
     });
+  }
+
+  /** The Governorate field picked (or cleared) a governorate: its English name is the city. */
+  onGovernorateChange(id: string | null): void {
+    const governorate = governorateById(id);
+    this.shipping.update((current) => ({
+      ...current,
+      governorateId: governorate?.id ?? null,
+      city: governorate?.name ?? '',
+    }));
   }
 
   onCountryQueryInput(event: Event): void {
@@ -994,6 +1032,12 @@ export class CheckoutPageComponent implements OnInit {
       return;
     }
     const draft = this.shipping();
+    const settings = this.#shippingSettings.settings();
+    if (draft.country === 'EG' && !checkGovernorate(settings ?? {}, draft.governorateId).ok) {
+      this.governorateError.set(true);
+      this.#snackbar.error(CHOOSE_GOVERNORATE_MESSAGE);
+      return;
+    }
     if (!draft.fullName.trim() || !draft.line1.trim() || !draft.city.trim()) {
       this.#snackbar.error('Fill in your delivery address to continue.');
       return;
@@ -1071,7 +1115,7 @@ export class CheckoutPageComponent implements OnInit {
         postalCode: draft.country === 'EG' ? '' : draft.postalCode.trim(),
         country: draft.country,
         phone: draft.phone.trim(),
-        governorateId: null,
+        governorateId: draft.country === 'EG' ? draft.governorateId : null,
       };
 
       if (method === 'paymob') {
@@ -1226,12 +1270,17 @@ function hasTypedAddress(shipping: CheckoutShippingInput): boolean {
 /** Saved address → checkout form (same country). Egypt keeps only its four fields. */
 function fillFromSavedAddress(current: CheckoutShippingInput, saved: SavedAddress): CheckoutShippingInput {
   const isEgypt = saved.country === 'EG';
+  // Egypt: the saved governorate, or the one an old typed city names (else the shopper picks one).
+  const governorate = isEgypt
+    ? (governorateById(saved.governorateId) ?? governorateFromCity(saved.city))
+    : null;
   return {
     ...current,
     fullName: saved.fullName,
     line1: saved.line1,
     line2: isEgypt ? null : (saved.line2 ?? null),
-    city: saved.city,
+    city: isEgypt ? (governorate?.name ?? '') : saved.city,
+    governorateId: governorate?.id ?? null,
     region: isEgypt ? null : (saved.region ?? null),
     postalCode: isEgypt ? '' : saved.postalCode,
     phone: saved.phone,

@@ -16,7 +16,7 @@
     }
   </p>
 
-  <form class="w-full elements-start-col gap-2" (submit)="save($event)" novalidate>
+  <form class="w-full elements-start-col gap-6" (submit)="save($event)" novalidate>
     <app-select-input
       [formField]="addressForm.country"
       label="Country"
@@ -27,8 +27,17 @@
     <app-text-input [formField]="addressForm.fullName" label="Full name" />
 
     @if (isEgypt()) {
-      <app-text-input [formField]="addressForm.city" label="City" />
-      <app-text-input [formField]="addressForm.line1" label="Address" />
+      <app-governorate-input
+        [options]="governorates()"
+        [value]="model().governorateId"
+        (valueChange)="setGovernorate($event)"
+        [showError]="governorateError()"
+      />
+      <app-text-input
+        [formField]="addressForm.line1"
+        label="Address"
+        hint="Area, street, building, floor and flat"
+      />
     } @else {
       <app-text-input [formField]="addressForm.line1" label="Address line 1" />
       <app-text-input [formField]="addressForm.line2" label="Address line 2 (optional)" />

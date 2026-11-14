@@ -1,4 +1,5 @@
 // GENERATED — edit functions/src/offers/engine
+import { lowestGovernorateExtraFee, type GovernorateSetting } from './governorates';
 import { liveOffers } from './item-price';
 import { matchVariant } from './match';
 import type { Offer, PricedProduct, PricingContext, VariantFacts } from './types';
@@ -36,6 +37,11 @@ export interface ShippingSettings {
   readonly freeOver: { readonly active: boolean; readonly threshold: number | null };
   readonly promo: ShippingPromo;
   readonly note: string;
+  /**
+   * Egypt delivery per governorate (ATS-306): extra fee on top of the box fee, and whether we
+   * deliver there. A governorate with no entry counts as `DEFAULT_GOVERNORATE_SETTING`.
+   */
+  readonly egyptGovernorates?: Readonly<Record<string, GovernorateSetting>>;
 }
 
 export type ShippingRegion = 'egypt' | 'international';
@@ -48,6 +54,8 @@ export interface ShippingQuote {
   readonly box: ShippingBox;
   readonly reason: ShippingReason;
   readonly offerId?: string;
+  /** The governorate extra counted in the box fee candidate (0 abroad or when none was given). */
+  readonly extraFeeEgp: number;
 }
 
 /** One paid bag line for a Free shipping offer: the product and the size and colour chosen. */
@@ -64,6 +72,12 @@ export interface ShippingQuoteInput {
   readonly totalWeightGrams: number;
   readonly goodsSubtotal: number;
   readonly lines?: readonly ShippingQuoteLine[];
+  /**
+   * Egypt only: the chosen governorate's extra fee (`checkGovernorate(...).extraFeeEgp`), added to
+   * the box fee. A promotion fee, free-over and Free shipping offers replace the whole delivery
+   * fee, so they never add it. Ignored abroad.
+   */
+  readonly governorateExtraEgp?: number;
 }
 
 export type SelectShippingBoxResult =
@@ -212,8 +226,9 @@ export function shippingQuote(
     throw new Error(`shippingQuote: cannot select box (${selected.code})`);
   }
 
+  const extraFeeEgp = input.region === 'egypt' ? Math.max(0, Math.round(input.governorateExtraEgp ?? 0)) : 0;
   const candidates: { fee: number; reason: ShippingReason; offerId?: string }[] = [
-    { fee: selected.box.feeEgp, reason: 'box' },
+    { fee: selected.box.feeEgp + extraFeeEgp, reason: 'box' },
   ];
 
   const nowMs = ctx.now.getTime();
@@ -265,12 +280,16 @@ export function shippingQuote(
     box: selected.box,
     reason: winner.reason,
     ...(winner.offerId ? { offerId: winner.offerId } : {}),
+    extraFeeEgp,
   };
 }
 
-/** Lowest Egypt box fee for storefront “from” copy. */
+/**
+ * Lowest Egypt delivery fee for storefront “from” copy: the lowest box fee plus the lowest extra
+ * fee of the governorates we deliver to.
+ */
 export function shippingFromFee(settings: ShippingSettings): number {
   const fees = settings.egyptBoxes.map((box) => box.feeEgp);
   if (fees.length === 0) return 0;
-  return Math.min(...fees);
+  return Math.min(...fees) + lowestGovernorateExtraFee(settings);
 }

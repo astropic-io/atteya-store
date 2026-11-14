@@ -3,14 +3,21 @@ import { Component, effect, inject, OnInit, PLATFORM_ID, resource, signal, untra
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { deleteField, doc, getDoc, serverTimestamp, setDoc, Timestamp } from 'firebase/firestore';
 import { injectFirestore } from '@core/firebase';
 import { AuthService } from '@core/services/auth/auth.service';
 import { SeoService } from '@core/services/seo';
 import {
+  EGYPT_GOVERNORATES,
   formatCairoDateTimeInput,
+  governorateSetting,
+  MAX_GOVERNORATE_EXTRA_FEE_EGP,
   parseCairoDateTimeInput,
+  type GovernorateSetting,
   type ShippingBoxId,
 } from '@core/services/offers/engine';
 import {
@@ -48,6 +55,25 @@ interface ShippingDraft {
   promoMinSubtotal: number | null;
   promoBanner: string;
   note: string;
+  /** Egypt extra fee and switch per governorate id. `extraFeeEgp` null: not a whole number 0 to 1,000. */
+  governorates: Record<string, GovernorateDraft>;
+}
+
+interface GovernorateDraft {
+  extraFeeEgp: number | null;
+  active: boolean;
+}
+
+/** Every governorate's draft from the saved map (a missing one is the default: 10 EGP, delivered). */
+function governorateDrafts(
+  saved: Readonly<Record<string, GovernorateSetting>>,
+): Record<string, GovernorateDraft> {
+  return Object.fromEntries(
+    EGYPT_GOVERNORATES.map((governorate) => {
+      const setting = governorateSetting({ egyptGovernorates: saved }, governorate.id);
+      return [governorate.id, { extraFeeEgp: setting.extraFeeEgp, active: setting.active }];
+    }),
+  );
 }
 
 function cloneBoxes(boxes: readonly ShippingBoxDoc[]): BoxDraft[] {
@@ -72,6 +98,7 @@ const EMPTY_DRAFT: ShippingDraft = {
   promoMinSubtotal: null,
   promoBanner: '',
   note: '',
+  governorates: governorateDrafts({}),
 };
 
 function toDate(raw: unknown): Date | null {
@@ -98,7 +125,10 @@ function toDate(raw: unknown): Date | null {
     MatButtonModule,
     MatButtonToggleModule,
     MatCheckboxModule,
+    MatFormFieldModule,
+    MatInputModule,
     MatProgressSpinnerModule,
+    MatSlideToggleModule,
     SharedIconModule,
     SkeletonComponent,
   ],
@@ -123,6 +153,8 @@ export class ShippingTabComponent implements OnInit {
   readonly draft = signal<ShippingDraft>(EMPTY_DRAFT);
   readonly isSaving = signal(false);
   readonly formatInput = formatCairoDateTimeInput;
+  readonly governorateList = EGYPT_GOVERNORATES;
+  readonly maxExtraFee = MAX_GOVERNORATE_EXTRA_FEE_EGP;
 
   readonly settingsResource = resource({
     loader: async () => {
@@ -152,6 +184,7 @@ export class ShippingTabComponent implements OnInit {
           promoMinSubtotal: data.promo.minSubtotal,
           promoBanner: data.promo.banner ?? '',
           note: data.note,
+          governorates: governorateDrafts(data.egyptGovernorates),
         }),
       );
     });
@@ -207,6 +240,21 @@ export class ShippingTabComponent implements OnInit {
     this.draft.update((prev) => (prev[key].length > 1 ? { ...prev, [key]: prev[key].slice(0, -1) } : prev));
   }
 
+  /** Whole pounds from 0 to 1,000, or null for anything else (an empty box included). */
+  extraFeeFrom(event: Event): number | null {
+    const raw = (event.target as HTMLInputElement).value.trim();
+    if (raw === '') return null;
+    const value = Number(raw);
+    return Number.isInteger(value) && value >= 0 && value <= MAX_GOVERNORATE_EXTRA_FEE_EGP ? value : null;
+  }
+
+  patchGovernorate(id: string, change: Partial<GovernorateDraft>): void {
+    this.draft.update((prev) => ({
+      ...prev,
+      governorates: { ...prev.governorates, [id]: { ...prev.governorates[id], ...change } },
+    }));
+  }
+
   dateFrom(event: Event, endOfDay: boolean): Date | null {
     return parseCairoDateTimeInput((event.target as HTMLInputElement).value, endOfDay);
   }
@@ -243,6 +291,16 @@ export class ShippingTabComponent implements OnInit {
       this.#snackbar.error('The promotion must end after it starts.');
       return;
     }
+    if (Object.values(d.governorates).some((row) => row.extraFeeEgp === null)) {
+      this.region.set('egypt');
+      this.#snackbar.error('Each governorate needs an extra fee in whole pounds, from 0 to 1,000.');
+      return;
+    }
+    if (!Object.values(d.governorates).some((row) => row.active)) {
+      this.region.set('egypt');
+      this.#snackbar.error('Turn on delivery for at least one governorate.');
+      return;
+    }
 
     this.isSaving.set(true);
     try {
@@ -265,6 +323,12 @@ export class ShippingTabComponent implements OnInit {
             banner: d.promoBanner.trim() || null,
           },
           note: d.note.trim(),
+          egyptGovernorates: Object.fromEntries(
+            EGYPT_GOVERNORATES.map((governorate) => {
+              const row = d.governorates[governorate.id];
+              return [governorate.id, { extraFeeEgp: row?.extraFeeEgp ?? 0, active: row?.active !== false }];
+            }),
+          ),
           // Drop legacy zone / flat-fee fields on the next admin save.
           baseFee: deleteField(),
           zones: deleteField(),
