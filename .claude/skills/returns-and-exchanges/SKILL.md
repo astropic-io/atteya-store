@@ -7,6 +7,7 @@ description: Returns & Exchanges for shoppers and staff - who can send a request
 
 Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292 (shopper screen), <KEY>-293 (admin Returns page and stock moves), <KEY>-294 (later emails and the Terms page).
 <KEY>-303 changed how the courier fee is paid: by InstaPay after Approve and before the courier comes (Waiting for Payment).
+<KEY>-307 added sending a paid fee back (Fee Sent Back), the 2-day fee reminder and the 5-day automatic cancel.
 
 **How to edit this file:** one fact per line, as a list item under the heading it belongs to. Add a new rule as its own line, or a new `##` heading for a new topic. Never join rules into one long paragraph: Git merges line by line, so two PRs that touch the same long line conflict even when they change different sentences.
 
@@ -101,7 +102,7 @@ Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292
 - The summary carries only what the shopper's request box shows (<KEY>-296): `askedLabel` is the same text as `returnRequests/{id}.items[].askedLabel`, `refundEgp` is the refund after the courier fee; never `refundTo`, the note, the customer, the staff history or staff notes, because shoppers and guests (`orderViews`) read it.
 - Entries written before <KEY>-296 have no `storeFault`, `refundEgp` or `askedLabel`; `readReturnSummaries()` leaves these out, the website reads them with `readRequestDetails()`.
 - `returnRequests/{id}` holds `ref`, `orderId`, `orderRef`, `status`, `customerId`, `guest`, `customerEmail`, `customer` (name, phone, email, country, address), `items` (line, kind, reason, wants, refund, gift, autoGift, forLine, product, selection, name, photo, new piece, `askedLabel`, `refundEgp`), `note`, `refundTo`, `hasRefund`, `storeFault`, `itemsEgp`, `feeEgp`, `feePaid`, `refundEgp`, `cashAtDoorEgp`, `orderDeliveredAt`, `createdAt`, `updatedAt`.
-- `cancelReturnRequest` (`functions/src/returns/cancel-return-request.fn.ts`, same owner check, `{ requestId, viewKey? }`) sets the request to Cancelled while it is Requested or Waiting for Payment, updates its entry in the order's `returns` and sends nothing; calling it again answers `changed: false`.
+- `cancelReturnRequest` (`functions/src/returns/cancel-return-request.fn.ts`, same owner check, `{ requestId, viewKey?, feeAlreadyPaid? }`, transaction in `runCancelReturn()`) sets the request to Cancelled while it is Requested or Waiting for Payment, updates its entry in the order's `returns` and sends nothing; calling it again answers `changed: false`.
 - Cancel from Waiting for Payment moves the `rejectStock` saved at Approve once (`stockUndoneAt`), exactly like Reject, so the held new piece goes back into stock (<KEY>-303).
 - A cancel from Waiting for Payment adds a `returnStaffNotes/{id}.history` row (`by: 'shopper'`), since the shopper may already have sent the fee; the cancel dialog asks them to message us on WhatsApp if they did.
 - Cancel refuses a request whose Reject would keep Wrong Item Sent corrections (`rejectKeptItems()`); such a request has no fee to pay first, so this only guards against a later rule change.
@@ -175,6 +176,30 @@ Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292
 - The Reject dialog lists what happens to stock per item (`rejectStockLines()`; a request approved before `rejectStock` existed shows one line saying Approve is undone), e.g. "Club Tee, Size M stays with the customer. Club Shorts, Size M goes back into stock."
 - Stamps: `approvedAt` / `approvedBy`, `rejectedAt` / `rejectedBy`, `receivedAt` / `receivedBy`, `refundSentAt` / `refundSentBy`.
 - Pieces whose product or size is gone are counted in `stockNotReturned` and the snackbar asks staff to check that product.
+
+## Courier fee sent back, reminder and automatic cancel (<KEY>-307)
+
+- A paid courier fee comes back in full when the request ends before pickup: `returnFeeBackEgp(saved, from, feeAlreadyPaid)` in `functions/src/store/returns.ts`.
+- Shopper Cancel from Waiting for Payment: the cancel dialog (`features/returns/dialogs/cancel-return-dialog`) has "I already sent the EGP 115 courier fee"; ticked, `cancelReturnRequest` gets `feeAlreadyPaid: true` (refused from Requested).
+- Reject from Waiting for Payment: the Reject dialog has "The customer already paid the courier fee" (`rejectReturnRequest` `feeAlreadyPaid`, refused from Requested).
+- Reject from Approved saves the fee to send back automatically when `paymentReceivedAt` is set (no checkbox); the dialog says so.
+- The fee to send back is saved as `feeBackEgp` on `returnRequests/{id}` and on the order's `returns` entry (`withReturnStatus(..., { feeBackEgp })`).
+- **Fee Sent Back** (`markFeeSentBack`, `europe-west3`, App Check, `requireRole` admin only) saves `feeSentBackEgp` (1 to the fee), `feeSentBackTo` (required, 100 characters), `feeSentBackReference` (optional, 100 characters), `feeSentBackAt`, `feeSentBackBy`; refuses when there is no fee to send back or it was already sent (`runFeeSentBack()` in `return-staff-transaction.ts`).
+- Fee Sent Back writes only `feeSentBackEgp` and `feeSentBackAt` (a Timestamp) on the order's `returns` entry (`withReturnFeeSentBack()`), never Sent to or the reference; `orderViews` follows through `syncOrderView`.
+- Staff history rows can carry a `label` the admin shows instead of the status name ("Fee sent back: EGP 115", "Cancelled: the courier fee didn't arrive in 5 days").
+- Admin `/admin/returns/:id` shows the red `text-error` line "Fee to send back: EGP 115", then "Fee sent back: EGP 115 · 14 Nov" (`feeBackLine()`); the Returns list shows the same line under the money; only admins see the **Fee Sent Back** button.
+- The shopper's request box shows "We'll send your EGP 115 courier fee back by InstaPay." until Fee Sent Back, then "Fee sent back: EGP 115 · 14 Nov" (`readRequestDetails()` reads `feeBackEgp`, `feeSentBackEgp`, `feeSentBackAt`).
+- Approve into Waiting for Payment stamps `waitingForPaymentAt`; requests without it fall back to `approvedAt` (`waitingForPaymentStartMs()`).
+- `chaseReturnFees` (`functions/src/returns/return-fee-chase.schedule.ts`, `onSchedule` every hour, `europe-west3`) finds Waiting for Payment requests by `status` + `waitingForPaymentAt` (index in `firebase/firestore.indexes.json`) and decides with `returnFeeChase()`.
+- After `RETURN_FEE_REMINDER_DAYS` (2) it stamps `feeReminderSentAt` once in a transaction; that write makes `sendReturnEmails` send `return-fee-reminder` (shopper, pay steps again, "If it doesn't arrive by 19 Nov, we'll cancel the request.") and `store-return-fee-reminder` (staff).
+- The shopper is always reminded before the cancel: the cancel day is `returnFeeCancelAtMs(start, reminderMs)`, 5 days after the start but never sooner than 3 days after the reminder (older requests without `waitingForPaymentAt` get their reminder first).
+- A shopper's ticked "I already sent" is saved with `feeBackClaimedBy: 'shopper'`; the admin page and the Fee Sent Back dialog then ask staff to check the fee arrived in InstaPay first.
+- A request that cancelled itself (`cancelledBy: 'system'`) can still get Fee Sent Back up to the whole fee (`returnFeeBackLimitEgp()`), for a fee that arrived just before the cancel; a shopper's ticked Cancel on such a request is refused with a message to use WhatsApp.
+- After `RETURN_FEE_AUTO_CANCEL_DAYS` (5) it cancels through `runCancelReturn()` (`functions/src/returns/return-cancel.ts`), the same transaction as the shopper's Cancel, with `cancelledBy: 'system'`; the held new piece goes back once (`stockUndoneAt`), and the summary entry gets `autoCancelled: true`.
+- Every chase re-checks the live request inside its transaction, so a Payment Received or Cancel that lands first wins.
+- `return-auto-cancelled` (`REQUEST CANCELLED`, Message Us on WhatsApp, View Your Order) goes only on Waiting for Payment → Cancelled with `cancelledBy: 'system'`; the shopper's own Cancel still sends nothing.
+- `return-fee-sent-back` (`FEE SENT BACK`, "…to …5678", reference when given) goes when `feeSentBackAt` first appears; the Rejected email adds "We'll send your EGP 115 courier fee back by InstaPay." while `feeBackEgp` is still to send.
+- All stock writes of the return steps go through `writeStockMoves()` (`return-staff-transaction.ts`); products are read first with `readStepProducts()`.
 
 ## How items come back
 

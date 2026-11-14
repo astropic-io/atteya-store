@@ -17,17 +17,24 @@ import type { OrderDoc } from '@core/services/orders/order.schema';
 import { shortOrderRef } from '@core/services/orders/order-ref';
 import { SnackbarService } from '@core/services/snack-bar/snack-bar.service';
 import { AppImageFallbackDirective } from '@shared/directives/image-fallback';
-import {
-  ConfirmDialogComponent,
-  type ConfirmDialogData,
-} from '@shared/ui/dialogs/confirm-dialog/confirm-dialog.component';
 import { SharedIconModule } from '@shared/ui/mat-icon';
 import { callableMessage } from '@shared/utils/firebase/firebase-errors';
 import { normalizeImageKitPath } from '@shared/utils/image';
 import { formatMoney } from '@shared/utils/money';
+import {
+  CancelReturnDialogComponent,
+  type CancelReturnDialogData,
+  type CancelReturnDialogResult,
+} from '../../dialogs/cancel-return-dialog/cancel-return-dialog.component';
 import { ReturnsService } from '../../services/returns.service';
 import { savedReturnRequest } from '../../utils/return-memory';
 import { lineDetails, readRequestDetails } from '../../utils/return-request.utils';
+
+const SHORT_DATE = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  timeZone: 'Africa/Cairo',
+});
 
 /**
  * One return or exchange request on the order page (ATS-292): ref, status steps, the items and
@@ -74,7 +81,28 @@ export class ReturnRequestBoxComponent {
       refundEgp: fromOrder.refundEgp ?? saved.refundEgp ?? null,
       rejectReason: fromOrder.rejectReason ?? null,
       payFeeEgp: fromOrder.payFeeEgp ?? null,
+      feeBackEgp: fromOrder.feeBackEgp ?? null,
+      feeSentBackEgp: fromOrder.feeSentBackEgp ?? null,
+      feeSentBackAtMs: fromOrder.feeSentBackAtMs ?? null,
+      autoCancelled: fromOrder.autoCancelled ?? false,
     };
+  });
+
+  /**
+   * A paid courier fee coming back (ATS-307): "We'll send your EGP 115 courier fee back by
+   * InstaPay." until staff record it, then "Fee sent back: EGP 115 · 14 Nov".
+   */
+  readonly feeBack = computed((): string | null => {
+    const details = this.#details();
+    if (details.feeSentBackEgp !== null) {
+      const amount = formatMoney(details.feeSentBackEgp, 'EGP', 0);
+      const day =
+        details.feeSentBackAtMs === null ? '' : SHORT_DATE.format(new Date(details.feeSentBackAtMs));
+      return day ? `Fee sent back: ${amount} · ${day}` : `Fee sent back: ${amount}`;
+    }
+    return details.feeBackEgp !== null
+      ? `We'll send your ${formatMoney(details.feeBackEgp, 'EGP', 0)} courier fee back by InstaPay.`
+      : null;
   });
 
   /** The courier fee is paid by InstaPay before the courier comes (ATS-303). */
@@ -197,9 +225,10 @@ export class ReturnRequestBoxComponent {
         return '';
       case 'cancelled': {
         const until = this.newUntil();
-        return until
-          ? `You cancelled this request. You can send a new one until ${until}.`
+        const what = this.#details().autoCancelled
+          ? "We cancelled this request because the courier fee didn't arrive in time."
           : 'You cancelled this request.';
+        return until ? `${what} You can send a new one until ${until}.` : what;
       }
     }
   });
@@ -225,24 +254,22 @@ export class ReturnRequestBoxComponent {
 
   async cancel(): Promise<void> {
     if (this.isCancelling()) return;
-    const ref = this.#dialog.open<ConfirmDialogComponent, ConfirmDialogData, boolean>(
-      ConfirmDialogComponent,
-      {
-        data: {
-          title: 'Cancel this request?',
-          message:
-            this.request().status === 'waiting-for-payment'
-              ? 'We will stop your return or exchange. If you already sent the courier fee, message us on WhatsApp. You can send a new request while the 14 days are open.'
-              : 'We will stop your return or exchange. You can send a new request while the 14 days are open.',
-          confirmText: 'Cancel Request',
-          cancelText: 'Keep Request',
-        },
+    const fee = this.#details().payFeeEgp;
+    const ref = this.#dialog.open<
+      CancelReturnDialogComponent,
+      CancelReturnDialogData,
+      CancelReturnDialogResult
+    >(CancelReturnDialogComponent, {
+      data: {
+        feeLabel:
+          this.request().status === 'waiting-for-payment' && fee !== null ? formatMoney(fee, 'EGP', 0) : null,
       },
-    );
-    if (!(await firstValueFrom(ref.afterClosed()))) return;
+    });
+    const choice = await firstValueFrom(ref.afterClosed());
+    if (!choice) return;
     this.isCancelling.set(true);
     try {
-      await this.#returns.cancelReturnRequest(this.request().id, this.viewKey());
+      await this.#returns.cancelReturnRequest(this.request().id, this.viewKey(), choice.feeAlreadyPaid);
       this.#snackbar.success('Request cancelled.');
     } catch (error: unknown) {
       this.#snackbar.error(callableMessage(error) ?? "We couldn't cancel your request. Please try again.");

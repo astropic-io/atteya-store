@@ -84,7 +84,14 @@
                 }
                 <span class="admin-order-muted">{{ row.pieces }}</span>
               </span>
-              <span class="font-body-md col-span-2 @5xl:col-span-1">{{ row.money }}</span>
+              <span class="elements-start-col col-span-2 @5xl:col-span-1">
+                <span class="font-body-md">{{ row.money }}</span>
+                @if (row.feeBack; as feeBack) {
+                  <span class="font-label-md font-bold!" [class.text-error]="row.feeBackOwed">{{
+                    feeBack
+                  }}</span>
+                }
+              </span>
               <span class="hidden @5xl:block">
                 <app-status-badge [value]="row.status" [statusConfig]="statusConfig" />
               </span>

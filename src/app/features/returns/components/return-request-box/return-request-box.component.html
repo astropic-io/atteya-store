@@ -50,6 +50,9 @@
     } @else if (message()) {
       <p class="font-body-md">{{ message() }}</p>
     }
+    @if (feeBack(); as line) {
+      <p class="font-body-md font-bold!">{{ line }}</p>
+    }
 
     @if (pay(); as p) {
       <ol class="pay-steps" aria-label="How to pay the courier fee">

@@ -24,6 +24,11 @@ import {
   type ApproveWrongItemDialogResult,
 } from '../dialogs/approve-wrong-item-dialog.component';
 import {
+  FeeSentBackDialogComponent,
+  type FeeSentBackDialogData,
+  type FeeSentBackDialogResult,
+} from '../dialogs/fee-sent-back-dialog.component';
+import {
   ReceiveReturnDialogComponent,
   type ReceiveReturnDialogData,
   type ReceiveReturnDialogResult,
@@ -43,6 +48,10 @@ import { ReturnsAdminService, type SentPieceChoice } from '../services/returns-a
 import {
   customerWhatsappUrl,
   egp,
+  feeBackLimit,
+  feeBackLine,
+  feeBackNeedsCheck,
+  feeBackOwed,
   feeLine,
   notReturnedMessage,
   productIdsOfRequest,
@@ -54,7 +63,7 @@ import {
   returnNextStep,
 } from '../utils/return-admin.utils';
 
-type ReturnAction = 'approve' | 'payment' | 'reject' | 'receive' | 'refund';
+type ReturnAction = 'approve' | 'payment' | 'reject' | 'receive' | 'refund' | 'fee-back';
 
 const DIALOG_WIDTH = '480px';
 
@@ -176,6 +185,30 @@ export class ReturnDetailsPageComponent implements OnInit {
   readonly canRefund = computed(() => this.#moves().includes('refund-sent') && this.isAdmin());
   readonly refundWaitsForAdmin = computed(() => this.#moves().includes('refund-sent') && !this.isAdmin());
 
+  /** "Fee to send back: EGP 115", then "Fee sent back: EGP 115 · 14 Nov" (ATS-307). */
+  readonly feeBack = computed(() => {
+    const request = this.request();
+    return request ? feeBackLine(request) : null;
+  });
+  readonly feeBackOwed = computed(() => {
+    const request = this.request();
+    return request ? feeBackOwed(request) : false;
+  });
+  readonly #feeBackLimit = computed(() => {
+    const request = this.request();
+    return request ? feeBackLimit(request) : 0;
+  });
+  /** The customer only says they paid: staff check InstaPay before sending it back. */
+  readonly feeBackNeedsCheck = computed(() => {
+    const request = this.request();
+    return request ? feeBackNeedsCheck(request) : false;
+  });
+  /**
+   * Admin only; staff see the line but not the button (the server refuses staff too). Also on a
+   * request that cancelled itself, in case the fee arrived just before the cancel.
+   */
+  readonly canSendFeeBack = computed(() => this.#feeBackLimit() > 0 && this.isAdmin());
+
   ngOnInit(): void {
     this.#seo.setPageMetadata({
       title: 'Return Request | Atteya Admin',
@@ -263,6 +296,9 @@ export class ReturnDetailsPageComponent implements OnInit {
         // Approve took the new pieces, also while Waiting for Payment (ATS-303).
         approved: request.status === 'approved' || request.status === 'waiting-for-payment',
         stockLines: rejectStockLines(request, this.dataResource.value()?.products ?? new Map()),
+        feeLabel: returnPaysFirst(request.feePaid, request.feeEgp) ? egp(request.feeEgp) : null,
+        askFeePaid: request.status === 'waiting-for-payment',
+        feeComesBack: request.status === 'approved' && request.paymentReceivedAt !== null,
       },
       width: DIALOG_WIDTH,
     });
@@ -270,7 +306,7 @@ export class ReturnDetailsPageComponent implements OnInit {
     if (!result) return;
     await this.#run(
       'reject',
-      () => this.#returns.reject(request.id, result.reason),
+      () => this.#returns.reject(request.id, result.reason, result.feeAlreadyPaid),
       `Request ${request.ref} rejected.`,
     );
   }
@@ -327,6 +363,33 @@ export class ReturnDetailsPageComponent implements OnInit {
       'refund',
       () => this.#returns.refundSent(request.id, result.amountEgp, result.reference),
       `Refund saved. Request ${request.ref} is done.`,
+    );
+  }
+
+  /** Fee Sent Back (admin only, ATS-307): the paid courier fee went back by InstaPay. */
+  async feeSentBack(): Promise<void> {
+    const request = this.request();
+    const fee = this.#feeBackLimit();
+    if (!request || this.busy() || fee <= 0) return;
+    const ref = this.#dialog.open<FeeSentBackDialogComponent, FeeSentBackDialogData, FeeSentBackDialogResult>(
+      FeeSentBackDialogComponent,
+      {
+        data: {
+          ref: request.ref,
+          feeEgp: fee,
+          feeLabel: egp(fee),
+          refundTo: request.refundTo,
+          checkFirst: feeBackNeedsCheck(request) || (request.feeBackEgp ?? 0) === 0,
+        },
+        width: DIALOG_WIDTH,
+      },
+    );
+    const result = await firstValueFrom(ref.afterClosed());
+    if (!result) return;
+    await this.#run(
+      'fee-back',
+      () => this.#returns.feeSentBack(request.id, result.amountEgp, result.sentTo, result.reference),
+      'Fee sent back saved. We emailed the customer.',
     );
   }
 

@@ -1,5 +1,6 @@
 import {
   courierFeeEgp,
+  timestampMs,
   giftsBack,
   isRefundItem,
   isStoreFault,
@@ -285,11 +286,19 @@ export interface ReturnRequestDetails {
    * null for requests with no fee to pay first (store fault, or saved before ATS-303).
    */
   readonly payFeeEgp: number | null;
+  /** A paid courier fee we send back by InstaPay (ATS-307), whole EGP; null when none. */
+  readonly feeBackEgp: number | null;
+  /** Fee Sent Back: what staff sent back, whole EGP, and when (epoch ms). */
+  readonly feeSentBackEgp: number | null;
+  readonly feeSentBackAtMs: number | null;
+  /** The request cancelled itself: the courier fee didn't arrive in time (ATS-307). */
+  readonly autoCancelled: boolean;
 }
 
 /**
  * Extra fields the server may add to an entry of the order's `returns` summary (`askedLabel`
- * per item, `storeFault`, `refundEgp`, `refundSentEgp`, `rejectReason`, `payFeeEgp`). `readReturnSummaries()` keeps only the
+ * per item, `storeFault`, `refundEgp`, `refundSentEgp`, `rejectReason`, `payFeeEgp`, and since
+ * ATS-307 `feeBackEgp`, `feeSentBackEgp`, `feeSentBackAt`, `autoCancelled`). `readReturnSummaries()` keeps only the
  * fields every entry has, so these are read here; anything missing is null.
  */
 export function readRequestDetails(raw: unknown, requestId: string): Partial<ReturnRequestDetails> {
@@ -319,6 +328,15 @@ export function readRequestDetails(raw: unknown, requestId: string): Partial<Ret
   if (typeof reason === 'string' && reason.trim()) out.rejectReason = reason.trim();
   const payFee = entry['payFeeEgp'];
   if (typeof payFee === 'number' && Number.isFinite(payFee) && payFee > 0) out.payFeeEgp = Math.round(payFee);
+  const feeBack = entry['feeBackEgp'];
+  if (typeof feeBack === 'number' && Number.isFinite(feeBack) && feeBack > 0)
+    out.feeBackEgp = Math.round(feeBack);
+  const feeSent = entry['feeSentBackEgp'];
+  if (typeof feeSent === 'number' && Number.isFinite(feeSent) && feeSent > 0) {
+    out.feeSentBackEgp = Math.round(feeSent);
+    out.feeSentBackAtMs = timestampMs(entry['feeSentBackAt']);
+  }
+  if (entry['autoCancelled'] === true) out.autoCancelled = true;
   return out;
 }
 

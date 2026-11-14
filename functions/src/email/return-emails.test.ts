@@ -347,3 +347,91 @@ describe('courier fee paid by InstaPay first', () => {
     assert.match(staff.text, /paid by InstaPay before pickup/);
   });
 });
+
+describe('courier fee sent back, reminder and automatic cancel (ATS-307)', () => {
+  const payFirst = { feePaid: 'instapay-first', refundEgp: 650, cashAtDoorEgp: 0 };
+  const approvedAt = { toMillis: () => Date.UTC(2026, 10, 14, 10, 0) };
+
+  it('the fee reminder sends the shopper and staff reminders once', () => {
+    const waiting = at('waiting-for-payment', payFirst);
+    const reminded = at('waiting-for-payment', { ...payFirst, feeReminderSentAt: approvedAt });
+    assert.deepEqual(returnEmailsForWrite(waiting, reminded), [
+      'return-fee-reminder',
+      'store-return-fee-reminder',
+    ]);
+    assert.deepEqual(returnEmailsForWrite(reminded, reminded), []);
+  });
+
+  it('only the automatic cancel sends "was cancelled"; the shopper cancel sends nothing', () => {
+    const waiting = at('waiting-for-payment', payFirst);
+    assert.deepEqual(returnEmailsForWrite(waiting, at('cancelled', { ...payFirst, cancelledBy: 'system' })), [
+      'return-auto-cancelled',
+    ]);
+    assert.deepEqual(
+      returnEmailsForWrite(waiting, at('cancelled', { ...payFirst, cancelledBy: 'shopper' })),
+      [],
+    );
+  });
+
+  it('Fee Sent Back sends its email once', () => {
+    const rejected = at('rejected', { ...payFirst, feeBackEgp: 70 });
+    const sent = at('rejected', {
+      ...payFirst,
+      feeBackEgp: 70,
+      feeSentBackEgp: 70,
+      feeSentBackTo: '010 1234 5678',
+      feeSentBackAt: approvedAt,
+    });
+    assert.deepEqual(returnEmailsForWrite(rejected, sent), ['return-fee-sent-back']);
+    assert.deepEqual(returnEmailsForWrite(sent, sent), []);
+    assert.equal(returnClaimId('return-fee-sent-back', sent), 'k7q2m9abc_return-fee-sent-back');
+  });
+
+  it('the reminder says the cancel day and repeats the pay steps', () => {
+    const email = renderReturnEmail(
+      'return-fee-reminder',
+      request({ ...payFirst, status: 'waiting-for-payment', waitingForPaymentAt: approvedAt }),
+      ctx,
+    );
+    assert.equal(email.subject, 'Your return #R-K7Q2M9 is waiting for the courier fee');
+    assert.match(email.html, /WAITING FOR<br>PAYMENT/);
+    assert.match(email.text, /If it doesn't arrive by 19 Nov, we'll cancel the request\./);
+    assert.match(email.text, /Send EGP\s?70 by InstaPay/);
+    const staff = renderReturnEmail(
+      'store-return-fee-reminder',
+      request({ ...payFirst, status: 'waiting-for-payment', approvedAt }),
+      ctx,
+    );
+    assert.match(staff.text, /Still waiting for the courier fee\. If it arrived, press Payment Received\./);
+  });
+
+  it('the automatic cancel and Fee Sent Back emails', () => {
+    const cancelled = renderReturnEmail('return-auto-cancelled', at('cancelled', payFirst), ctx);
+    assert.equal(cancelled.subject, 'Your return #R-K7Q2M9 was cancelled');
+    assert.match(cancelled.html, /REQUEST<br>CANCELLED/);
+    assert.match(cancelled.text, /If you already sent the fee, message us on WhatsApp\./);
+    assert.match(cancelled.html, /Message Us on WhatsApp/);
+    const back = renderReturnEmail(
+      'return-fee-sent-back',
+      at('rejected', {
+        ...payFirst,
+        feeBackEgp: 70,
+        feeSentBackEgp: 70,
+        feeSentBackTo: '010 1234 5678',
+        feeSentBackReference: 'TX9',
+      }),
+      ctx,
+    );
+    assert.equal(back.subject, 'We sent your courier fee back for #R-K7Q2M9');
+    assert.match(back.html, /FEE SENT<br>BACK/);
+    assert.match(back.text, /We sent your EGP\s?70 courier fee back by InstaPay to …5678\./);
+    assert.match(back.text, /Reference: TX9/);
+  });
+
+  it('the Rejected email says the fee comes back while it is still to send', () => {
+    const email = renderReturnEmail('return-rejected', at('rejected', { ...payFirst, feeBackEgp: 70 }), ctx);
+    assert.match(email.text, /We'll send your EGP\s?70 courier fee back by InstaPay\./);
+    const none = renderReturnEmail('return-rejected', at('rejected', payFirst), ctx);
+    assert.doesNotMatch(none.text, /courier fee back/);
+  });
+});

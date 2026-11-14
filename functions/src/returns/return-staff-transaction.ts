@@ -4,6 +4,7 @@ import {
   type DocumentData,
   type DocumentReference,
   type Firestore,
+  type Transaction,
 } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import type { RequiredCaller } from '../auth/require-role.js';
@@ -11,8 +12,11 @@ import {
   isReturnStatus,
   nextReturnStatuses,
   returnApproveStatus,
+  returnFeeBackEgp,
+  returnFeeBackLimitEgp,
   returnPaysFirst,
   returnStatusLabel,
+  withReturnFeeSentBack,
   withReturnStatus,
   type ReturnKeptItem,
   type ReturnStatus,
@@ -34,11 +38,13 @@ import {
   withSentPieces,
   type ApproveInput,
   type ConfirmPaymentInput,
+  type FeeSentBackInput,
   type ReceiveInput,
   type RefundSentInput,
   type RejectInput,
   type StaffReturnItem,
   type StepProduct,
+  type StockMoveResult,
 } from './return-staff-step.js';
 
 /**
@@ -147,19 +153,13 @@ export async function runReturnStep(
       let step: StockStep | null = null;
       let short: 'refuse' | 'floor' = 'floor';
       let keptItems: ReturnKeptItem[] = [];
+      let feeBackEgp = 0;
       const patch: DocumentData = {};
       const now = FieldValue.serverTimestamp();
 
       // Every read first (Firestore transactions read before they write).
       const products = new Map<string, StepProduct | null>();
-      const readProducts = async (ids: readonly string[]) => {
-        const missing = ids.filter((id) => !products.has(id));
-        const snaps = await Promise.all(missing.map((id) => tx.get(productRef(db, id))));
-        missing.forEach((id, index) => {
-          const snap = snaps[index]!;
-          products.set(id, snap.exists ? stepProduct(snap.data() ?? {}) : null);
-        });
-      };
+      const readProducts = (ids: readonly string[]) => readStepProducts(tx, db, ids, products);
 
       if (call.step === 'approve') {
         const ids = new Set<string>(sentProductIds(call.input.sent));
@@ -181,11 +181,22 @@ export async function runReturnStep(
         patch['items'] = mergeItemChoices(rawItems, items);
         patch['approvedAt'] = now;
         patch['approvedBy'] = actor.uid;
+        // The hourly schedule counts the 2-day reminder and 5-day cancel from here (ATS-307).
+        if (target === 'waiting-for-payment') patch['waitingForPaymentAt'] = now;
       } else if (call.step === 'confirm-payment') {
         // No stock moves: Approve already took the new pieces (ATS-303).
         patch['paymentReceivedAt'] = now;
         patch['paymentReceivedBy'] = actor.uid;
       } else if (call.step === 'reject') {
+        if (call.input.feeAlreadyPaid && current === 'requested') {
+          throw new ReturnStepError(
+            'invalid-argument',
+            'The customer pays the courier fee only after Approve, so there is no fee to send back yet.',
+          );
+        }
+        // A courier fee already paid comes back in full (ATS-307).
+        feeBackEgp = returnFeeBackEgp(saved, current, call.input.feeAlreadyPaid);
+        if (feeBackEgp > 0) patch['feeBackEgp'] = feeBackEgp;
         const undo = rejectStockFor(saved);
         if (undo) {
           step = undo;
@@ -233,17 +244,8 @@ export async function runReturnStep(
       // Writes from here on.
       let notReturned = 0;
       if (step) {
-        const moved = applyStockMoves(products, step, { short });
+        const moved = writeStockMoves(tx, db, products, step, short, actor.uid);
         notReturned = moved.notReturned;
-        for (const [productId, next] of moved.next) {
-          tx.update(productRef(db, productId), {
-            stock: next.stock,
-            inStock: next.inStock,
-            stockBySize: next.stockBySize ?? FieldValue.delete(),
-            updatedAt: now,
-            updatedBy: actor.uid,
-          });
-        }
         // Approve saves only what really moved, so Reject never undoes a piece that was skipped.
         if (call.step === 'approve') patch['approveStock'] = savedStep(moved.applied);
         const before = typeof saved['stockNotReturned'] === 'number' ? saved['stockNotReturned'] : 0;
@@ -261,7 +263,7 @@ export async function runReturnStep(
             requestId,
             target,
             call.step === 'reject'
-              ? { rejectReason: call.input.reason, keptItems }
+              ? { rejectReason: call.input.reason, keptItems, feeBackEgp }
               : call.step === 'refund-sent'
                 ? { refundSentEgp: call.input.amountEgp }
                 : {},
@@ -278,6 +280,7 @@ export async function runReturnStep(
             by: actor.uid,
             ...(actor.email ? { byEmail: actor.email } : {}),
             ...(call.step === 'reject' ? { reason: call.input.reason } : {}),
+            ...(feeBackEgp > 0 ? { label: `Rejected · courier fee to send back EGP ${feeBackEgp}` } : {}),
           }),
           updatedAt: now,
         },
@@ -289,6 +292,140 @@ export async function runReturnStep(
     if (error instanceof ReturnStepError) throw new HttpsError(error.code, error.message);
     throw error;
   }
+}
+
+/**
+ * Fee Sent Back (admin only, ATS-307): records that the paid courier fee of a Rejected or Cancelled
+ * request went back by InstaPay. Saves the amount, Sent to, the reference, when and who on the
+ * request; the amount and date on the order's `returns` entry (the `orderViews` copy follows the
+ * order); a history row. Refuses when there is no fee to send back, or it was already sent.
+ */
+export async function runFeeSentBack(
+  db: Firestore,
+  input: FeeSentBackInput,
+  actor: RequiredCaller,
+): Promise<ReturnStepResult> {
+  const requestRef = db.collection(RETURN_REQUESTS_COLLECTION).doc(input.requestId);
+  try {
+    return await db.runTransaction(async (tx) => {
+      const requestSnap = await tx.get(requestRef);
+      const saved = requestSnap.data();
+      const orderId = saved?.['orderId'];
+      const status = saved?.['status'];
+      if (
+        !requestSnap.exists ||
+        !saved ||
+        typeof orderId !== 'string' ||
+        !orderId ||
+        orderId.includes('/') ||
+        !isReturnStatus(status)
+      ) {
+        throw new ReturnStepError(
+          'not-found',
+          "We couldn't find that request. Refresh the list and try again.",
+        );
+      }
+      const feeBack = returnFeeBackLimitEgp(saved);
+      if ((status !== 'rejected' && status !== 'cancelled') || feeBack <= 0) {
+        throw new ReturnStepError('failed-precondition', 'This request has no courier fee to send back.');
+      }
+      if (saved['feeSentBackAt']) {
+        throw new ReturnStepError(
+          'failed-precondition',
+          'The courier fee was already sent back. Refresh the page to see it.',
+        );
+      }
+      if (input.amountEgp > feeBack) {
+        throw new ReturnStepError(
+          'invalid-argument',
+          `That is more than the courier fee (EGP ${feeBack.toLocaleString('en-US')}). Check the amount.`,
+        );
+      }
+      const orderRef = db.collection('orders').doc(orderId);
+      const orderSnap = await tx.get(orderRef);
+      const order = orderSnap.data();
+
+      const now = FieldValue.serverTimestamp();
+      const at = Timestamp.now();
+      tx.update(requestRef, {
+        feeSentBackEgp: input.amountEgp,
+        feeSentBackTo: input.sentTo,
+        feeSentBackReference: input.reference,
+        feeSentBackAt: now,
+        feeSentBackBy: actor.uid,
+        updatedAt: now,
+      });
+      if (orderSnap.exists && order) {
+        tx.update(orderRef, {
+          returns: withReturnFeeSentBack(order['returns'], input.requestId, input.amountEgp, at),
+        });
+      }
+      tx.set(
+        db.collection(RETURN_STAFF_NOTES_COLLECTION).doc(input.requestId),
+        {
+          history: FieldValue.arrayUnion({
+            status,
+            from: status,
+            at,
+            by: actor.uid,
+            ...(actor.email ? { byEmail: actor.email } : {}),
+            label: `Fee sent back: EGP ${input.amountEgp.toLocaleString('en-US')}`,
+          }),
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+      return { requestId: input.requestId, status, changed: true, notReturned: 0 };
+    });
+  } catch (error: unknown) {
+    if (error instanceof ReturnStepError) throw new HttpsError(error.code, error.message);
+    throw error;
+  }
+}
+
+/**
+ * Reads the products a step touches into `products` (skips ids already read). Firestore
+ * transactions read before they write, so call this before any `writeStockMoves`.
+ */
+export async function readStepProducts(
+  tx: Transaction,
+  db: Firestore,
+  ids: readonly string[],
+  products: Map<string, StepProduct | null>,
+): Promise<void> {
+  const missing = ids.filter((id) => !products.has(id));
+  const snaps = await Promise.all(missing.map((id) => tx.get(productRef(db, id))));
+  missing.forEach((id, index) => {
+    const snap = snaps[index]!;
+    products.set(id, snap.exists ? stepProduct(snap.data() ?? {}) : null);
+  });
+}
+
+/**
+ * Applies one stock step to the products read with `readStepProducts` and writes them in the
+ * transaction. The one stock writer for every return step: Approve, Reject, Item Received, the
+ * shopper's Cancel and the automatic cancel (ATS-307).
+ */
+export function writeStockMoves(
+  tx: Transaction,
+  db: Firestore,
+  products: ReadonlyMap<string, StepProduct | null>,
+  step: StockStep,
+  short: 'refuse' | 'floor',
+  updatedBy: string,
+): StockMoveResult {
+  const moved = applyStockMoves(products, step, { short });
+  const now = FieldValue.serverTimestamp();
+  for (const [productId, next] of moved.next) {
+    tx.update(productRef(db, productId), {
+      stock: next.stock,
+      inStock: next.inStock,
+      stockBySize: next.stockBySize ?? FieldValue.delete(),
+      updatedAt: now,
+      updatedBy,
+    });
+  }
+  return moved;
 }
 
 export function productRef(db: Firestore, productId: string): DocumentReference {
