@@ -16,6 +16,7 @@ src/app/core/config/order-messages.ts
 functions/src/intl/country-currency.generated.ts
 src/app/core/services/currency/country-currency.ts
 src/app/core/services/currency/tz-currency.ts
+src/app/core/services/currency/tz-country.ts
 
 # Only code is formatted; docs and data keep their hand layout
 *.md

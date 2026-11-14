@@ -17,6 +17,8 @@ import { EGP_ENTRY, type CurrencyEntry } from '@core/services/offers/engine';
 import {
   currencyFromCountry,
   normalizeCurrencyCode,
+  readTimeZone,
+  visitorBrowsingChoice,
   readCachedCurrencyMap,
   readFreshCurrencyMap,
   storeCachedCurrencyMap,
@@ -33,9 +35,12 @@ import { VisitorLocationResponseSchema } from './visitor-geo.schema';
 
 const PENDING_TIMEOUT_MS = 2500;
 const VISITOR_LOCATION_PATH = '/api/visitor-location';
+/** Server could not find the country; the browser decides by its time zone (ATS-313). */
+const BY_ZONE_ATTR = 'data-cur-by-zone';
 
 /**
- * Storefront display currency from visitor geo (CDN headers or IP lookup).
+ * Storefront display currency from visitor geo (CDN headers or IP lookup), then the
+ * browser's time zone when the country can't be found, then EGP (ATS-313).
  * Egypt stays on EGP and keeps the domestic shipping banner.
  * `?cur=` overrides for one visit and is never saved.
  */
@@ -108,6 +113,29 @@ export class CurrencyService {
     const resolved = preset ?? (headers ? await resolveVisitorCountry(headers) : null);
     const country = applyDevLocalGeoFallback(resolved, !environment.production);
     this.#visitorCountry.set(country);
+    if (country === null) {
+      // Unknown country (ATS-313): render EGP with prices hidden; the browser decides by time zone.
+      this.#apply(EGP_ENTRY);
+      this.#syncDocumentHints(null, false, true);
+      // Prerendered pages have no visitor: the browser hydrates this same ready EGP render
+      // (so the chrome is kept), then runs the full lookup.
+      if (!headers) {
+        const payload: CurrencyBootTransfer = {
+          country: null,
+          code: null,
+          map: null,
+          prerendered: true,
+        };
+        this.#transfer.set(CURRENCY_BOOT_KEY, payload);
+        return;
+      }
+      // The inline script in index.html shows these EGP prices at once for an Africa/Cairo browser.
+      this.#document.documentElement.setAttribute(BY_ZONE_ATTR, '');
+      // Factors ride along, so a visitor the time zone places abroad converts without a read.
+      const map = await this.#loadMap();
+      this.#transfer.set(CURRENCY_BOOT_KEY, { country: null, code: null, map });
+      return;
+    }
     const code = currencyFromCountry(country);
     await this.#finishWithCode(code, country, { pendingIntl: code !== 'EGP' });
     this.#publishTransfer(code);
@@ -151,13 +179,21 @@ export class CurrencyService {
         });
         return;
       }
-      if (transferred.code === 'EGP') {
+      if (transferred.code === null) {
+        if (!transferred.prerendered) {
+          // The server already tried every lookup; go straight to the time zone.
+          const choice = await visitorBrowsingChoice(null, readTimeZone());
+          await this.#finishWithCode(choice.currency, choice.country, {
+            pendingIntl: choice.currency !== 'EGP',
+          });
+          return;
+        }
+      } else if (transferred.code === 'EGP') {
         this.#apply(EGP_ENTRY);
         this.#settled = true;
         this.#syncDocumentHints(this.#visitorCountry(), true, false);
         return;
-      }
-      if (this.#map) {
+      } else if (this.#map) {
         this.#apply(entryFor(transferred.code, this.#map));
         this.#settled = true;
         this.#syncDocumentHints(this.#visitorCountry(), true, false);
@@ -175,6 +211,11 @@ export class CurrencyService {
     if (!transferred) return;
     this.#visitorCountry.set(transferred.country);
     if (transferred.map) this.#map = transferred.map;
+    if (transferred.code === null) {
+      // Match the server's hidden EGP render; `#bootClient` decides by time zone.
+      this.#apply(EGP_ENTRY);
+      return;
+    }
     if (transferred.code === 'EGP') {
       this.#apply(EGP_ENTRY);
       this.#settled = true;
@@ -247,9 +288,10 @@ export class CurrencyService {
   async #resolveInitialCode(): Promise<string> {
     const fromQuery = normalizeCurrencyCode(this.#queryCur());
     if (fromQuery) return fromQuery;
-    const country = await this.#resolveVisitorCountryClient();
-    this.#visitorCountry.set(country);
-    return currencyFromCountry(country);
+    const geo = await this.#resolveVisitorCountryClient();
+    const choice = await visitorBrowsingChoice(geo, readTimeZone());
+    this.#visitorCountry.set(choice.country);
+    return choice.currency;
   }
 
   async #resolveVisitorCountryClient(): Promise<string | null> {
@@ -353,6 +395,7 @@ export class CurrencyService {
     else root.removeAttribute('data-currency-ready');
     if (pendingIntl) root.setAttribute('data-cur-pending', '');
     else root.removeAttribute('data-cur-pending');
+    if (ready) root.removeAttribute(BY_ZONE_ATTR);
   }
 }
 

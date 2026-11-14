@@ -110,6 +110,10 @@ import {
   readProductPicks,
   writeProductPicks,
 } from '../src/app/features/admin/pages/offers-manager/models/offer-product-picks.ts';
+import { browsingChoice, countryForTimeZone } from '../src/app/core/services/currency/browsing-currency.ts';
+import { COUNTRY_CURRENCY } from '../src/app/core/services/currency/country-currency.ts';
+import { TZ_COUNTRY } from '../src/app/core/services/currency/tz-country.ts';
+import { isUnreliableCurrency } from '../src/app/core/services/offers/engine/currency.ts';
 describe('cart-pricing (AS-33)', () => {
   it('lineDisplayAmount multiplies converted unit price by quantity', () => {
     assert.equal(lineDisplayAmount(100, 3), 300);
@@ -1761,5 +1765,38 @@ describe('Bundle & Save page (ATS-279)', () => {
     picks = pickProduct(group, picks, 'y');
     assert.equal(pickProduct(group, picks, 'x').length, 2);
     assert.deepEqual(removeProductPiece(picks, 'x'), [{ productId: 'y', sizeId: null }]);
+  });
+});
+
+describe('browsing currency: country, then time zone, then Egypt (ATS-313)', () => {
+  const tables = { countries: COUNTRY_CURRENCY, zones: TZ_COUNTRY, isUnreliable: isUnreliableCurrency };
+
+  it('shows the Egypt price to a visitor whose IP is in Egypt, whatever the time zone', () => {
+    assert.deepEqual(browsingChoice('EG', 'Europe/London', tables), { country: 'EG', currency: 'EGP' });
+    assert.deepEqual(browsingChoice('eg', undefined, tables), { country: 'EG', currency: 'EGP' });
+  });
+
+  it('shows abroad prices to a visitor whose IP is abroad, whatever the time zone', () => {
+    assert.deepEqual(browsingChoice('SA', 'Africa/Cairo', tables), { country: 'SA', currency: 'SAR' });
+    assert.deepEqual(browsingChoice('US', undefined, tables), { country: 'US', currency: 'USD' });
+  });
+
+  it('shows the Egypt price when the IP is unknown and the time zone is Africa/Cairo', () => {
+    assert.deepEqual(browsingChoice(null, 'Africa/Cairo', tables), { country: 'EG', currency: 'EGP' });
+  });
+
+  it('shows QAR abroad prices when the IP is unknown and the time zone is Asia/Qatar', () => {
+    assert.deepEqual(browsingChoice(null, 'Asia/Qatar', tables), { country: 'QA', currency: 'QAR' });
+  });
+
+  it('shows the Egypt price when both the IP and the time zone are unknown', () => {
+    assert.deepEqual(browsingChoice(null, undefined, tables), { country: null, currency: 'EGP' });
+    assert.deepEqual(browsingChoice(null, '  ', tables), { country: null, currency: 'EGP' });
+  });
+
+  it('shows USD abroad prices for a time zone with no country or no usable currency', () => {
+    assert.deepEqual(browsingChoice(null, 'Etc/UTC', tables), { country: null, currency: 'USD' });
+    assert.deepEqual(browsingChoice(null, 'Asia/Beirut', tables), { country: 'LB', currency: 'USD' });
+    assert.equal(countryForTimeZone('Mars/Olympus', TZ_COUNTRY), null);
   });
 });
