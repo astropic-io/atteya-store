@@ -163,6 +163,8 @@ export function renderOrderEmail(
       return orderShipped(order, ctx);
     case 'order-delivered':
       return orderDelivered(order, ctx);
+    case 'order-reopened':
+      return orderReopened(order, ctx);
     case 'store-new-order':
       return storeNewOrder(order, ctx);
   }
@@ -198,7 +200,8 @@ interface ShopperEmail {
   readonly footerNote?: string;
 }
 
-function renderShopper(order: OrderEmailOrder, ctx: OrderEmailContext, email: ShopperEmail): RenderedEmail {
+function renderShopper(order: OrderEmailOrder, ctx: OrderEmailContext, given: ShopperEmail): RenderedEmail {
+  const email = (ctx as ReopenedContext).reopened ? reopenedCopy(order, given) : given;
   const blocks = email.blocks.filter((block): block is Block => block !== null);
   const hasWhatsappButton = blocks.some((block) => block.whatsappButton === true);
   const help = footerHelp(ctx, email, !hasWhatsappButton);
@@ -748,6 +751,54 @@ function paymentFailed(order: OrderEmailOrder, ctx: OrderEmailContext): Rendered
       itemsRow('Still Want These?', order, bought.length ? bought : order.lines, ctx, { prices: true }),
     ],
   });
+}
+
+/** The context `orderReopened` renders the usual email with, so `renderShopper` swaps the top copy. */
+interface ReopenedContext extends OrderEmailContext {
+  readonly reopened?: boolean;
+}
+
+/**
+ * "Your order is back on" (ATS-325): staff reopened an order cancelled by mistake. The body is the
+ * email for the status it went back to (how to pay for Waiting for Payment, as in the order-placed
+ * email; what to have ready for Confirmed), with the subject, status and sentence of a reopen.
+ * Amounts follow the same rules as those emails (abroad: only the shopper's currency, ATS-309).
+ */
+function orderReopened(order: OrderEmailOrder, ctx: OrderEmailContext): RenderedEmail {
+  const reopened: ReopenedContext = { ...ctx, reopened: true };
+  if (order.status === 'confirmed') {
+    return order.paymentMethod === 'cash-on-delivery'
+      ? codConfirmed(order, reopened)
+      : paidConfirmed(order, reopened);
+  }
+  switch (order.paymentMethod) {
+    case 'cash-on-delivery':
+      return codPlaced(order, reopened);
+    case 'instapay':
+      return instapayPlaced(order, reopened);
+    default:
+      return bankTransferPlaced(order, reopened);
+  }
+}
+
+function reopenedCopy(order: OrderEmailOrder, email: ShopperEmail): ShopperEmail {
+  const base = `Sorry for the mix-up, ${firstName(order)}. Your order ${order.ref} is back on.`;
+  let next: string;
+  if (order.status === 'confirmed') {
+    next = "It's confirmed, and we'll email you when it's on its way.";
+  } else if (order.feeToBeAgreed) {
+    next = order.paymentMethod === 'bank-transfer' ? abroadAgreeLine(order) : FEE_TO_AGREE;
+  } else if (dueFor(order)) {
+    next = "Pay as shown below and we'll confirm it as soon as your payment arrives.";
+  } else {
+    next = "We'll contact you to confirm it.";
+  }
+  return {
+    ...email,
+    subject: `Your order ${order.ref} is back on`,
+    status: ['Back', 'On'],
+    sentence: `${base} ${next}`,
+  };
 }
 
 // ── Shopper email parts ──────────────────────────────────────────────────────

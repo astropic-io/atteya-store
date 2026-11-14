@@ -14,7 +14,7 @@ import {
   type QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import * as v from 'valibot';
-import type { StaffOrderStatus } from '@core/config/order-status';
+import type { ReopenStatus, StaffOrderStatus } from '@core/config/order-status';
 import { callableFrom, injectFirestore, injectFunctionsAsync } from '@core/firebase';
 import {
   ORDER_STAFF_NOTES_COLLECTION,
@@ -71,6 +71,13 @@ export interface SetOrderStatusResult {
   readonly stock: 'take' | 'return' | 'none';
   /** Pieces that couldn't go back into stock (size or product gone). */
   readonly notReturned?: number;
+}
+
+export interface ReopenOrderResult {
+  readonly orderId: string;
+  /** The status the order went back to. */
+  readonly status: ReopenStatus;
+  readonly stock: 'take' | 'none';
 }
 
 export interface SetDeliveryFeeResult {
@@ -197,6 +204,16 @@ export class OrdersAdminService {
       'setDeliveryFee',
     );
     const response = await call({ orderId, feeEgp });
+    return response.data;
+  }
+
+  /**
+   * Admins and staff: puts an order cancelled by mistake back to its status before the cancel
+   * (ATS-325). The server checks the 7 days, takes stock again and emails the shopper.
+   */
+  async reopenOrder(orderId: string): Promise<ReopenOrderResult> {
+    const call = await callableFrom<{ orderId: string }, ReopenOrderResult>(this.#functions(), 'reopenOrder');
+    const response = await call({ orderId });
     return response.data;
   }
 

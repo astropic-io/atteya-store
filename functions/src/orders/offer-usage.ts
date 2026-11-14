@@ -364,6 +364,56 @@ export async function readOfferGiveBack(
   };
 }
 
+/**
+ * Undo of `readOfferGiveBack` when a cancelled order is reopened (ATS-325): counts the order's
+ * offer uses again inside the reopen transaction, even when the offer has ended or its limit is
+ * reached (the shopper keeps the prices they were charged). Reads first (call before any write in
+ * `tx`) and returns the writer. Each `offerUsage/{offerId}` and `offerUsage/{offerId}_{key}` goes
+ * up by 1. An offer this order's use had switched off, and that the cancel switched back on (still
+ * on with `updatedBy: OFFER_LIMIT_ACTOR`), is switched off again; one staff changed since is left
+ * as it is.
+ */
+export async function readOfferRetake(
+  tx: Transaction,
+  db: Firestore,
+  saved: SavedOfferUses,
+): Promise<() => void> {
+  const usage = saved.offerIds.flatMap((offerId) => [
+    { offerId, key: null as string | null, ref: db.collection('offerUsage').doc(offerId) },
+    ...saved.customerKeys.map((key) => ({
+      offerId,
+      key: key as string | null,
+      ref: db.collection('offerUsage').doc(`${offerId}_${key}`),
+    })),
+  ]);
+  const offerRefs = saved.switchedOffIds.map((id) => db.collection('offers').doc(id));
+  const [usageSnaps, offerSnaps] = await Promise.all([
+    Promise.all(usage.map((entry) => tx.get(entry.ref))),
+    Promise.all(offerRefs.map((ref) => tx.get(ref))),
+  ]);
+  return () => {
+    const now = FieldValue.serverTimestamp();
+    usageSnaps.forEach((snap, index) => {
+      const entry = usage[index]!;
+      tx.set(
+        entry.ref,
+        {
+          offerId: entry.offerId,
+          ...(entry.key !== null ? { uid: entry.key } : {}),
+          count: readCount(snap.data()?.['count']) + 1,
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+    });
+    offerSnaps.forEach((snap, index) => {
+      const data = snap.data();
+      if (!snap.exists || data?.['active'] !== true || data?.['updatedBy'] !== OFFER_LIMIT_ACTOR) return;
+      tx.update(offerRefs[index]!, { active: false, updatedAt: now });
+    });
+  };
+}
+
 function readCount(raw: unknown): number {
   return typeof raw === 'number' && Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
 }

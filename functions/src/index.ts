@@ -38,6 +38,7 @@ export { confirmCodOrder } from './orders/confirm-cod-order.fn.js';
 export { cancelOrder } from './orders/cancel-order.fn.js';
 export { deleteOrder } from './orders/delete-order.fn.js';
 export { setOrderStatus } from './orders/set-order-status.fn.js';
+export { reopenOrder } from './orders/reopen-order.fn.js';
 export { setDeliveryFee } from './orders/set-delivery-fee.fn.js';
 export { paymobWebhook } from './orders/paymob-webhook.fn.js';
 export { claimOrder } from './orders/claim-order.fn.js';
