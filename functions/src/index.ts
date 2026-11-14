@@ -50,6 +50,7 @@ export { sendReturnEmails } from './email/send-return-emails.trigger.js';
 export { requestReturn } from './returns/request-return.fn.js';
 export { cancelReturnRequest } from './returns/cancel-return-request.fn.js';
 export { approveReturnRequest } from './returns/approve-return-request.fn.js';
+export { confirmReturnPayment } from './returns/confirm-return-payment.fn.js';
 export { rejectReturnRequest } from './returns/reject-return-request.fn.js';
 export { receiveReturnRequest } from './returns/receive-return-request.fn.js';
 export { markRefundSent } from './returns/mark-refund-sent.fn.js';

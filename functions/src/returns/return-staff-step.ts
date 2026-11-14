@@ -124,6 +124,11 @@ export interface ApproveInput {
   readonly sent: readonly SentPieceInput[];
 }
 
+/** Payment Received (ATS-303): the courier fee arrived by InstaPay. */
+export interface ConfirmPaymentInput {
+  readonly requestId: string;
+}
+
 export interface RejectInput {
   readonly requestId: string;
   readonly reason: string;
@@ -179,6 +184,11 @@ export function parseApprove(raw: unknown): ApproveInput {
     return { itemIndex, productId, size: typeof size === 'string' ? size : null };
   });
   return { requestId, sent };
+}
+
+export function parseConfirmPayment(raw: unknown): ConfirmPaymentInput {
+  const data = isRecord(raw) ? raw : {};
+  return { requestId: requestIdOf(data) };
 }
 
 export function parseReject(raw: unknown): RejectInput {

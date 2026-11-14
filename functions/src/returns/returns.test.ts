@@ -8,12 +8,17 @@ import {
   nextReturnStatuses,
   piecesLeft,
   readReturnOrderLines,
+  readCourierFeePaid,
   readReturnSummaries,
   refundEgpFor,
   returnEligibility,
   normalBoxFeeEgp,
+  returnApproveStatus,
+  returnHoldsPieces,
   returnMoney,
+  returnPaymentWhatsappText,
   returnRef,
+  returnStatusLabel,
   returnStockPlan,
   undoStockStep,
   withReturnStatus,
@@ -187,13 +192,34 @@ describe('returnEligibility', () => {
 
 describe('statuses', () => {
   it('follows Requested → Approved → Received → Refund Sent', () => {
-    assert.deepEqual(nextReturnStatuses('requested', true), ['approved', 'rejected']);
+    assert.deepEqual(nextReturnStatuses('requested', true), ['waiting-for-payment', 'approved', 'rejected']);
+    assert.deepEqual(nextReturnStatuses('waiting-for-payment', true), ['approved', 'rejected']);
     assert.deepEqual(nextReturnStatuses('approved', true), ['received', 'rejected']);
     assert.deepEqual(nextReturnStatuses('received', true), ['refund-sent']);
     assert.deepEqual(nextReturnStatuses('received', false), []);
     assert.deepEqual(nextReturnStatuses('requested', false, true), ['cancelled']);
+    assert.deepEqual(nextReturnStatuses('waiting-for-payment', false, true), ['cancelled']);
     assert.deepEqual(nextReturnStatuses('approved', false, true), []);
     assert.equal(isOpenReturn('refund-sent', true), false);
+    assert.equal(isOpenReturn('waiting-for-payment', false), true);
+    assert.equal(returnHoldsPieces('waiting-for-payment'), true);
+    assert.equal(returnStatusLabel('waiting-for-payment'), 'Waiting for Payment');
+  });
+
+  it('Approve waits for the InstaPay courier fee only on new requests with a fee (ATS-303)', () => {
+    assert.equal(returnApproveStatus('instapay-first', 70), 'waiting-for-payment');
+    assert.equal(returnApproveStatus('instapay-first', 0), 'approved');
+    assert.equal(returnApproveStatus('free', 0), 'approved');
+    // Requests saved before ATS-303 keep moving as they did.
+    assert.equal(returnApproveStatus('off-refund', 70), 'approved');
+    assert.equal(returnApproveStatus('cash', 70), 'approved');
+    assert.equal(readCourierFeePaid('cash'), 'cash');
+    assert.equal(readCourierFeePaid('instapay-first'), 'instapay-first');
+    assert.equal(readCourierFeePaid('nope'), 'free');
+    assert.equal(
+      returnPaymentWhatsappText('#R-AB12CD', '#A1B2C3', 60),
+      'مرحبا، دفعت 60 EGP مصاريف الشحن لطلب الاسترجاع #R-AB12CD (طلب #A1B2C3). مرفق صورة التحويل.',
+    );
   });
 
   it('changes one request in the order summary and keeps the rest', () => {
@@ -342,22 +368,23 @@ describe('pieces, gifts and money', () => {
     assert.equal(courierFeeEgp({ orderFeeEgp: 70, normalBoxFeeEgp: 115, storeFault: true }), 0);
   });
 
-  it('fee comes off the refund, or is cash at the door for an exchange only', () => {
+  it('the fee is paid by InstaPay first: the refund is the full paid share (ATS-303)', () => {
     assert.deepEqual(returnMoney(650, 70, true), {
       itemsEgp: 650,
       feeEgp: 70,
-      feePaid: 'off-refund',
-      refundEgp: 580,
+      feePaid: 'instapay-first',
+      refundEgp: 650,
       cashAtDoorEgp: 0,
     });
     assert.deepEqual(returnMoney(0, 70, false), {
       itemsEgp: 0,
       feeEgp: 70,
-      feePaid: 'cash',
+      feePaid: 'instapay-first',
       refundEgp: 0,
-      cashAtDoorEgp: 70,
+      cashAtDoorEgp: 0,
     });
-    assert.equal(returnMoney(50, 70, true).cashAtDoorEgp, 20);
+    assert.equal(returnMoney(50, 70, true).cashAtDoorEgp, 0);
+    assert.equal(returnMoney(50, 70, true).refundEgp, 50);
     assert.equal(returnMoney(650, 0, true).feePaid, 'free');
   });
 
@@ -462,8 +489,8 @@ describe('requestReturn input and building', () => {
     assert.equal(built.note, 'The shorts run small.');
     assert.equal(built.itemsEgp, 650);
     assert.equal(built.feeEgp, 70);
-    assert.equal(built.refundEgp, 580);
-    assert.equal(built.feePaid, 'off-refund');
+    assert.equal(built.refundEgp, 650);
+    assert.equal(built.feePaid, 'instapay-first');
     assert.deepEqual(built.summaryItems, [
       { lineIndex: 0, quantity: 1, refund: false, autoGift: false, askedLabel: 'Size M → L' },
       { lineIndex: 1, quantity: 1, refund: true, autoGift: false, askedLabel: "Return · Didn't fit" },
@@ -483,7 +510,8 @@ describe('requestReturn input and building', () => {
       hasRefund: true,
       items: built.summaryItems,
       storeFault: false,
-      refundEgp: 580,
+      refundEgp: 650,
+      payFeeEgp: 70,
     });
     // Shoppers and guests read the summary: no InstaPay details, note or customer.
     for (const key of ['refundTo', 'note', 'customer', 'customerEmail']) assert.equal(key in entry, false);
@@ -497,8 +525,8 @@ describe('requestReturn input and building', () => {
       ],
     });
     assert.equal(ok.items[0]!.askedLabel, 'Black → White · Size L');
-    assert.equal(ok.feePaid, 'cash');
-    assert.equal(ok.cashAtDoorEgp, 70);
+    assert.equal(ok.feePaid, 'instapay-first');
+    assert.equal(ok.cashAtDoorEgp, 0);
     assert.throws(
       () =>
         build({

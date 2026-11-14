@@ -294,3 +294,56 @@ describe('return status emails', () => {
     }
   });
 });
+
+/** ATS-303: the shopper pays the courier fee by InstaPay before the courier comes. */
+describe('courier fee paid by InstaPay first', () => {
+  const payFirst = { feePaid: 'instapay-first', refundEgp: 650, cashAtDoorEgp: 0 };
+
+  it('Approve with a fee sends the pay version; Payment Received sends its own email', () => {
+    assert.deepEqual(returnEmailsForWrite(at('requested', payFirst), at('waiting-for-payment', payFirst)), [
+      'return-approved',
+    ]);
+    assert.deepEqual(returnEmailsForWrite(at('waiting-for-payment', payFirst), at('approved', payFirst)), [
+      'return-payment-received',
+    ]);
+    assert.deepEqual(returnEmailsForWrite(at('waiting-for-payment', payFirst), at('rejected', payFirst)), [
+      'return-rejected',
+    ]);
+    assert.deepEqual(
+      returnEmailsForWrite(at('waiting-for-payment', payFirst), at('cancelled', payFirst)),
+      [],
+    );
+  });
+
+  it('the pay version asks for the fee and does not send the courier yet', () => {
+    const withDetails = { ...(ctx as object), instapay: { address: 'atteya@instapay', number: '' } } as never;
+    const email = renderReturnEmail('return-approved', request(payFirst), withDetails);
+    assert.match(email.html, /REQUEST<br>APPROVED/);
+    assert.match(email.text, /Send EGP\s?70 by InstaPay/);
+    assert.match(email.text, /InstaPay address: atteya@instapay/);
+    assert.match(email.html, /Send Screenshot on WhatsApp/);
+    assert.match(email.html, /View Your Order/);
+    assert.doesNotMatch(email.text, /Our courier will come/);
+    assert.match(email.text, /You Get: Padel Shorts in L, and EGP\s?650 by InstaPay once they're back/);
+  });
+
+  it('without InstaPay details the pay version says we send them on WhatsApp', () => {
+    const email = renderReturnEmail('return-approved', request(payFirst), ctx);
+    assert.match(email.text, /We'll send you the InstaPay details on WhatsApp\./);
+  });
+
+  it('Payment Received: we got the fee and the courier is coming', () => {
+    const email = renderReturnEmail('return-payment-received', request(payFirst), ctx);
+    assert.match(email.html, /PAYMENT<br>RECEIVED/);
+    assert.match(email.text, /We got your EGP\s?70\. Our courier will come to your delivery address\./);
+    assert.match(email.text, /Hand Over: Padel Shorts · M, Training Tee, Sport Socks/);
+  });
+
+  it('Request Sent and the staff alert say the fee is paid by InstaPay', () => {
+    const sent = renderReturnEmail('return-requested', request(payFirst), ctx);
+    assert.match(sent.text, /Once we approve it, you pay the EGP\s?70 courier fee by InstaPay\./);
+    assert.match(sent.text, /Your refund: EGP\s?650/);
+    const staff = renderReturnEmail('store-return-request', request(payFirst), ctx);
+    assert.match(staff.text, /paid by InstaPay before pickup/);
+  });
+});

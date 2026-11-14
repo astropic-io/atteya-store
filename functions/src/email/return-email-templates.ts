@@ -2,14 +2,21 @@
  * Return and exchange emails, built from the "Bold Black" blocks in `email-blocks.ts`: the staff
  * alert `store-return-request` and the shopper's `return-requested` ("Request Sent") from ATS-291,
  * and the shopper's status emails from ATS-294: `return-approved`, `return-rejected`,
- * `return-received` and `return-refund-sent`. Pure, unit tested in `returns/returns.test.ts` and
+ * `return-received` and `return-refund-sent`. ATS-303 adds the pay version of `return-approved`
+ * (the shopper pays the courier fee by InstaPay first) and `return-payment-received`. Pure, unit tested in `returns/returns.test.ts` and
  * `email/return-emails.test.ts`. Amounts are whole EGP from the saved request.
  */
-import { shopperWhatsappNumber } from '../store/order-messages.js';
-import { returnPhotosWhatsappText, returnStaffWhatsappText } from '../store/returns.js';
+import { hasInstapayDetails, shopperWhatsappNumber } from '../store/order-messages.js';
+import {
+  returnPaymentWhatsappText,
+  returnPaysFirst,
+  returnPhotosWhatsappText,
+  returnStaffWhatsappText,
+} from '../store/returns.js';
 import { whatsappChatUrl } from '../store/store-info.js';
 import {
   amountBlock,
+  detailsBox,
   emailDocument,
   escapeHtml,
   FONT,
@@ -52,7 +59,9 @@ export function renderReturnEmail(
     case 'return-requested':
       return returnRequested(request, ctx);
     case 'return-approved':
-      return returnApproved(request, ctx);
+      return paysFirst(request) ? returnApprovedPay(request, ctx) : returnApproved(request, ctx);
+    case 'return-payment-received':
+      return returnPaymentReceived(request, ctx);
     case 'return-rejected':
       return returnRejected(request, ctx);
     case 'return-received':
@@ -60,6 +69,11 @@ export function renderReturnEmail(
     case 'return-refund-sent':
       return returnRefundSent(request, ctx);
   }
+}
+
+/** The shopper pays the courier fee by InstaPay before the courier comes (ATS-303). */
+function paysFirst(request: ReturnEmailRequest): boolean {
+  return returnPaysFirst(request.feePaid, request.feeEgp);
 }
 
 const SPACER = '<tr><td style="height:40px;font-size:0;line-height:0;">&nbsp;</td></tr>';
@@ -139,10 +153,15 @@ function shopperSteps(request: ReturnEmailRequest): EmailStep[] {
       : request.feeEgp === 0
         ? 'The courier visit is on us.'
         : null;
-  const list: EmailStep[] = [
-    { state: 'current', title: 'We check your request, usually the same day.' },
-    { state: 'current', title: courier, note: feeNote },
-  ];
+  const list: EmailStep[] = [{ state: 'current', title: 'We check your request, usually the same day.' }];
+  if (paysFirst(request)) {
+    list.push({
+      state: 'current',
+      title: `Once we approve it, you pay the ${formatEgp(request.feeEgp)} courier fee by InstaPay.`,
+      note: 'Then send us the screenshot on WhatsApp.',
+    });
+  }
+  list.push({ state: 'current', title: courier, note: feeNote });
   if (request.hasRefund) {
     list.push({
       state: 'current',
@@ -160,6 +179,18 @@ function shopperTotals(request: ReturnEmailRequest): {
   after: [string, string][];
 } {
   const fee = request.feeEgp > 0 ? formatEgp(request.feeEgp) : 'Free';
+  if (paysFirst(request)) {
+    const feeRow: [string, string] = ['Courier fee, by InstaPay after approval', fee];
+    return request.hasRefund
+      ? {
+          rows: [
+            ['Returned items', formatEgp(request.itemsEgp)],
+            ['Your refund', formatEgp(request.refundEgp)],
+          ],
+          after: [feeRow],
+        }
+      : { rows: [feeRow], after: [] };
+  }
   if (request.hasRefund) {
     return {
       rows: [
@@ -318,6 +349,92 @@ function returnApproved(request: ReturnEmailRequest, ctx: OrderEmailContext): Re
   });
 }
 
+/**
+ * Approved, pay version (ATS-303): the request is Waiting for Payment. The shopper sends the
+ * courier fee by InstaPay and the screenshot on WhatsApp; the courier isn't coming yet.
+ */
+function returnApprovedPay(request: ReturnEmailRequest, ctx: OrderEmailContext): RenderedEmail {
+  const fee = formatEgp(request.feeEgp);
+  const waNumber = ctx.whatsappNumber.trim();
+  const waUrl = whatsappChatUrl(
+    waNumber,
+    returnPaymentWhatsappText(request.ref, request.orderRef, request.feeEgp),
+  );
+  const button: EmailButton | null = waUrl ? { label: 'Send Screenshot on WhatsApp', url: waUrl } : null;
+  const screenshotTitle = waUrl
+    ? 'Send the screenshot on WhatsApp'
+    : ctx.canReply
+      ? 'Reply with the screenshot'
+      : 'Send us the screenshot';
+
+  const payStep: EmailStep = { state: 'current', title: `Send ${fee} by InstaPay`, amount: fee };
+  let payText = `1. Send ${fee} by InstaPay`;
+  let withDetails: EmailStep = payStep;
+  if (hasInstapayDetails(ctx.instapay)) {
+    const rows: [string, string][] = [];
+    const address = ctx.instapay.address.trim();
+    const number = ctx.instapay.number.trim();
+    if (address) rows.push(['Address', address]);
+    if (number) rows.push(['Number', number]);
+    withDetails = { ...payStep, boxHtml: detailsBox(rows) };
+    payText = `${payText}\n${rows.map(([label, value]) => `   InstaPay ${label.toLowerCase()}: ${value}`).join('\n')}`;
+  } else {
+    const later = waUrl
+      ? "We'll send you the InstaPay details on WhatsApp."
+      : "We'll send you the InstaPay details.";
+    withDetails = { ...payStep, note: later };
+    payText = `${payText}\n   ${later}`;
+  }
+  const stepList: EmailStep[] = [
+    withDetails,
+    { state: 'next', title: screenshotTitle },
+    {
+      state: 'next',
+      title: 'We send the courier',
+      note: 'To your delivery address, once your payment arrives.',
+    },
+  ];
+  const body: EmailPart[] = [
+    {
+      html: amountBlock([{ label: 'Courier fee', amount: fee, note: 'Pay now by InstaPay' }]),
+      text: `Courier fee: ${fee} (pay now by InstaPay)`,
+    },
+    {
+      html: steps(stepList),
+      text: joinLines([
+        payText,
+        `2. ${screenshotTitle}`,
+        '3. We send the courier\n   To your delivery address, once your payment arrives.',
+      ]),
+    },
+  ];
+  if (button) {
+    body.push({
+      html: section(fullWidthLink(button, 'filled'), 24),
+      text: `${button.label}: ${waNumber} (${button.url})`,
+    });
+  }
+  body.push(labelled('Hand Over', handOverText(request)), labelled('You Get', youGetText(request), 20));
+  return shopperStatusEmail(request, ctx, {
+    subject: `Your return or exchange ${request.ref} is approved: please pay the courier fee`,
+    status: ['Request', 'Approved'],
+    sentence: `Please send the ${fee} courier fee by InstaPay. We send the courier once it arrives.`,
+    body,
+    hasWhatsappButton: button !== null,
+  });
+}
+
+/** Payment Received (ATS-303): Waiting for Payment → Approved; the courier is on the way. */
+function returnPaymentReceived(request: ReturnEmailRequest, ctx: OrderEmailContext): RenderedEmail {
+  const fee = formatEgp(request.feeEgp);
+  return shopperStatusEmail(request, ctx, {
+    subject: `We got your payment for ${request.ref}`,
+    status: ['Payment', 'Received'],
+    sentence: `We got your ${fee}. Our courier will come to your delivery address.`,
+    body: [labelled('Hand Over', handOverText(request)), labelled('You Get', youGetText(request), 20)],
+  });
+}
+
 /** Every piece the courier takes, free gifts going back included: `Padel Shorts · M, Sport Socks`. */
 function handOverText(request: ReturnEmailRequest): string {
   return listText(
@@ -364,6 +481,7 @@ function youGetText(request: ReturnEmailRequest): string {
 function approvedFeeLine(request: ReturnEmailRequest): string {
   if (request.feeEgp === 0) return 'The courier visit is free.';
   const fee = formatEgp(request.feeEgp);
+  if (request.feePaid === 'instapay-first') return `Courier fee ${fee}, paid by InstaPay.`;
   if (request.feePaid === 'cash') return `Courier fee ${fee}, cash at your door.`;
   const cash =
     request.cashAtDoorEgp > 0
@@ -493,6 +611,9 @@ function storeReturnRequest(request: ReturnEmailRequest, ctx: OrderEmailContext)
     [
       'Message the customer to arrange the courier.',
       exchange ? 'Approving takes the new pieces from stock.' : null,
+      paysFirst(request)
+        ? `After you approve, the customer pays the ${formatEgp(request.feeEgp)} courier fee by InstaPay. Send the courier once it arrives.`
+        : null,
       request.storeFault ? 'Ask for photos of the damaged or wrong item.' : null,
     ],
     ' ',
@@ -551,6 +672,8 @@ function storeReturnRequest(request: ReturnEmailRequest, ctx: OrderEmailContext)
 
 function feeNote(request: ReturnEmailRequest): string | null {
   switch (request.feePaid) {
+    case 'instapay-first':
+      return 'paid by InstaPay before pickup';
     case 'off-refund':
       return 'off the refund';
     case 'cash':
@@ -562,6 +685,18 @@ function feeNote(request: ReturnEmailRequest): string | null {
 
 function staffTotals(request: ReturnEmailRequest): { rows: [string, string][]; after: string | null } {
   const fee = request.feeEgp > 0 ? formatEgp(request.feeEgp) : 'Free';
+  if (paysFirst(request)) {
+    const feeRow: [string, string] = ['Courier fee, paid by InstaPay before pickup', fee];
+    if (!request.hasRefund) return { rows: [feeRow], after: null };
+    return {
+      rows: [
+        ['Returned items', formatEgp(request.itemsEgp)],
+        ['Refund by InstaPay', formatEgp(request.refundEgp)],
+        feeRow,
+      ],
+      after: request.refundTo ? `To ${request.refundTo}, after the items are received.` : null,
+    };
+  }
   if (request.hasRefund) {
     const to = request.refundTo ? `To ${request.refundTo}, after the items are received.` : null;
     const cash =

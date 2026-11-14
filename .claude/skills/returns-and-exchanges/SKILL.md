@@ -6,6 +6,7 @@ description: Returns & Exchanges for shoppers and staff - who can send a request
 # Returns & Exchanges
 
 Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292 (shopper screen), <KEY>-293 (admin Returns page and stock moves), <KEY>-294 (later emails and the Terms page).
+<KEY>-303 changed how the courier fee is paid: by InstaPay after Approve and before the courier comes (Waiting for Payment).
 
 **How to edit this file:** one fact per line, as a list item under the heading it belongs to. Add a new rule as its own line, or a new `##` heading for a new topic. Never join rules into one long paragraph: Git merges line by line, so two PRs that touch the same long line conflict even when they change different sentences.
 
@@ -20,7 +21,7 @@ Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292
 
 - Only **Delivered** orders, until 14 days after `deliveredAt` (`RETURN_WINDOW_DAYS`, `returnEligibility(order, nowMs)`).
 - Orders with no `deliveredAt` and orders shipped outside Egypt (`pricing.isInternational`) are refused with "Please message us on WhatsApp about a return or exchange for this order."
-- One open request per order at a time: Requested, Approved, or Received while a refund is still to send (`isOpenReturn()`).
+- One open request per order at a time: Requested, Waiting for Payment, Approved, or Received while a refund is still to send (`isOpenReturn()`).
 - A piece already in a request that isn't Rejected or Cancelled can't be asked for again (`piecesLeft()`).
 - At most 10 requests per order, cancelled and rejected ones included (`RETURN_REQUESTS_PER_ORDER_MAX`), so a cancel and resend loop can't flood the staff inbox.
 - The signed-in owner is matched by uid (`customerId`); a guest by the order's secret `viewKey` from the emailed order link (`isOrderShopper()` in `functions/src/returns/return-access.ts`, constant-time compare).
@@ -41,8 +42,12 @@ Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292
 ## Statuses
 
 - `requested` → `approved` → `received`; a request with any refund item goes on to `refund-sent` (`nextReturnStatuses()`).
-- `rejected` (with a reason shown to the shopper) is possible any time before Received; `cancelled` (by the shopper) only while Requested.
-- Names (`returnStatusLabel()`): Requested, Approved, Received, Refund Sent, Rejected, Cancelled. The shopper sees the same names as staff.
+- A request whose shopper pays the courier fee first (`feePaid: 'instapay-first'` and a fee above 0, `returnPaysFirst()`) goes `requested` → `waiting-for-payment` → `approved` (<KEY>-303).
+- Approve's target comes from `returnApproveStatus(feePaid, feeEgp)`: Waiting for Payment with a fee to pay first, else Approved (no fee, or a request saved before <KEY>-303).
+- Waiting for Payment → Approved is only staff's **Payment Received** (`confirmReturnPayment`); Item Received is never possible from Waiting for Payment.
+- `rejected` (with a reason shown to the shopper) is possible any time before Received; `cancelled` (by the shopper) while Requested or Waiting for Payment.
+- Names (`returnStatusLabel()`): Requested, Waiting for Payment, Approved, Received, Refund Sent, Rejected, Cancelled. The shopper sees the same names as staff.
+- Waiting for Payment holds pieces (`returnHoldsPieces()`), like Approved: Approve already took the new pieces.
 - Request ref: `#R-` + the first 6 characters of the request id in capitals (`returnRef()`), like the order ref.
 
 ## Free gifts
@@ -59,7 +64,9 @@ Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292
 - Buy X Get Y and bundle discounts are not taken back on a partial return: the refund is the line's own `lineDisplay` share (the brief's rule).
 - Courier fee = the order's own delivery fee (`pricing.shipping.priceEgp`, the agreed fee for `domestic-agreed`); when it was 0 (free shipping) the order box's normal price in `settings/shipping` (`normalBoxFeeEgp()` in `functions/src/store/returns.ts`, the biggest Egypt box when the order has none) (`courierFeeEgp()`).
 - The fee is 0 when any item is Damaged or Wrong Item Sent (the store pays, `storeFault`).
-- Otherwise the fee is taken off the refund when there is one (`off-refund`), or paid in cash to the courier for an exchange-only request (`cash`) (`returnMoney()`); a refund smaller than the fee leaves the rest as `cashAtDoorEgp`.
+- Otherwise the shopper pays the fee by InstaPay after Approve and before the courier comes (`instapay-first`, `returnMoney()`, <KEY>-303); the refund is the full paid share of the refunded pieces (`refundEgp` = `itemsEgp`) and `cashAtDoorEgp` is 0.
+- Requests saved before <KEY>-303 keep `off-refund` (fee taken off the refund, any rest as `cashAtDoorEgp`) or `cash` (cash at the door, exchange only); every screen and email still reads them (`readCourierFeePaid()`), and their Approve goes straight to Approved. No data script.
+- The shopper's WhatsApp message with the InstaPay screenshot: `returnPaymentWhatsappText(ref, orderRef, feeEgp)` (Arabic, English digits).
 - The original delivery fee is never refunded.
 - Refunds are sent by InstaPay after the items are Received; Paymob automatic refunds are not built.
 
@@ -90,10 +97,12 @@ Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292
 - `requestReturn` reads `settings/shipping` only when the order's delivery fee was 0.
 - `requestReturn` (`functions/src/returns/request-return.fn.ts`, `europe-west3`, App Check like every callable) takes `{ orderId, viewKey?, items[], note?, refundTo? }`; each item is `{ lineIndex, quantity, kind, reason?, wants?, size?, colourProductId? }`; it answers `{ requestId, ref }`.
 - In one transaction it creates `returnRequests/{id}` and appends to the order's `returns` array `{ id, ref, status, hasRefund, storeFault, refundEgp, items: [{ lineIndex, quantity, refund, autoGift, askedLabel }], createdAt }` (built by `returnSummaryEntry()`; `createdAt` is a Timestamp from the function's clock, because arrays can't hold server time stamps).
+- Entries of requests that pay the fee first also carry `payFeeEgp` (the fee, whole EGP) for the request box's pay steps (<KEY>-303).
 - The summary carries only what the shopper's request box shows (<KEY>-296): `askedLabel` is the same text as `returnRequests/{id}.items[].askedLabel`, `refundEgp` is the refund after the courier fee; never `refundTo`, the note, the customer, the staff history or staff notes, because shoppers and guests (`orderViews`) read it.
 - Entries written before <KEY>-296 have no `storeFault`, `refundEgp` or `askedLabel`; `readReturnSummaries()` leaves these out, the website reads them with `readRequestDetails()`.
 - `returnRequests/{id}` holds `ref`, `orderId`, `orderRef`, `status`, `customerId`, `guest`, `customerEmail`, `customer` (name, phone, email, country, address), `items` (line, kind, reason, wants, refund, gift, autoGift, forLine, product, selection, name, photo, new piece, `askedLabel`, `refundEgp`), `note`, `refundTo`, `hasRefund`, `storeFault`, `itemsEgp`, `feeEgp`, `feePaid`, `refundEgp`, `cashAtDoorEgp`, `orderDeliveredAt`, `createdAt`, `updatedAt`.
-- `cancelReturnRequest` (`functions/src/returns/cancel-return-request.fn.ts`, same owner check, `{ requestId, viewKey? }`) sets the request to Cancelled while it is Requested, updates its entry in the order's `returns` and sends nothing; calling it again answers `changed: false`.
+- `cancelReturnRequest` (`functions/src/returns/cancel-return-request.fn.ts`, same owner check, `{ requestId, viewKey? }`) sets the request to Cancelled while it is Requested or Waiting for Payment, updates its entry in the order's `returns` and sends nothing; calling it again answers `changed: false`.
+- Cancel from Waiting for Payment moves the `rejectStock` saved at Approve once (`stockUndoneAt`), exactly like Reject, so the held new piece goes back into stock (<KEY>-303).
 - Every callable that moves a request updates the order's summary with `withReturnStatus()` in the same transaction, so `returns` always matches `returnRequests/{id}`.
 - Reject also passes its reason to `withReturnStatus(raw, id, 'rejected', { rejectReason })`, which saves it as `rejectReason` on that entry (trimmed; only with Rejected), so the shopper sees why.
 - Refund Sent passes `{ refundSentEgp }`, which saves the amount staff really sent as `refundSentEgp` on the entry (`refundEgp` stays the planned refund); the shopper's box shows `refundSentEgp` when it is there (`readRequestDetails()`).
@@ -118,7 +127,9 @@ Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292
 - The button shows only while some piece is left to ask for (`piecesLeft()`).
 - The refund, courier fee and returned gifts on the screen come from `returnPreview()` (`features/returns/utils/return-request.utils.ts`), which calls the same shared rules as `buildReturnRequest()`; the courier fee's box price uses the shared `normalBoxFeeEgp()` (`@core/config/returns`) with `ShippingSettingsService.settings()`, the same function `requestReturn` calls, so the fee on the screen and the saved fee never differ.
 - Send Request calls `requestReturn`; errors show `callableMessage()`; on success the snackbar says "Request sent. We'll message you on WhatsApp."
-- The order page shows `app-return-request-box` for each entry of the order's `returns`, newest first, live; **Cancel Request** (asks first) calls `cancelReturnRequest` while Requested.
+- The order page shows `app-return-request-box` for each entry of the order's `returns`, newest first, live; **Cancel Request** (asks first) calls `cancelReturnRequest` while Requested or Waiting for Payment.
+- The request dialog's Summary shows "Courier fee EGP 60" with "You pay it by InstaPay once we approve your request." under it, and the refund is the full paid share (<KEY>-303).
+- While Waiting for Payment the box shows the `.pay-steps` list (Send EGP 60 by InstaPay with the store InstaPay details from `STORE_INFO.payments.instapay`, or "We'll send you the InstaPay details on WhatsApp." when empty; Send the screenshot on WhatsApp; We send the courier) and **Send Screenshot on WhatsApp** (`returnPaymentWhatsappText()`).
 - The box reads each item's `askedLabel`, `storeFault`, `refundEgp` and `rejectReason` from the order's `returns` summary (`readRequestDetails()`), so any browser shows the same box; for entries written before <KEY>-296 it falls back to what this browser sent (`localStorage.returnRequests`, `return-memory.ts`), else shows Refund / Exchange per item and no **Send Photos on WhatsApp**.
 
 ## Emails
@@ -131,6 +142,9 @@ Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292
 - Shopper email: header with the order ref, kicker `RETURN OR EXCHANGE · #R-…`, status `REQUEST SENT`, What Happens Next (we check it, the courier comes to the delivery address, the InstaPay refund), Your Items, the money, **View Your Order** (`orderConfirmationUrl()`, with `?key=` for guests).
 - Damaged or wrong items add a dashed box with **Send Photos on WhatsApp**, prefilled with the request and order refs (`returnPhotosWhatsappText()`); without a store WhatsApp it asks for a reply with a photo when replies reach an inbox.
 - Each staff step forward sends one shopper email (<KEY>-294): Requested → Approved sends `return-approved`, Requested or Approved → Rejected sends `return-rejected`, Approved → Received sends `return-received`, Received → Refund Sent sends `return-refund-sent`.
+- Requested → Waiting for Payment sends `return-approved` in its pay version (amount, InstaPay steps with the store details, **Send Screenshot on WhatsApp**, Hand Over / You Get, View Your Order); it does not say the courier is coming (<KEY>-303).
+- Waiting for Payment → Approved sends `return-payment-received` (`PAYMENT RECEIVED`, "We got your EGP 60. Our courier will come to your delivery address.", then Hand Over / You Get); Waiting for Payment → Rejected sends `return-rejected`.
+- Request Sent for a request that pays first adds the step "Once we approve it, you pay the EGP 60 courier fee by InstaPay." and its totals show the fee as "Courier fee, by InstaPay after approval"; the staff alert's fee note says "paid by InstaPay before pickup".
 - Cancelled, a step back, a skipped step, the same status written again, or a request created in a later status sends nothing.
 - A Refund Sent of EGP 0 (the courier fee used up the refund) sends nothing; the Received email already says there is nothing more to send.
 - Every shopper status email has the black header with the order ref, kicker `RETURN OR EXCHANGE · #R-…`, **View Your Order** and the WhatsApp or reply footer, plus a plain-text version with the same facts in the same order.
@@ -142,17 +156,18 @@ Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292
 
 ## Staff steps (admin Returns)
 
-- `/admin/returns` (`ReturnsManagerPageComponent`, `features/admin/pages/returns-manager/`) lists requests newest first, 20 per **Show More Requests**, with tabs Requested, Approved, Received, Refund Sent, Rejected, Cancelled, All (index `returnRequests` `status` + `createdAt` desc); the search field filters the requests on screen.
+- `/admin/returns` (`ReturnsManagerPageComponent`, `features/admin/pages/returns-manager/`) lists requests newest first, 20 per **Show More Requests**, with tabs Requested, Waiting for Payment, Approved, Received, Refund Sent, Rejected, Cancelled, All (index `returnRequests` `status` + `createdAt` desc); the search field filters the requests on screen.
 - The admin menu's **Returns** item shows the count of Requested (`AdminNavService`, `getCountFromServer`), read again after each step (`refreshReturnsCount()`).
 - `/admin/returns/:requestId` (`ReturnDetailsPageComponent`) shows refs (order ref links to `/admin/orders/:id`), the customer with **Message Customer on WhatsApp** (`returnStaffWhatsappText()`), items with photo, options, what was asked and live stock per piece (now and what each step does), money, the shopper's InstaPay details and note, and the staff history.
 - `/admin/orders/:id` and the open order in the Orders list show a **Returns** line (`app-order-returns-line`, reads `returnRequests` by `orderId`).
-- Callables (`europe-west3`, `requireRole`): `approveReturnRequest`, `rejectReturnRequest`, `receiveReturnRequest` (admin and staff) and `markRefundSent` (admin only, checked on the server).
-- All four run `runReturnStep()` (`functions/src/returns/return-staff-transaction.ts`): one transaction reads the request, order and products, checks the move with `nextReturnStatuses()`, moves stock, stamps the request, updates the order's `returns` with `withReturnStatus()` and appends `{ status, from, at, by, byEmail?, reason? }` to `returnStaffNotes/{id}.history`.
+- Callables (`europe-west3`, `requireRole`): `approveReturnRequest`, `confirmReturnPayment` (<KEY>-303), `rejectReturnRequest`, `receiveReturnRequest` (admin and staff) and `markRefundSent` (admin only, checked on the server).
+- **Payment Received** (`confirmReturnPayment`, only from Waiting for Payment) asks "Did the EGP 60 arrive by InstaPay?", then moves the request to Approved and stamps `paymentReceivedAt` / `paymentReceivedBy`; no stock moves.
+- All five run `runReturnStep()` (`functions/src/returns/return-staff-transaction.ts`): one transaction reads the request, order and products, checks the move with `nextReturnStatuses()`, moves stock, stamps the request, updates the order's `returns` with `withReturnStatus()` and appends `{ status, from, at, by, byEmail?, reason? }` to `returnStaffNotes/{id}.history`.
 - The pure part is `functions/src/returns/return-staff-step.ts` (input checks, `withSentPieces()`, `approvePlan()`, `approveStep()`, `receiveStep()`, `rejectStockFor()`, `applyStockMoves()`), tested in `return-staff-step.test.ts`.
 - Already in the target status answers `changed: false` and writes nothing, so a double click or two staff at once never move stock twice.
 - Approve: Wrong Item Sent first asks "What Did We Send Instead?" (`app-sent-piece-picker` searches any product with `ProductsAdminService.searchProducts()`, then a size) and saves `sentProductId` / `sentSelection` on the item.
 - Approve applies the plan's Approve moves once (`stockTakenAt`) and saves them as `approveStock`, plus the plan's Reject moves as `rejectStock`; a sold-out new piece refuses with "Size L is sold out. Ask the customer to pick another size or switch this item to a refund." and nothing changes.
-- Reject needs a reason the shopper sees (300 characters, `rejectReason`), works from Requested or Approved, and from Approved moves `rejectStock` once (`rejectStockFor()`, `stockUndoneAt`; a request without `rejectStock` undoes `approveStock`); a count that is too low stops at 0 so a reject is never blocked.
+- Reject needs a reason the shopper sees (300 characters, `rejectReason`), works from Requested, Waiting for Payment or Approved, and after Approve moves `rejectStock` once (`rejectStockFor()`, `stockUndoneAt`; a request without `rejectStock` undoes `approveStock`); a count that is too low stops at 0 so a reject is never blocked.
 - Item Received (from Approved) saves each item's `canBeSoldAgain` (on by default, off for Damaged Item, always on for Wrong Item Sent, which shows no switch) and puts those pieces back once (`stockReturnedAt`); exchange-only requests are done here.
 - Refund Sent (admin, from Received with a refund) saves `refundSentEgp` and an optional `refundReference`; no stock moves.
 - The Reject dialog lists what happens to stock per item (`rejectStockLines()`; a request approved before `rejectStock` existed shows one line saying Approve is undone), e.g. "Club Tee, Size M stays with the customer. Club Shorts, Size M goes back into stock."

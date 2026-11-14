@@ -157,6 +157,11 @@ export class ReturnsAdminService {
     return this.#step('approveReturnRequest', { requestId, sent });
   }
 
+  /** Payment Received (ATS-303): the courier fee arrived by InstaPay. */
+  confirmPayment(requestId: string): Promise<ReturnStepResult> {
+    return this.#step('confirmReturnPayment', { requestId });
+  }
+
   reject(requestId: string, reason: string): Promise<ReturnStepResult> {
     return this.#step('rejectReturnRequest', { requestId, reason });
   }
