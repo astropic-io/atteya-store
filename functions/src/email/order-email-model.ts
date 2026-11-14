@@ -4,9 +4,10 @@
  *
  * Every amount comes from the saved order in whole Egyptian pounds:
  * `pricing.subtotalEgp`, `pricing.shipping.priceEgp`, `pricing.totalEgp`.
- * Staff emails show EGP. Shopper emails show `shopper` (ATS-309): EGP for an Egypt order, and
- * only the shopper's own currency (`pricing.payIn`) for an order shipped abroad, never EGP or the
- * Egypt price.
+ * Shopper emails show `shopper` (ATS-309): EGP for an Egypt order, and only the shopper's own
+ * currency (`pricing.payIn`) for an order shipped abroad, never EGP or the Egypt price. The staff
+ * alert shows EGP for an Egypt order; for one shipped abroad it leads with the shopper's currency,
+ * then what it comes to in pounds (`staffRate`), then the Egypt price (ATS-320).
  */
 import { dealTag } from '../offers/engine/buy-x-get-y.js';
 import { shopperMoney, type ShopperMoney, type ShopperMoneyLine } from '../offers/engine/shopper-money.js';
@@ -28,6 +29,17 @@ export interface OrderEmailLine {
   readonly dealTag: string | null;
   /** The line in the order's `shopper` currency (`lineEgp` for an Egypt order); null = no price shown. */
   readonly shopperAmount: number | null;
+}
+
+/**
+ * Staff-only: the abroad markup and the plain rate behind `pricing.payIn.factor`
+ * (`orderStaffNotes/{orderId}.payInRate`, ATS-304), so the staff alert can say what an amount in the
+ * shopper's currency comes to in pounds. Never on the order doc (its owner can read that).
+ */
+export interface OrderEmailStaffRate {
+  readonly markupPercent: number;
+  /** Shopper currency per 1 EGP, before the markup. */
+  readonly rate: number;
 }
 
 export interface OrderEmailAddress {
@@ -93,6 +105,23 @@ export interface OrderEmailOrder {
    * shopper's currency from `pricing.payIn` for an order shipped abroad (null = not shown).
    */
   readonly shopper: ShopperMoney;
+  /**
+   * The shipping fee in `payIn` was converted at the plain rate with no markup (`payIn.shippingFactor`,
+   * orders from ATS-311 on), so in pounds it is its Egypt price.
+   */
+  readonly shippingAtPlainRate: boolean;
+  /** Staff alert only: `orderStaffNotes.payInRate` (filled by the trigger), or null when not read or saved. */
+  readonly staffRate: OrderEmailStaffRate | null;
+}
+
+/** `orderStaffNotes.payInRate` as the staff alert needs it, or null when missing or unreadable. */
+export function readStaffRate(raw: unknown): OrderEmailStaffRate | null {
+  if (!isRecord(raw)) return null;
+  const markupPercent = raw['markupPercent'];
+  const rate = raw['rate'];
+  if (typeof markupPercent !== 'number' || !Number.isFinite(markupPercent) || markupPercent < 0) return null;
+  if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) return null;
+  return { markupPercent, rate };
 }
 
 /**
@@ -271,6 +300,9 @@ export function readOrderForEmail(
     guestCheckout: !text(data['customerId']),
     boxId: (shipping && text(shipping['boxId'])) || null,
     shopper,
+    shippingAtPlainRate:
+      payIn !== null && typeof payIn['shippingFactor'] === 'number' && payIn['shippingFactor'] > 0,
+    staffRate: null,
   };
 }
 

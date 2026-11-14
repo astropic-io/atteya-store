@@ -33,6 +33,7 @@ import {
   outlinedButton,
   paragraphHtml,
   photoStrip,
+  priceTable,
   section,
   sectionTitle,
   siteLabel,
@@ -1144,6 +1145,160 @@ function cardChargeEgp(order: OrderEmailOrder): number | null {
     : null;
 }
 
+/**
+ * The staff alert of an order shipped abroad (ATS-320): the same three prices as the admin order
+ * page (ATS-304). It leads with what the customer pays in their currency (`order.shopper`), then
+ * what that comes to in pounds (Card: what Paymob charged; otherwise at the rate behind the order's
+ * factor, `order.staffRate`, so "about"), then the same order at Egypt prices. Null for an Egypt
+ * order, or one abroad with no amount in the customer's currency (those keep the EGP alert).
+ */
+interface StaffAbroad {
+  /** An amount in the customer's currency, e.g. `QAR 66` or `R$54`. */
+  readonly money: (amount: number) => string;
+  /** Subject: `QAR 66 (about EGP 969)`, `QAR 66 (EGP 969)` for Card, `R$54 + Delivery` with the fee to be agreed. */
+  readonly subjectAmount: string;
+  readonly headerAmount: string;
+  readonly headerNote: string;
+  /** The items in the customer's currency (the strip's Items Total while the fee is to be agreed). */
+  readonly items: string;
+  readonly total: { readonly customer: string; readonly pounds: string | null; readonly egypt: string };
+  /** Subtotal, Shipping and Total: [customer, in pounds, price in Egypt]; a null cell is unknown. */
+  readonly rows: readonly { readonly label: string; readonly cells: readonly (string | null)[] }[];
+  /** "Abroad prices +40% · rate on the day 1 QAR = 14.66 EGP", or null without the saved rate. */
+  readonly rateLine: string | null;
+  /** The In Pounds column shows: the saved rate is known, or Paymob's charge is (Card). */
+  readonly showPounds: boolean;
+}
+
+function staffAbroad(order: OrderEmailOrder): StaffAbroad | null {
+  const shopper = order.shopper;
+  if (!order.isInternational || shopper.currency === 'EGP') return null;
+  const money = (amount: number) => formatPayIn({ currency: shopper.currency, amount });
+  const perUnit = order.staffRate ? 1 / order.staffRate.rate : null;
+  const pounds = (amount: number | null): number | null =>
+    perUnit === null || amount === null ? null : Math.round(amount * perUnit);
+  const egp = (amount: number | null) => (amount === null ? null : formatEgp(amount));
+  const rateLine = abroadRateLine(order, perUnit);
+
+  if (order.feeToBeAgreed) {
+    // No fee yet, so the saved total is the items alone when the lines weren't saved.
+    const itemsAmount = shopper.subtotal ?? shopper.total;
+    if (itemsAmount === null) return null;
+    const items = money(itemsAmount);
+    const itemsPounds = pounds(itemsAmount);
+    const egyptItems = formatEgp(order.subtotalEgp);
+    const later = 'To be agreed';
+    const plus = (value: string | null) => (value === null ? null : `${value} + shipping`);
+    return {
+      money,
+      subjectAmount: `${items} + Delivery`,
+      headerAmount: `${items} + Delivery`,
+      headerNote: joinWith(
+        [itemsPounds !== null ? `items about ${formatEgp(itemsPounds)}` : null, `${egyptItems} in Egypt`],
+        ' · ',
+      ),
+      items,
+      total: { customer: plus(items)!, pounds: plus(egp(itemsPounds)), egypt: plus(egyptItems)! },
+      rows: [
+        { label: 'Subtotal', cells: [items, egp(itemsPounds), egyptItems] },
+        { label: 'Shipping', cells: [later, later, later] },
+        { label: 'Total', cells: [plus(items), plus(egp(itemsPounds)), plus(egyptItems)] },
+      ],
+      rateLine,
+      showPounds: perUnit !== null,
+    };
+  }
+
+  if (shopper.total === null) return null;
+  const total = money(shopper.total);
+  const charged = cardChargeEgp(order);
+  const totalPounds = charged ?? pounds(shopper.total);
+  const egyptTotal = formatEgp(order.totalEgp);
+  const poundsText =
+    totalPounds === null
+      ? null
+      : charged !== null
+        ? formatEgp(totalPounds)
+        : `about ${formatEgp(totalPounds)}`;
+  const rows: { label: string; cells: (string | null)[] }[] = [];
+  if (shopper.subtotal !== null) {
+    rows.push({
+      label: 'Subtotal',
+      cells: [money(shopper.subtotal), egp(pounds(shopper.subtotal)), formatEgp(order.subtotalEgp)],
+    });
+  }
+  if (shopper.shipping !== null) {
+    rows.push(
+      order.shippingEgp === 0
+        ? { label: 'Shipping', cells: ['Free', 'Free', 'Free'] }
+        : {
+            label: 'Shipping',
+            cells: [
+              money(shopper.shipping),
+              // Shipping abroad has no markup (ATS-311): in pounds it is its Egypt price.
+              order.shippingAtPlainRate ? formatEgp(order.shippingEgp) : egp(pounds(shopper.shipping)),
+              formatEgp(order.shippingEgp),
+            ],
+          },
+    );
+  }
+  rows.push({ label: 'Total', cells: [total, egp(totalPounds), egyptTotal] });
+  return {
+    money,
+    // Without the saved rate (older orders), the Egypt price is named as such, never as the amount.
+    subjectAmount: `${total} (${poundsText ?? `${egyptTotal} in Egypt`})`,
+    headerAmount: total,
+    headerNote: joinWith(
+      [
+        totalPounds === null
+          ? null
+          : charged !== null
+            ? `${formatEgp(charged)} charged`
+            : `about ${formatEgp(totalPounds)} in pounds`,
+        `${egyptTotal} in Egypt`,
+      ],
+      ' · ',
+    ),
+    items: total,
+    total: { customer: total, pounds: poundsText, egypt: egyptTotal },
+    rows,
+    rateLine,
+    showPounds: perUnit !== null || charged !== null,
+  };
+}
+
+/** Same line as the admin order page: "Abroad prices +40% · rate on the day 1 QAR = 14.66 EGP". */
+function abroadRateLine(order: OrderEmailOrder, perUnit: number | null): string | null {
+  if (perUnit === null || !order.staffRate) return null;
+  const rate = perUnit.toLocaleString('en-US', {
+    maximumFractionDigits: perUnit >= 1 ? 2 : 4,
+    maximumSignificantDigits: perUnit >= 1 ? undefined : 3,
+  });
+  const percent = order.staffRate.markupPercent.toLocaleString('en-US', { maximumFractionDigits: 1 });
+  return `Abroad prices +${percent}% · rate on the day 1 ${order.shopper.currency} = ${rate} EGP`;
+}
+
+const STAFF_PRICE_HEADERS = ['Customer Pays', 'In Pounds', 'Price in Egypt'] as const;
+
+/** The three-column totals of the staff alert abroad, and the same rows as text. */
+function staffAbroadTotals(abroad: StaffAbroad): Block {
+  const showPounds = abroad.showPounds;
+  const headers = showPounds ? STAFF_PRICE_HEADERS : [STAFF_PRICE_HEADERS[0], STAFF_PRICE_HEADERS[2]];
+  const rows = abroad.rows.map((row) => ({
+    label: row.label,
+    cells: showPounds ? row.cells : [row.cells[0] ?? null, row.cells[2] ?? null],
+  }));
+  const text = [
+    `Prices: ${headers.join(' · ')}`,
+    ...rows.map((row) => `${row.label}: ${row.cells.map((cell) => cell ?? '—').join(' · ')}`),
+    abroad.rateLine,
+  ];
+  return {
+    html: section(priceTable(headers, rows, abroad.rateLine), 8),
+    text: joinWith(text, '\n'),
+  };
+}
+
 function storeNewOrder(order: OrderEmailOrder, ctx: OrderEmailContext): RenderedEmail {
   const method = order.paymentMethod;
   const charged = cardChargeEgp(order);
@@ -1155,28 +1310,32 @@ function storeNewOrder(order: OrderEmailOrder, ctx: OrderEmailContext): Rendered
         : method === 'bank-transfer'
           ? 'Bank Transfer – Waiting for Transfer'
           : 'Paid Online';
-  const amount = order.feeToBeAgreed
-    ? `${formatEgp(order.subtotalEgp)} + Delivery`
-    : method === 'bank-transfer' && order.payIn
-      ? `${formatPayIn(order.payIn)} (${formatEgp(order.totalEgp)})`
-      : charged !== null
-        ? order.payIn
-          ? `${formatEgp(charged)} (${formatPayIn(order.payIn)})`
-          : formatEgp(charged)
-        : formatEgp(order.totalEgp);
+  const abroad = staffAbroad(order);
+  const amount = abroad
+    ? abroad.subjectAmount
+    : order.feeToBeAgreed
+      ? `${formatEgp(order.subtotalEgp)} + Delivery`
+      : method === 'bank-transfer' && order.payIn
+        ? `${formatPayIn(order.payIn)} (${formatEgp(order.totalEgp)})`
+        : charged !== null
+          ? order.payIn
+            ? `${formatEgp(charged)} (${formatPayIn(order.payIn)})`
+            : formatEgp(charged)
+          : formatEgp(order.totalEgp);
   const subject = order.feeToBeAgreed
     ? `New Order ${order.ref} – ${amount} – Agree Delivery Fee`
     : `New Order ${order.ref} – ${amount} – ${label}`;
 
-  const payment = storePayment(order);
-  const top = staffTop(order, payment);
+  const payment = storePayment(order, abroad);
+  const top = staffTop(order, payment, abroad);
   const strip: AmountCell[] = [{ label: 'Items', amount: String(pieceCount(order.lines)) }, ...payment.cells];
   // When the note is already the header sentence (a large order), the box only names the action.
   const step = payment.step;
   const stepNote = step && step.note !== top.sentence ? step.note : null;
   const customer = staffCustomer(order, ctx);
-  const pack = packList(order.lines, ctx);
+  const pack = packList(order, ctx, abroad);
   const totalRows = totalsFor(order, 'Total', 'Not set yet');
+  const totalsBlock = abroad ? staffAbroadTotals(abroad) : null;
   const button = ctx.storefrontUrl
     ? { label: 'Open This Order', url: `${ctx.storefrontUrl}/admin/orders/${encodeURIComponent(order.id)}` }
     : null;
@@ -1194,7 +1353,7 @@ function storeNewOrder(order: OrderEmailOrder, ctx: OrderEmailContext): Rendered
     step ? section(nextStepBox(step.action, stepNote), 32) : '',
     customer.html,
     pack.html,
-    section(totals(totalRows), 8),
+    totalsBlock ? totalsBlock.html : section(totals(totalRows), 8),
     button ? mainButton(button) : '',
     SPACER,
     footer({
@@ -1217,7 +1376,7 @@ function storeNewOrder(order: OrderEmailOrder, ctx: OrderEmailContext): Rendered
     step ? joinParts([`Next Step: ${step.action}`, stepNote]) : null,
     customer.text,
     pack.text,
-    totalRows.map(([rowLabel, value]) => `${rowLabel}: ${value}`).join('\n'),
+    totalsBlock ? totalsBlock.text : totalRows.map(([rowLabel, value]) => `${rowLabel}: ${value}`).join('\n'),
     button ? `${button.label}: ${button.url}` : null,
     STAFF_FOOTER,
   ]);
@@ -1233,13 +1392,15 @@ interface StorePayment {
   readonly step: { readonly action: string; readonly note: string } | null;
 }
 
-function storePayment(order: OrderEmailOrder): StorePayment {
+function storePayment(order: OrderEmailOrder, abroad: StaffAbroad | null): StorePayment {
   const total = formatEgp(order.totalEgp);
   if (order.feeToBeAgreed && order.isInternational) {
     const country = countryName(order.address.country);
     return {
       cells: [
-        { label: 'Items Total', amount: formatEgp(order.subtotalEgp) },
+        abroad
+          ? { label: 'Items Total', amount: abroad.items }
+          : { label: 'Items Total', amount: formatEgp(order.subtotalEgp) },
         { label: 'Shipping Fee', amount: 'Not Set Yet' },
       ],
       step: {
@@ -1287,10 +1448,16 @@ function storePayment(order: OrderEmailOrder): StorePayment {
     case 'bank-transfer': {
       const sends = order.payIn ? formatPayIn(order.payIn) : 'The Total';
       return {
-        cells: [
-          { label: 'Customer Sends', amount: sends },
-          { label: 'Order Total in EGP', amount: total },
-        ],
+        cells: abroad
+          ? [
+              { label: 'Customer Sends', amount: abroad.total.customer },
+              ...(abroad.total.pounds ? [{ label: 'In Pounds', amount: abroad.total.pounds }] : []),
+              { label: 'Price in Egypt', amount: abroad.total.egypt },
+            ]
+          : [
+              { label: 'Customer Sends', amount: sends },
+              { label: 'Order Total in EGP', amount: total },
+            ],
         step: {
           action: order.payIn ? `Wait for ${sends} by bank transfer` : 'Wait for the bank transfer',
           note: "Confirm the order in the dashboard once the money is in the account and the receipt shows the full amount in the customer's currency. Prices abroad include the international markup, so more pounds than the order total usually arrive.",
@@ -1303,11 +1470,17 @@ function storePayment(order: OrderEmailOrder): StorePayment {
       // Card abroad (ATS-311): Paymob charged the shopper-currency total converted at the plain
       // rate, not the Egypt price, so show what was actually charged first.
       return {
-        cells: [
-          { label: 'Paid', amount: formatEgp(charged) },
-          ...(order.payIn ? [{ label: 'Customer Paid', amount: formatPayIn(order.payIn) }] : []),
-          { label: 'Order Total in EGP', amount: total },
-        ],
+        cells: abroad
+          ? [
+              { label: 'Customer Paid', amount: abroad.total.customer },
+              { label: 'Charged in Pounds', amount: formatEgp(charged) },
+              { label: 'Price in Egypt', amount: abroad.total.egypt },
+            ]
+          : [
+              { label: 'Paid', amount: formatEgp(charged) },
+              ...(order.payIn ? [{ label: 'Customer Paid', amount: formatPayIn(order.payIn) }] : []),
+              { label: 'Order Total in EGP', amount: total },
+            ],
         step: null,
       };
     }
@@ -1318,23 +1491,27 @@ function storePayment(order: OrderEmailOrder): StorePayment {
 function staffTop(
   order: OrderEmailOrder,
   payment: StorePayment,
+  abroad: StaffAbroad | null,
 ): { kicker: string; amount: string; amountNote: string | null; sentence: string | null } {
   const bank = order.paymentMethod === 'bank-transfer' && order.payIn !== null && !order.feeToBeAgreed;
   const charged = cardChargeEgp(order);
-  const amount = order.feeToBeAgreed
+  const egyptAmount = order.feeToBeAgreed
     ? `${formatEgp(order.subtotalEgp)} + Delivery`
     : bank
       ? formatPayIn(order.payIn!)
       : charged !== null
         ? formatEgp(charged)
         : formatEgp(order.totalEgp);
-  const amountNote = bank
-    ? `${formatEgp(order.totalEgp)} order total`
-    : charged !== null
-      ? order.payIn
-        ? `${formatPayIn(order.payIn)} paid · ${formatEgp(order.totalEgp)} order total`
-        : `${formatEgp(order.totalEgp)} order total`
-      : null;
+  const amount = abroad ? abroad.headerAmount : egyptAmount;
+  const amountNote = abroad
+    ? abroad.headerNote
+    : bank
+      ? `${formatEgp(order.totalEgp)} order total`
+      : charged !== null
+        ? order.payIn
+          ? `${formatPayIn(order.payIn)} paid · ${formatEgp(order.totalEgp)} order total`
+          : `${formatEgp(order.totalEgp)} order total`
+        : null;
   if (order.needsReview) {
     return {
       kicker: 'Check This Order',
@@ -1439,7 +1616,15 @@ ${wa ? `<div style="margin-top:18px;">${outlinedButton(wa)}</div>` : ''}`,
 }
 
 /** Pack List: 2 photos per row with a ×2 tag on each, gifts under their item; 5 or more items use the compact list. */
-function packList(lines: readonly OrderEmailLine[], ctx: OrderEmailContext): Block {
+function packList(order: OrderEmailOrder, ctx: OrderEmailContext, abroad: StaffAbroad | null): Block {
+  const lines = order.lines;
+  // Abroad (ATS-320): each line in the shopper's currency, as the customer saw it; EGP otherwise.
+  const linePrice = (line: OrderEmailLine): string =>
+    !abroad
+      ? formatEgp(line.lineEgp)
+      : line.shopperAmount !== null
+        ? abroad.money(line.shopperAmount)
+        : `${formatEgp(line.lineEgp)} in Egypt`;
   const compactAfter = 4;
   const bought = lines.filter((line, index) => line.giftName === null || index === 0).length;
   const width = bought > compactAfter ? 128 : 520;
@@ -1448,7 +1633,7 @@ function packList(lines: readonly OrderEmailLine[], ctx: OrderEmailContext): Blo
     (line) => ({
       name: lineTitle(line),
       details: lineTags(line).join(' · '),
-      price: formatEgp(line.lineEgp),
+      price: linePrice(line),
       imageSrc: imageUrl(line.imagePath, ctx, width),
       tags: [`×${line.quantity}`, ...(line.dealTag ? [line.dealTag] : [])],
     }),
@@ -1463,7 +1648,7 @@ function packList(lines: readonly OrderEmailLine[], ctx: OrderEmailContext): Blo
       const options = lineTags(line).join(' · ');
       const price = gift
         ? (line.giftName ?? 'Free gift')
-        : `${formatEgp(line.lineEgp)}${line.dealTag ? ` (${line.dealTag})` : ''}`;
+        : `${linePrice(line)}${line.dealTag ? ` (${line.dealTag})` : ''}`;
       return `- ×${line.quantity} ${lineTitle(line)}${options ? ` (${options})` : ''}: ${price}`;
     })
     .join('\n');
