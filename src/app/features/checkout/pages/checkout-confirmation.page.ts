@@ -23,6 +23,7 @@ import {
   cashOnDeliveryEgp,
   hasBankTransferDetails,
   hasInstapayDetails,
+  isDeliveryFeeToBeAgreed,
   orderStage,
   paymentDue,
   shopperWhatsappText,
@@ -547,7 +548,8 @@ export class CheckoutConfirmationPageComponent implements OnInit {
     const pricing = this.order()?.pricing;
     const money = this.#money();
     if (!pricing?.shipping || !money) return null;
-    if (this.stage() === 'fee-to-be-agreed') return 'To be agreed';
+    // The fee was never set (also once such an order is cancelled): never "Free".
+    if (isDeliveryFeeToBeAgreed(pricing.shipping)) return 'To be agreed';
     if (money.shipping === null) return null;
     if (money.shipping === 0) return 'Free';
     return formatShopperAmount(money, money.shipping);
@@ -572,7 +574,7 @@ export class CheckoutConfirmationPageComponent implements OnInit {
     const money = this.#money();
     const total = money ? formatShopperAmount(money, money.total) : null;
     if (!total) return '—';
-    return this.stage() === 'fee-to-be-agreed' ? `${total} + shipping` : total;
+    return isDeliveryFeeToBeAgreed(this.order()?.pricing?.shipping) ? `${total} + shipping` : total;
   });
 
   constructor() {

@@ -96,6 +96,11 @@ describe('orders from any country (ATS-314)', () => {
       missedTotalEgp: 600,
       shippingEgp: 0,
     });
+    // Checkout showed a set fee (the country was on the list then): refused, never placed silently.
+    assert.deepEqual(missedOrderTotal({ shownShippingEgp: 450, shownTotalEgp: 950 }, agreed, 500), {
+      missedTotalEgp: 500,
+      shippingEgp: 0,
+    });
   });
 
   it('the order waits for the fee: nothing to send until staff set it', () => {
@@ -144,13 +149,15 @@ describe('Set Delivery Fee on an order abroad (ATS-314)', () => {
     assert.equal(changed.amount, 21);
   });
 
-  it('falls back to the staff-only rate, and refuses without any plain rate', () => {
+  it('falls back to the staff-only rate, then the saved factor, and never saves the rate used', () => {
     const { shippingFactor: _plain, ...withoutPlain } = saved;
     const payIn = payInWithAgreedShipping(withoutPlain, 750, 0.02);
     assert.ok(payIn);
-    assert.equal(payIn.shippingFactor, 0.02);
+    assert.equal(payIn.shippingFactor, undefined);
     assert.equal(payIn.shipping, toDisplayAmount(750, { code: 'USD', factor: 0.02 }));
-    assert.equal(payInWithAgreedShipping(withoutPlain, 750, null), null);
+    const old = payInWithAgreedShipping(withoutPlain, 750, null);
+    assert.ok(old);
+    assert.equal(old.shipping, toDisplayAmount(750, { code: 'USD', factor: 0.028 }));
     assert.equal(payInWithAgreedShipping({ currency: 'EGP', amount: 500 }, 750, 1), null);
     assert.equal(payInWithAgreedShipping(null, 750, 0.02), null);
   });

@@ -5,10 +5,19 @@ export interface CheckoutCountryOption {
   readonly label: string;
 }
 
+/** One English names lookup, made once (null where the runtime has none). */
+const REGION_NAMES: Intl.DisplayNames | null = (() => {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' });
+  } catch {
+    return null;
+  }
+})();
+
 /** English country names from the browser (and Node on the server), e.g. `BR` → "Brazil". */
 function regionName(code: string): string {
   try {
-    return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code;
+    return REGION_NAMES?.of(code) ?? code;
   } catch {
     return code;
   }

@@ -45,6 +45,9 @@ export const setDeliveryFee = onCall(
       const shipping = pricing && isRecord(pricing['shipping']) ? pricing['shipping'] : null;
       const kind = shipping?.['kind'];
       const abroad = kind === 'international-agreed';
+      if (!pricing || !shipping || !isAgreedShippingKind(kind)) {
+        throw new HttpsError('failed-precondition', 'This order already has its delivery fee from checkout.');
+      }
       const methodFits = abroad
         ? method === 'bank-transfer'
         : method === 'cash-on-delivery' || method === 'instapay';
@@ -61,9 +64,6 @@ export const setDeliveryFee = onCall(
           'failed-precondition',
           'The delivery fee can only be set while the order is still open.',
         );
-      }
-      if (!pricing || !shipping || !isAgreedShippingKind(kind)) {
-        throw new HttpsError('failed-precondition', 'This order already has its delivery fee from checkout.');
       }
       const subtotalEgp = pricing['subtotalEgp'];
       if (typeof subtotalEgp !== 'number' || !Number.isInteger(subtotalEgp) || subtotalEgp < 0) {

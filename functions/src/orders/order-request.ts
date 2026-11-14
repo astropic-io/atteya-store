@@ -1,7 +1,7 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 import * as v from 'valibot';
 import { governorateOfAddress, isDeliveryCountry } from '../offers/engine/index.js';
-import { isEgyptMobile } from '../store/order-messages.js';
+import { ABROAD_PHONE_MESSAGE, isEgyptMobile, shopperWhatsappNumber } from '../store/order-messages.js';
 
 const COUNTRY_CODE = /^[A-Z]{2}$/;
 const MAX_LINES = 20;
@@ -137,6 +137,10 @@ export function parseCreateStoreOrderRequest(data: unknown): CreateStoreOrderReq
   // Staff reach Egypt shoppers on WhatsApp (InstaPay screenshot, cash-on-delivery fee).
   if (shipping.country === 'EG' && !isEgyptMobile(shipping.phone)) {
     throw new HttpsError('invalid-argument', 'Enter an Egyptian mobile number, e.g. 010 1234 5678.');
+  }
+  // Abroad we agree delivery and payment on WhatsApp (ATS-314): the number must be one we can open.
+  if (shipping.country !== 'EG' && shopperWhatsappNumber(shipping.phone, shipping.country) === null) {
+    throw new HttpsError('invalid-argument', ABROAD_PHONE_MESSAGE);
   }
   const endedOfferIds = parseOfferIds(data['endedOfferIds']);
   const dealOfferIds = parseOfferIds(data['dealOfferIds']);

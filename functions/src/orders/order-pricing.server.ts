@@ -306,6 +306,11 @@ export function missedOrderTotal(
 ): MissedTotal | null {
   const totalHigher = shown.shownTotalEgp !== null && totalEgp > shown.shownTotalEgp;
   if (isAgreedShippingKind(shipping.kind)) {
+    // Checkout showed a set shipping fee but the fee is now to be agreed (the country was taken off
+    // the Delivery Countries list meanwhile, ATS-314): never place it silently on different terms.
+    if (shipping.kind === 'international-agreed' && shown.shownShippingEgp !== null) {
+      return { missedTotalEgp: totalEgp, shippingEgp: shipping.priceEgp };
+    }
     return totalHigher ? { missedTotalEgp: totalEgp, shippingEgp: shipping.priceEgp } : null;
   }
   const shownFeeToBeAgreed = shown.shownShippingEgp === null && shown.shownTotalEgp !== null;

@@ -37,7 +37,7 @@ import { CartService } from '@core/services/cart/cart.service';
 import { CurrencyService } from '@core/services/currency/currency.service';
 import { MetaPixelService, metaPixelContents } from '@core/services/analytics/meta-pixel.service';
 import { injectFirestore } from '@core/firebase';
-import { isEgyptMobile } from '@core/config/order-messages';
+import { ABROAD_PHONE_MESSAGE, isEgyptMobile, shopperWhatsappNumber } from '@core/config/order-messages';
 import { isBankTransferLive, isCardOrWalletLive, STORE_INFO, whatsappChatUrl } from '@core/config/store-info';
 import { toPricedProduct } from '@core/services/offers/offer.model';
 import { OffersService } from '@core/services/offers/offers.service';
@@ -1128,6 +1128,11 @@ export class CheckoutPageComponent implements OnInit {
     // We reach Egypt shoppers on WhatsApp (InstaPay screenshot, cash-on-delivery fee).
     if (draft.country === 'EG' && !isEgyptMobile(draft.phone)) {
       this.#snackbar.error('Enter an Egyptian mobile number, e.g. 010 1234 5678.');
+      return;
+    }
+    // Abroad we agree delivery and payment on WhatsApp, so the number needs its country code.
+    if (draft.country !== 'EG' && shopperWhatsappNumber(draft.phone, draft.country) === null) {
+      this.#snackbar.error(ABROAD_PHONE_MESSAGE);
       return;
     }
     const unavailable = this.unavailableMessage();

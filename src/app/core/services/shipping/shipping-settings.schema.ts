@@ -146,10 +146,11 @@ export const ShippingSettingsSchema = v.object({
    * Countries): ISO codes, cleaned by `parseDeliveryCountries()` (never Egypt, no unknown codes).
    * Missing = not saved yet: `DEFAULT_DELIVERY_COUNTRIES` applies.
    */
+  // Anything that isn't a list reads as not saved (the default list), as on the server.
   deliveryCountries: v.optional(
     v.pipe(
-      v.array(v.unknown()),
-      v.transform((raw) => parseDeliveryCountries(raw) ?? []),
+      v.unknown(),
+      v.transform((raw) => parseDeliveryCountries(raw) ?? undefined),
     ),
   ),
   /**

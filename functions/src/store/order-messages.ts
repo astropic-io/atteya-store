@@ -370,6 +370,9 @@ export function shopperWhatsappNumber(phone: string, country: string): string | 
   return intl.length >= 8 && intl.length <= 15 ? intl : null;
 }
 
+/** Checkout and the order callables refuse a phone abroad that `shopperWhatsappNumber()` can't read. */
+export const ABROAD_PHONE_MESSAGE = 'Enter your number with its country code, e.g. +971 50 123 4567.';
+
 /** True when a phone typed at checkout is an Egyptian mobile WhatsApp can reach. */
 export function isEgyptMobile(phone: string): boolean {
   const intl = shopperWhatsappNumber(phone, 'EG');

@@ -160,9 +160,11 @@ export function payInAboveShown(
  * The saved `payIn` of an order abroad whose fee was to be agreed (`international-agreed`,
  * ATS-314), with the fee staff agreed (whole EGP) added as its shipping. The fee is converted at
  * the plain rate with no markup (ATS-311): the `shippingFactor` saved with the order, else
- * `fallbackPlainRate` (the staff-only rate behind its factor). The items keep the amounts saved at
- * Place Order; `amount` becomes items + shipping, rounded to the currency's decimals. Null when the
- * saved `payIn` can't be read, is in EGP, or no plain rate is known.
+ * `fallbackPlainRate` (the staff-only rate behind its factor), else the saved `factor`, as
+ * `shippingEntry()` falls back for an order from before ATS-311. The rate used is never written to
+ * the order (the owner can read it; the staff-only rate stays in `orderStaffNotes`). The items keep
+ * the amounts saved at Place Order; `amount` becomes items + shipping, rounded to the currency's
+ * decimals. Null when the saved `payIn` can't be read or is in EGP.
  */
 export function payInWithAgreedShipping(
   saved: unknown,
@@ -176,11 +178,14 @@ export function payInWithAgreedShipping(
   if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency) || currency === 'EGP') return null;
   if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0) return null;
   const savedPlain = raw['shippingFactor'];
+  const savedFactor = raw['factor'];
   const plainRate = isPositive(savedPlain)
     ? savedPlain
     : isPositive(fallbackPlainRate)
       ? fallbackPlainRate
-      : null;
+      : isPositive(savedFactor)
+        ? savedFactor
+        : null;
   if (plainRate === null) return null;
   const decimals = displayDecimals(currency);
   const round = (value: number) => Number(value.toFixed(decimals));
@@ -197,7 +202,6 @@ export function payInWithAgreedShipping(
     currency,
     amount: round(itemsAmount + shipping),
     shipping,
-    ...(isPositive(savedPlain) ? {} : { shippingFactor: plainRate }),
   };
 }
 
