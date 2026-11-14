@@ -107,6 +107,11 @@ export const OrderPricingSnapshotSchema = v.object({
     v.object({
       currency: v.pipe(v.string(), v.regex(/^[A-Z]{3}$/)),
       amount: v.pipe(v.number(), v.finite(), v.minValue(0)),
+      /** Not in EGP, orders from ATS-304 on: each line (index-matched, 0 for gifts) and the shipping fee. */
+      lines: v.optional(v.array(v.pipe(v.number(), v.finite(), v.minValue(0)))),
+      shipping: v.optional(v.pipe(v.number(), v.finite(), v.minValue(0))),
+      /** The public factor `amount` was worked out with (shopper currency per EGP, markup in). */
+      factor: v.optional(v.pipe(v.number(), v.finite(), v.gtValue(0))),
     }),
   ),
 });
@@ -152,6 +157,22 @@ export const OrderStaffNotesSchema = v.object({
   statusHistory: v.optional(v.fallback(v.array(OrderStatusChangeSchema), []), []),
   /** Typed when cancelling; never shown to the shopper. */
   cancelReason: v.optional(v.nullable(v.string()), null),
+  /**
+   * Bank Transfer paid in another currency (ATS-304): the abroad markup and the rate before it
+   * (shopper currency per 1 EGP) behind `pricing.payIn.factor`. Staff-only. Unreadable: null.
+   */
+  payInRate: v.optional(
+    v.fallback(
+      v.nullable(
+        v.object({
+          markupPercent: v.pipe(v.number(), v.finite(), v.minValue(0)),
+          rate: v.pipe(v.number(), v.finite(), v.gtValue(0)),
+        }),
+      ),
+      null,
+    ),
+    null,
+  ),
 });
 
 export type OrderStaffNotes = v.InferOutput<typeof OrderStaffNotesSchema>;

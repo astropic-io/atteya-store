@@ -24,6 +24,42 @@
     @apply font-body-sm text-on-surface-variant;
   }
 
+  /*
+   * Bank Transfer order from abroad (ATS-304): photo, text, then Customer pays / In pounds /
+   * Price in Egypt. Narrow: the prices stack under the item as label / value rows. From @xl
+   * (the items box is a container): three columns (two without the In pounds column).
+   */
+  .admin-order-abroad-row {
+    @apply grid grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-x-3;
+    @apply @xl:grid-cols-[3.5rem_minmax(0,1fr)_repeat(3,7rem)];
+  }
+
+  .admin-order-abroad-row--two {
+    @apply @xl:grid-cols-[3.5rem_minmax(0,1fr)_repeat(2,7rem)];
+  }
+
+  /* The prices of one item: full width under it, or the last columns of the row (subgrid). */
+  .admin-order-abroad-cells {
+    @apply col-span-2 elements-start-col items-stretch! gap-1 pt-2;
+    @apply @xl:col-[3/-1] @xl:grid @xl:grid-cols-subgrid @xl:pt-0;
+  }
+
+  /* One price: "Customer pays ...... QAR 96" when narrow, a right-aligned column cell when wide. */
+  .admin-order-abroad-cell {
+    @apply col-span-2 elements-between items-start! gap-x-3 min-w-0 whitespace-nowrap;
+    @apply @xl:col-span-1 @xl:block @xl:text-end;
+  }
+
+  /* Subtotal, Shipping and Total under the items. */
+  .admin-order-totals {
+    @apply elements-start-col items-stretch! gap-2 pt-3 border-t border-outline-variant;
+  }
+
+  /* Small outlined tag beside a name or total: "Guest", "Abroad · QAR" (ATS-304). */
+  .admin-order-tag {
+    @apply px-1.5 border border-outline-variant border-shape font-label-sm whitespace-nowrap;
+  }
+
   /* The black "Next step" bar. */
   .admin-order-next {
     @apply bg-primary text-on-primary border-shape px-4 py-3 font-body-md;

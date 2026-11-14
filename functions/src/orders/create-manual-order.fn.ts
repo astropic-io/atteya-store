@@ -9,7 +9,9 @@ import { readOfferUses, savedOfferUses } from './offer-usage.js';
 import { utcDayKey } from './order-rate-limit.js';
 import { logGuestStoreCapReached, readOrderRateLimits } from './order-rate-limit-docs.js';
 import { newOrderViewKey } from './order-view.js';
-import { payInEntry, payInFor } from './pay-in.js';
+import { payInEntry, payInFor, payInRateFor, type PayInRate } from './pay-in.js';
+import { markupOrDefault, readStoredRates } from '../intl/exchange-rates.js';
+import { orderStaffNotesRef } from './order-staff-notes.js';
 import { isBankTransferLive } from '../store/store-info.js';
 
 /**
@@ -94,8 +96,10 @@ async function createManualOrder<M extends ManualPaymentMethod>(
 
   const db = getFirestore();
   const priced = await priceStoreOrder(db, input, customer.signedIn, customer.offerKeys);
-  const pricing =
-    method === 'bank-transfer' ? await withPayIn(db, priced.pricing, input.payInCurrency) : priced.pricing;
+  const { pricing, payInRate } =
+    method === 'bank-transfer'
+      ? await withPayIn(db, priced.pricing, input.payInCurrency)
+      : { pricing: priced.pricing, payInRate: null };
   const orderRef = db.collection('orders').doc();
   const viewKey = customer.kind === 'guest' ? newOrderViewKey() : null;
   const day = utcDayKey();
@@ -135,6 +139,11 @@ async function createManualOrder<M extends ManualPaymentMethod>(
       createdAt: now,
       updatedAt: now,
     });
+    // Staff-only: the owner can read orders/{id} (and guests its orderViews copy), so the abroad
+    // markup and rate behind payIn go to orderStaffNotes (ATS-304).
+    if (payInRate) {
+      tx.set(orderStaffNotesRef(db, orderRef.id), { payInRate, updatedAt: now }, { merge: true });
+    }
   });
   if (filledGuestStoreCap) logGuestStoreCapReached(day);
 
@@ -149,13 +158,16 @@ async function createManualOrder<M extends ManualPaymentMethod>(
 
 /**
  * The order pricing plus the amount to send by Bank Transfer in the shopper's currency, from the
- * public `settings/currency` factors (the same ones checkout converted with).
+ * public `settings/currency` factors (the same ones checkout converted with). Outside EGP it also
+ * returns the markup and rate the factor was built from (read in the same `getAll`), for the
+ * staff-only notes, so staff see what the order comes to in pounds (ATS-304). They never change
+ * the amount, and they are null when they can't be read or no longer rebuild the factor.
  */
 async function withPayIn(
   db: Firestore,
   pricing: OrderPricingSnapshot,
   requested: string | null,
-): Promise<OrderPricingSnapshot> {
+): Promise<{ pricing: OrderPricingSnapshot; payInRate: PayInRate | null }> {
   const snap = await db.doc('settings/currency').get();
   const currencies = snap.get('currencies');
   const entry = payInEntry(requested, isRecord(currencies) ? currencies : {});
@@ -165,7 +177,15 @@ async function withPayIn(
       "We couldn't work out the amount in your currency. Please try again in a moment.",
     );
   }
-  return { ...pricing, payIn: payInFor(pricing.lines, pricing.shipping, entry) };
+  const withAmount = { ...pricing, payIn: payInFor(pricing.lines, pricing.shipping, entry) };
+  if (entry.code === 'EGP') return { pricing: withAmount, payInRate: null };
+  const [configSnap, ratesSnap] = await db.getAll(db.doc('intlPricing/config'), db.doc('intlPricing/rates'));
+  const payInRate = payInRateFor(
+    entry,
+    markupOrDefault(configSnap.data()),
+    readStoredRates(ratesSnap.data()),
+  );
+  return { pricing: withAmount, payInRate };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
