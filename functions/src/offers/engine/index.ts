@@ -11,6 +11,7 @@ export * from './item-price.js';
 export * from './labels.js';
 export * from './match.js';
 export * from './read-conditions.js';
+export * from './received-egp.js';
 export * from './shipping.js';
 export * from './shopper-money.js';
 export * from './types.js';
