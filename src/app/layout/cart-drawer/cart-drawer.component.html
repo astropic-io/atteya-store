@@ -113,9 +113,11 @@
                     @let price = linePrices()[$index];
                     <div class="shrink-0 elements-end-col gap-0.5 text-end">
                       @if (price?.was; as was) {
-                        <span class="font-body-sm text-on-surface-variant line-through">{{ was }}</span>
+                        <span class="cart-drawer__money font-body-sm text-on-surface-variant line-through">{{
+                          was
+                        }}</span>
                       }
-                      <span class="font-title-sm font-bold!">{{ price?.total }}</span>
+                      <span class="cart-drawer__money font-title-sm font-bold!">{{ price?.total }}</span>
                     </div>
                   </div>
                 </div>
@@ -193,7 +195,7 @@
                     <span>{{ strip.title }}</span>
                   </span>
                   @if (strip.end) {
-                    <span class="shrink-0 font-bold!">{{ strip.end }}</span>
+                    <span class="cart-drawer__money shrink-0 font-bold!">{{ strip.end }}</span>
                   }
                 </div>
               }
@@ -204,7 +206,7 @@
                   <div class="bag-card__strip">
                     <span class="min-w-0">{{ stripTitle }}</span>
                     @if (box.saving) {
-                      <span class="shrink-0 font-bold!">{{ box.saving }}</span>
+                      <span class="cart-drawer__money shrink-0 font-bold!">{{ box.saving }}</span>
                     }
                   </div>
                 }
@@ -245,7 +247,7 @@
                   <div class="bag-card__strip">
                     <span class="min-w-0">{{ stripTitle }}</span>
                     @if (box.saving) {
-                      <span class="shrink-0 font-bold!">{{ box.saving }}</span>
+                      <span class="cart-drawer__money shrink-0 font-bold!">{{ box.saving }}</span>
                     }
                   </div>
                 }
@@ -350,8 +352,8 @@
     >
       <div class="elements-between">
         <span class="font-title-sm font-bold!">Subtotal</span>
-        <!-- cart-drawer__subtotal: hidden while the currency is pending (inline style in index.html). -->
-        <span class="cart-drawer__subtotal font-title-sm font-bold!">{{ subtotal() }}</span>
+        <!-- cart-drawer__money: hidden while the currency is pending (inline style in index.html). -->
+        <span class="cart-drawer__money font-title-sm font-bold!">{{ subtotal() }}</span>
       </div>
 
       <p class="font-label-md opacity-70">Shipping is worked out at checkout.</p>
