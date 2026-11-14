@@ -94,6 +94,17 @@ export class UserProfileService {
     });
   }
 
+  /**
+   * After a signed-in shopper's order (ATS-317): the order's delivery address becomes their saved
+   * address when they have none yet. An existing saved address is never replaced. True when saved.
+   */
+  async saveAddressIfNone(uid: string, address: SavedAddress): Promise<boolean> {
+    const profile = await this.get(uid);
+    if (!profile || profile.address) return false;
+    await this.saveAddress(uid, address);
+    return true;
+  }
+
   /** Account → Emails. `marketingOptInAt` records when the choice was made. */
   async setMarketingOptIn(uid: string, optIn: boolean): Promise<void> {
     await this.#update(uid, { marketingOptIn: optIn, marketingOptInAt: serverTimestamp() });

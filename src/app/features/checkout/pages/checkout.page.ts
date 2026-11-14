@@ -376,6 +376,8 @@ export class CheckoutPageComponent implements OnInit {
   readonly lines = this.#cart.lines;
   readonly isEmpty = this.#cart.isEmpty;
   readonly isEgypt = computed(() => this.shipping().country === 'EG');
+  /** Only the country, so effects on it skip every keystroke in the other fields. */
+  readonly #deliveryCountry = computed(() => this.shipping().country);
 
   /**
    * The factors for a delivery country outside Egypt (ATS-309). Idle for Egypt and before a
@@ -897,6 +899,14 @@ export class CheckoutPageComponent implements OnInit {
         }
       });
     });
+    // ATS-317: the country the shopper picks here is the one browsing prices follow afterwards
+    // (Shop, product pages, the bag), until they pick or save another one.
+    effect(() => {
+      if (!this.#countryTouched()) return;
+      const country = this.#deliveryCountry();
+      if (!isCheckoutCountry(country)) return;
+      untracked(() => this.#currency.rememberCheckoutCountry(country));
+    });
     // Fill in the saved address once, when it is for the delivery country and the shopper
     // hasn't started typing an address.
     effect(() => {
@@ -1118,6 +1128,32 @@ export class CheckoutPageComponent implements OnInit {
     this.summaryOpen.update((open) => !open);
   }
 
+  /**
+   * ATS-317: a signed-in shopper with no saved address gets this order's delivery address saved,
+   * with no extra step. Never replaces a saved address; a failed save changes nothing for the order.
+   */
+  async #saveFirstAddress(shipping: CheckoutShippingInput): Promise<void> {
+    const uid = this.#auth.user()?.uid;
+    // Already known to have a saved address: nothing to read or write.
+    if (!uid || (this.#savedAddress.hasValue() && this.#savedAddress.value() !== null)) return;
+    try {
+      const saved = await this.#profiles.saveAddressIfNone(uid, {
+        fullName: shipping.fullName,
+        line1: shipping.line1,
+        line2: shipping.line2 ?? null,
+        city: shipping.city,
+        region: shipping.region ?? null,
+        postalCode: shipping.postalCode,
+        country: shipping.country,
+        phone: shipping.phone,
+        governorateId: shipping.governorateId ?? null,
+      });
+      if (saved) this.#currency.rememberSavedAddressCountry(uid, shipping.country);
+    } catch {
+      // The order is placed; the shopper can still save an address in Account.
+    }
+  }
+
   /** The offer of the last "Prices in your bag changed" refusal on this visit (see `placeOrder`). */
   #lastChangedOfferId: string | null = null;
   /** The server totals of the last shipping or total refusal on this visit (see `placeOrder`). */
@@ -1224,6 +1260,8 @@ export class CheckoutPageComponent implements OnInit {
         phone: draft.phone.trim(),
         governorateId: draft.country === 'EG' ? draft.governorateId : null,
       };
+      // ATS-317: browsing prices follow the country this order ships to.
+      this.#currency.rememberCheckoutCountry(shipping.country);
 
       if (method === 'paymob') {
         const result = await this.#checkout.placePaymobOrder({
@@ -1236,8 +1274,12 @@ export class CheckoutPageComponent implements OnInit {
           guest: guest ? { email: guest } : null,
         });
         if (guest) rememberGuestOrder(result.orderId, { key: result.viewKey ?? null, email: guest });
-        // Wait for the account bag to save before the full-page redirect to Paymob.
-        await this.#cart.clear();
+        // Wait for the account bag to save before the full-page redirect to Paymob, and give a first
+        // saved address a moment (never more than 1.5 s: paying matters more).
+        await Promise.all([
+          this.#cart.clear(),
+          Promise.race([this.#saveFirstAddress(shipping), new Promise((done) => setTimeout(done, 1500))]),
+        ]);
         if (isPlatformBrowser(this.#platformId)) {
           window.location.assign(result.checkoutUrl);
           return;
@@ -1262,6 +1304,7 @@ export class CheckoutPageComponent implements OnInit {
       // Card counts on the order page once Paymob confirms the payment.
       this.#pixel.trackOrderPurchase(result.orderId, result.pricing);
       void this.#cart.clear();
+      void this.#saveFirstAddress(shipping);
       // A guest's order page reads the order by its key (`?key=`); the page keeps it and hides it.
       await this.#router.navigate(['/checkout', 'confirmation', result.orderId], {
         state: { checkoutResult: result },

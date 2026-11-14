@@ -40,6 +40,34 @@
             if (tz === 'Africa/Cairo') r.removeAttribute('data-cur-pending');
           }
         }
+        // The country the shopper told us (ATS-317, currency-detect.ts): the remembered checkout or
+        // Account country, else a signed-in shopper's saved address. When its prices differ from
+        // the ones rendered, hide them until the app shows the right ones.
+        var cq = '';
+        try {
+          cq = new URLSearchParams(location.search).get('cur') || '';
+        } catch (e) {}
+        if (!cq) {
+          var pref = '';
+          try {
+            var signedIn = localStorage.getItem('atteya-signed-in') === '1';
+            var sc = signedIn ? JSON.parse(localStorage.getItem('atteya.savedCountry.v1') || 'null') : null;
+            var uid = sc && typeof sc.uid === 'string' ? sc.uid : '';
+            var rc = JSON.parse(localStorage.getItem('atteya.browseCountry.v1') || 'null');
+            var age = rc ? Date.now() - rc.savedAt : -1;
+            if (rc && typeof rc.country === 'string' && age >= 0 && age <= 2592000000) {
+              if (!uid || !rc.uid || rc.uid === uid) pref = rc.country;
+            }
+            if (!pref && sc && typeof sc.country === 'string') pref = sc.country;
+            if (!/^[A-Z]{2}$/.test(pref)) pref = '';
+          } catch (e) {}
+          var shown = r.hasAttribute('data-cur-by-zone') ? '' : r.getAttribute('data-visitor-country') || '';
+          if (pref === 'EG' && (shown === 'EG' || r.hasAttribute('data-cur-by-zone'))) {
+            r.removeAttribute('data-cur-pending');
+          } else if (pref && pref !== shown) {
+            r.setAttribute('data-cur-pending', '');
+          }
+        }
       } catch (e) {}
       // Signed in on this device (signed-in-hint.ts, ATS-287): footer.css hides the email sign-up.
       try {

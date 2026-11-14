@@ -110,7 +110,13 @@ import {
   readProductPicks,
   writeProductPicks,
 } from '../src/app/features/admin/pages/offers-manager/models/offer-product-picks.ts';
-import { browsingChoice, countryForTimeZone } from '../src/app/core/services/currency/browsing-currency.ts';
+import {
+  browsingChoice,
+  browsingTarget,
+  countryForTimeZone,
+  preferredCountry,
+  REMEMBERED_COUNTRY_MAX_AGE_MS,
+} from '../src/app/core/services/currency/browsing-currency.ts';
 import { COUNTRY_CURRENCY } from '../src/app/core/services/currency/country-currency.ts';
 import { TZ_COUNTRY } from '../src/app/core/services/currency/tz-country.ts';
 import { isUnreliableCurrency } from '../src/app/core/services/offers/engine/currency.ts';
@@ -1798,5 +1804,107 @@ describe('browsing currency: country, then time zone, then Egypt (ATS-313)', () 
     assert.deepEqual(browsingChoice(null, 'Etc/UTC', tables), { country: null, currency: 'USD' });
     assert.deepEqual(browsingChoice(null, 'Asia/Beirut', tables), { country: 'LB', currency: 'USD' });
     assert.equal(countryForTimeZone('Mars/Olympus', TZ_COUNTRY), null);
+  });
+});
+
+describe('browsing currency follows the country the shopper told us (ATS-317)', () => {
+  const tables = { countries: COUNTRY_CURRENCY, isUnreliable: isUnreliableCurrency };
+  const now = Date.UTC(2026, 10, 14);
+  const egyptGuess = { country: 'EG', currency: 'EGP' };
+  const remembered = (country, uid = null, daysAgo = 1) => ({
+    country,
+    uid,
+    savedAt: now - daysAgo * 24 * 60 * 60 * 1000,
+  });
+  const target = (query, input, guess = egyptGuess) =>
+    browsingTarget(
+      query,
+      preferredCountry({ now, uid: null, savedCountry: null, remembered: null, ...input }),
+      guess,
+      tables,
+    );
+
+  it('lets ?cur= beat everything', () => {
+    assert.deepEqual(target('USD', { remembered: remembered('QA'), uid: 'u1', savedCountry: 'SA' }), {
+      country: 'EG',
+      currency: 'USD',
+    });
+  });
+
+  it('uses the guess when the shopper told us nothing', () => {
+    assert.deepEqual(target(null, {}), egyptGuess);
+    assert.equal(target(null, {}, null), null);
+  });
+
+  it('lets the saved address beat the guess (a new phone with nothing remembered)', () => {
+    assert.deepEqual(target(null, { uid: 'u1', savedCountry: 'QA' }), { country: 'QA', currency: 'QAR' });
+  });
+
+  it('Scenario A: saving a Qatar address in Account moves prices to QAR', () => {
+    assert.deepEqual(target(null, { uid: 'u1', savedCountry: 'QA', remembered: remembered('QA', 'u1', 0) }), {
+      country: 'QA',
+      currency: 'QAR',
+    });
+  });
+
+  it('Scenario B: picking Egypt at checkout beats a saved Qatar address', () => {
+    assert.deepEqual(
+      target(null, { uid: 'u1', savedCountry: 'QA', remembered: remembered('EG', 'u1') }),
+      egyptGuess,
+    );
+  });
+
+  it('Scenario C: after picking Egypt, picking Qatar again or editing the saved address brings QAR back', () => {
+    const afterEgypt = { uid: 'u1', savedCountry: 'QA', remembered: remembered('EG', 'u1', 2) };
+    assert.deepEqual(target(null, afterEgypt), egyptGuess);
+    // The newer pick replaces the remembered country (one per browser).
+    assert.deepEqual(target(null, { ...afterEgypt, remembered: remembered('QA', 'u1', 0) }), {
+      country: 'QA',
+      currency: 'QAR',
+    });
+    // Editing the saved address to Saudi Arabia remembers that country too.
+    assert.deepEqual(
+      target(null, { ...afterEgypt, savedCountry: 'SA', remembered: remembered('SA', 'u1', 0) }),
+      {
+        country: 'SA',
+        currency: 'SAR',
+      },
+    );
+  });
+
+  it('a guest who picks Qatar at checkout sees QAR, and Egypt again brings the Egypt price', () => {
+    assert.deepEqual(target(null, { remembered: remembered('QA') }), { country: 'QA', currency: 'QAR' });
+    assert.deepEqual(
+      target(null, { remembered: remembered('EG') }, { country: 'QA', currency: 'QAR' }),
+      egyptGuess,
+    );
+  });
+
+  it('forgets the remembered country after 30 days', () => {
+    const old = { ...remembered('QA'), savedAt: now - REMEMBERED_COUNTRY_MAX_AGE_MS - 1 };
+    assert.deepEqual(target(null, { remembered: old }), egyptGuess);
+    assert.deepEqual(target(null, { remembered: old, uid: 'u1', savedCountry: 'SA' }), {
+      country: 'SA',
+      currency: 'SAR',
+    });
+  });
+
+  it('signing out keeps the remembered country; another account uses its own saved address', () => {
+    assert.deepEqual(target(null, { remembered: remembered('QA', 'u1') }), {
+      country: 'QA',
+      currency: 'QAR',
+    });
+    assert.deepEqual(
+      target(null, { remembered: remembered('QA', 'u1'), uid: 'u2', savedCountry: 'EG' }),
+      egyptGuess,
+    );
+    assert.deepEqual(
+      target(null, { remembered: remembered('QA', 'u1'), uid: 'u2', savedCountry: null }),
+      egyptGuess,
+    );
+  });
+
+  it('ignores a saved address while signed out', () => {
+    assert.deepEqual(target(null, { uid: null, savedCountry: 'QA' }), egyptGuess);
   });
 });

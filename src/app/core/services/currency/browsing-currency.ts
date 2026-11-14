@@ -69,3 +69,70 @@ export function browsingChoice(
   if (!country) return { country: null, currency: 'USD' };
   return { country, currency: currencyForCountry(country, tables.countries, tables.isUnreliable) };
 }
+
+/** How long the country a shopper last told us is remembered in this browser (ATS-317). */
+export const REMEMBERED_COUNTRY_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * The delivery country a shopper last told us in this browser (ATS-317): picked at checkout, or
+ * the country of the address they saved in Account. Kept in `localStorage` only, never sent.
+ */
+export interface RememberedCountry {
+  readonly country: string;
+  /** Who chose it: the signed-in account, or null for a guest. */
+  readonly uid: string | null;
+  readonly savedAt: number;
+}
+
+export interface BrowsingPreference {
+  readonly remembered: RememberedCountry | null;
+  /** The signed-in account, or null when signed out. */
+  readonly uid: string | null;
+  /** That account's saved address country, or null when it has none. */
+  readonly savedCountry: string | null;
+  readonly now: number;
+}
+
+/**
+ * The country the shopper told us, when there is one (ATS-317): the remembered country first
+ * (the latest choice in this browser), then the signed-in account's saved address. A choice made
+ * while signed in to another account on this browser is skipped. Null means "use the guess".
+ */
+export function preferredCountry(input: BrowsingPreference): string | null {
+  const remembered = input.remembered;
+  if (remembered) {
+    const age = input.now - remembered.savedAt;
+    const fresh = age >= 0 && age <= REMEMBERED_COUNTRY_MAX_AGE_MS;
+    const sameShopper = input.uid === null || remembered.uid === null || remembered.uid === input.uid;
+    const country = isoCountry(remembered.country);
+    if (fresh && sameShopper && country) return country;
+  }
+  return input.uid ? isoCountry(input.savedCountry) : null;
+}
+
+/**
+ * The whole browsing order (ATS-317): `?cur=` for one visit, then the country the shopper told us
+ * (`preferredCountry()`), then the guess (`browsingChoice()`). Null while the guess is still
+ * being worked out and nothing else is known.
+ */
+export function browsingTarget(
+  queryCurrency: string | null,
+  preferred: string | null,
+  guess: BrowsingChoice | null,
+  tables: Pick<BrowsingTables, 'countries' | 'isUnreliable'>,
+): BrowsingChoice | null {
+  if (queryCurrency) return { country: guess?.country ?? null, currency: queryCurrency };
+  if (preferred) {
+    return {
+      country: preferred,
+      currency: currencyForCountry(preferred, tables.countries, tables.isUnreliable),
+    };
+  }
+  return guess;
+}
+
+/** A two-letter ISO country in capitals, or null. */
+export function isoCountry(country: string | null | undefined): string | null {
+  const iso = country?.trim().toUpperCase() ?? '';
+  return /^[A-Z]{2}$/.test(iso) ? iso : null;
+}

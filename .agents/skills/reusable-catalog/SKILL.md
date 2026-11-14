@@ -262,7 +262,7 @@ Located in `src/app/core/services/` or layout services. Inject them using `injec
 - **`isOnSale` / `discountPercent`** (`src/app/core/services/products/utils/product-price.utils.ts`): whole-pound sale helpers. Do not use these for the legacy GBP pence pipe.
 - **`CurrencyService`** (`src/app/core/services/currency/currency.service.ts`):
   - `selected()`, `entry()` (`CurrencyEntry`, starts as `EGP_ENTRY`), `ready()`.
-  - No switcher and no saved currency. `?cur=` applies for one visit, then the query is removed.
+  - No switcher. `?cur=` applies for one visit, then the query is removed. The remembered checkout or Account country, then a signed-in shopper's saved address, beat the geo guess (<KEY>-317: `setAccount()`, `rememberCheckoutCountry()`, `rememberSavedAddressCountry()`; `BrowsingAccountService` feeds the account).
   - **Geo, not timezone:** CDN/platform headers and optional IP lookup (`visitor-geo.ts`) pick ISO country; `currencyFromCountry()` maps country → currency (`country-currency.ts`, CLDR). Egypt, and an unknown country, get EGP. SSR `prepareForServerRender()` loads factors and renders converted prices when possible; boot crosses `TransferState` (`currency-boot`). Client-only routes call `/api/visitor-location`.
   - `toDisplayAmount` and `displayDecimals` live in the shared pricing engine (`functions/src/offers/engine/currency.ts`).
 - **`ImageSourceService`** (`src/app/core/services/storage/image-source.service.ts`):

@@ -9,6 +9,7 @@ import {
   isEgyptMobile,
   shopperWhatsappNumber,
 } from '@core/config/order-messages';
+import { CurrencyService } from '@core/services/currency/currency.service';
 import { governorateById, governorateOfAddress } from '@core/services/offers/engine';
 import { ShippingSettingsService } from '@core/services/shipping/shipping-settings.service';
 import { SnackbarService } from '@core/services/snack-bar/snack-bar.service';
@@ -67,6 +68,8 @@ function textRule(label: string, max: number, required: boolean) {
 /**
  * Account → Delivery Address: the one saved address (`users/{uid}.address`), with the same
  * fields checkout asks for in that country. Checkout fills it in when the countries match.
+ * Saving it moves browsing prices to its country (ATS-317); a signed-in shopper's first order
+ * saves its delivery address here when none is saved yet.
  */
 @Component({
   selector: 'app-address-section',
@@ -85,6 +88,7 @@ function textRule(label: string, max: number, required: boolean) {
 export class AddressSectionComponent {
   readonly #profiles = inject(UserProfileService);
   readonly #snackbar = inject(SnackbarService);
+  readonly #currency = inject(CurrencyService);
   /** Governorates we deliver to, for the Egypt Governorate field. */
   readonly governorates = inject(ShippingSettingsService).governorates;
   /** Shows "Choose your governorate." after a save with none picked. */
@@ -187,6 +191,8 @@ export class AddressSectionComponent {
           phone: draft.phone,
           governorateId: governorate?.id ?? null,
         });
+        // ATS-317: prices across the store follow the newly saved country.
+        this.#currency.rememberSavedAddressCountry(this.uid(), draft.country);
         this.#snackbar.success("Your address is saved. We'll fill it in at checkout.");
       } catch {
         this.#snackbar.error("We couldn't save your address. Please try again in a moment.");
