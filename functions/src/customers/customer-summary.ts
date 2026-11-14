@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { receivedEgp } from '../offers/engine/received-egp.js';
+import { receivedEgp, type ReceivedEgpPricing } from '../offers/engine/received-egp.js';
 import { orderSearchTokens } from '../store/order-search.js';
 
 /**
@@ -132,7 +132,7 @@ export function customerOrderFrom(
     status: text(data['status']),
     // What the store received (ATS-316): the Egypt total, or for an order abroad the pounds Card
     // charged / the Bank Transfer amount at the plain rate.
-    totalEgp: receivedEgp(pricing as Parameters<typeof receivedEgp>[0]),
+    totalEgp: receivedEgp(pricing as ReceivedEgpPricing),
     createdAtMs,
     fullName: text(shipping['fullName']),
     phone: text(shipping['phone']),

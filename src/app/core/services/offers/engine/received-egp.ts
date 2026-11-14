@@ -34,6 +34,9 @@ export function receivedEgp(pricing: ReceivedEgpPricing | null | undefined): num
     const rate = isPositive(payIn.shippingFactor) ? payIn.shippingFactor : payIn.factor;
     if (isPositive(rate)) return Math.round(payIn.amount / rate);
   }
-  if (isPositive(pricing.totalEgp)) return pricing.totalEgp;
+  // A total of 0 (a fully discounted order) stays 0; only a missing total falls back to the items.
+  if (typeof pricing.totalEgp === 'number' && Number.isFinite(pricing.totalEgp) && pricing.totalEgp >= 0) {
+    return pricing.totalEgp;
+  }
   return isPositive(pricing.subtotalEgp) ? pricing.subtotalEgp : 0;
 }

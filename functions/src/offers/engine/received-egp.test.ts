@@ -33,5 +33,6 @@ test('abroad order with nothing to convert falls back to the Egypt total', () =>
   assert.equal(receivedEgp({ totalEgp: 950, payIn: { currency: 'USD', amount: 24 } }), 950);
   assert.equal(receivedEgp({ subtotalEgp: 900 }), 900);
   assert.equal(receivedEgp(null), 0);
+  assert.equal(receivedEgp({ subtotalEgp: 900, totalEgp: 0 }), 0);
   assert.equal(receivedEgp({}), 0);
 });

@@ -193,10 +193,7 @@ export class MetaPixelService {
     pricing: {
       readonly lines: readonly { productId: string; quantity: number; unitEgp: number; gift?: unknown }[];
       readonly subtotalEgp: number;
-      readonly totalEgp?: number;
-      readonly chargeEgp?: number;
-      readonly payIn?: ReceivedEgpPricing['payIn'];
-    },
+    } & ReceivedEgpPricing,
   ): void {
     const paid = pricing.lines.filter((line) => !line.gift);
     this.trackPurchase(orderId, {
