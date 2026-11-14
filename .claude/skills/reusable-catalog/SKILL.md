@@ -34,12 +34,13 @@ All controls integrate seamlessly with **Angular 22 Signal Forms**.
 
 - **Usage**: Bind `[formField]="form.field"` and `label="Label"`. Errors render automatically.
 - **Controls**:
-  - `<app-text-input>`: Single-line input with prefix/suffix icon support.
+  - `<app-text-input>`: Single-line input with prefix/suffix icon support, and an optional `hint` shown under the field.
   - `<app-text-field-input>`: Multi-line textarea control.
   - `<app-password-input>`: Password input with built-in visibility toggle.
   - `<app-select-input [options]="options">`: Accessible select dropdown. `levelKey` (0 = main item in bold, 1 = pushed in under it) shows a one-level tree with every option once; `triggerKey` sets what the closed box shows ("Apparel › Shorts").
   - `<app-date-input>`: Material Datepicker input.
   - `<app-location-input>`: Location search and autocomplete input.
+  - `<app-governorate-input>` (`@shared/ui/forms/governorate-input`): Egypt Governorate field (<KEY>-306) on `mat-form-field` + `matInput` + `mat-autocomplete`. Inputs `options` (the governorates we deliver to: `ShippingSettingsService.governorates`), two-way `value` (governorate id or null) and `showError` (set after a failed save or Place Order). Rows read "English · Arabic"; the search uses `searchGovernorates()` from the pricing engine. Only a picked row (or text that is exactly a governorate's name) sets the value; otherwise it shows `CHOOSE_GOVERNORATE_MESSAGE` ("Choose your governorate."). Used by checkout and Account → Delivery Address.
   - `<app-file-input>`: Drag-and-drop file uploader with size validation.
   - `<app-timepicker>`: Time selection control.
 

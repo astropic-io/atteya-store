@@ -1,6 +1,15 @@
 import type { DocumentData } from 'firebase-admin/firestore';
-import type { ShippingBox, ShippingBoxId, ShippingSettings } from '../offers/engine/index.js';
-import { SHIPPING_BOX_IDS } from '../offers/engine/index.js';
+import type {
+  GovernorateSetting,
+  ShippingBox,
+  ShippingBoxId,
+  ShippingSettings,
+} from '../offers/engine/index.js';
+import {
+  EGYPT_GOVERNORATES,
+  MAX_GOVERNORATE_EXTRA_FEE_EGP,
+  SHIPPING_BOX_IDS,
+} from '../offers/engine/index.js';
 
 export const SHIPPING_DOC_PATH = 'settings/shipping';
 
@@ -109,8 +118,30 @@ export function parseCheckoutShippingConfig(data: DocumentData | undefined): Che
     freeOver: parseFreeOver(data['freeOver']) ?? { ...base.freeOver },
     promo: parsePromo(data['promo']) ?? { ...base.promo },
     note: typeof data['note'] === 'string' ? data['note'] : base.note,
+    egyptGovernorates: parseEgyptGovernorates(data['egyptGovernorates']),
   };
   return { settings };
+}
+
+/**
+ * `egyptGovernorates`: `{ [id]: { extraFeeEgp, active } }`. Only ids on the list are kept, and an
+ * unreadable entry is left out, so that governorate counts as the default (10 EGP, delivered).
+ */
+export function parseEgyptGovernorates(raw: unknown): Readonly<Record<string, GovernorateSetting>> {
+  const out: Record<string, GovernorateSetting> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  const row = raw as Record<string, unknown>;
+  for (const governorate of EGYPT_GOVERNORATES) {
+    const entry = row[governorate.id];
+    if (!entry || typeof entry !== 'object') continue;
+    const record = entry as Record<string, unknown>;
+    const fee = record['extraFeeEgp'];
+    if (typeof fee !== 'number' || !Number.isFinite(fee)) continue;
+    const extraFeeEgp = Math.round(fee);
+    if (extraFeeEgp < 0 || extraFeeEgp > MAX_GOVERNORATE_EXTRA_FEE_EGP) continue;
+    out[governorate.id] = { extraFeeEgp, active: record['active'] !== false };
+  }
+  return out;
 }
 
 function cloneBox(box: ShippingBox): Record<string, unknown> {

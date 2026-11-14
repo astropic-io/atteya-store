@@ -1,9 +1,25 @@
 import * as v from 'valibot';
+import { MAX_GOVERNORATE_EXTRA_FEE_EGP } from '@core/services/offers/engine';
 import { timestampSchema } from '@shared/schemas';
 
 const fee = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(1_000_000));
 const weightGrams = v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100_000));
 const dimCm = v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(300));
+
+/** One governorate's delivery setting: extra fee (whole EGP, 0 to 1,000) and whether we deliver there. */
+export const GovernorateSettingSchema = v.object({
+  // Rounded before the range check, the same way the order callables read it.
+  extraFeeEgp: v.pipe(
+    v.number(),
+    v.finite(),
+    v.transform(Math.round),
+    v.minValue(0),
+    v.maxValue(MAX_GOVERNORATE_EXTRA_FEE_EGP),
+  ),
+  active: v.optional(v.boolean(), true),
+});
+
+export type GovernorateSettingDoc = v.InferOutput<typeof GovernorateSettingSchema>;
 
 export const ShippingBoxIdSchema = v.picklist(['box1', 'box2', 'box3']);
 
@@ -106,6 +122,25 @@ export const ShippingSettingsSchema = v.object({
     { active: false, fee: 0, startsAt: null, endsAt: null, minSubtotal: null, banner: null },
   ),
   note: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(200)), ''),
+  /**
+   * Egypt delivery per governorate (ATS-306): `{ [id]: { extraFeeEgp, active } }`. A governorate
+   * with no entry counts as 10 EGP, delivered (`DEFAULT_GOVERNORATE_SETTING`). An unreadable entry
+   * is left out rather than failing the whole document.
+   */
+  egyptGovernorates: v.optional(
+    v.pipe(
+      v.record(v.string(), v.unknown()),
+      v.transform((raw) => {
+        const out: Record<string, GovernorateSettingDoc> = {};
+        for (const [id, entry] of Object.entries(raw)) {
+          const parsed = v.safeParse(GovernorateSettingSchema, entry);
+          if (parsed.success) out[id] = parsed.output;
+        }
+        return out;
+      }),
+    ),
+    {},
+  ),
   /**
    * Legacy zone/flat fields — accepted so old Firestore docs still parse.
    * Admin save deletes them; checkout ignores them.

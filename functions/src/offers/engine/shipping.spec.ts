@@ -1,8 +1,17 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  activeGovernorates,
+  checkGovernorate,
+  governorateFromCity,
+  governorateOfAddress,
+  searchGovernorates,
+  EGYPT_GOVERNORATES,
+} from './governorates.js';
+import {
   parcelWeight,
   planDelivery,
+  shippingFromFee,
   shippingQuote,
   type ParcelLine,
   type ShippingBox,
@@ -312,5 +321,148 @@ describe('free shipping offers respect size and colour Except rules (chosen opti
     const sized: PricedProduct = { ...TEE_LINE, productId: 'sized-1', sizes: ['M', 'L'] };
     assert.equal(quoteVariant({ id: 'v-l', size: 'L', color: null }, [exceptSizeL], sized).fee, 115);
     assert.equal(quoteVariant({ id: 'v-m', size: 'M', color: null }, [exceptSizeL], sized).fee, 0);
+  });
+});
+
+describe('Egypt delivery by governorate (ATS-306)', () => {
+  function quoteGov(
+    goodsSubtotal: number,
+    offers: readonly Offer[],
+    settings: ShippingSettings,
+    governorateId: string | null,
+  ) {
+    const check = checkGovernorate(settings, governorateId);
+    if (!check.ok) return check.code;
+    return shippingQuote(
+      settings,
+      {
+        region: 'egypt',
+        totalWeightGrams: 250,
+        goodsSubtotal,
+        lines: [{ product: TEE_LINE, variant: null }],
+        governorateExtraEgp: check.extraFeeEgp,
+      },
+      offers,
+      CTX,
+    );
+  }
+
+  const withAswan: ShippingSettings = {
+    ...SETTINGS,
+    egyptGovernorates: {
+      aswan: { extraFeeEgp: 40, active: true },
+      sohag: { extraFeeEgp: 10, active: false },
+    },
+  };
+
+  it('box + default extra: 115 + 10 = 125', () => {
+    const result = quoteGov(1_000, [], SETTINGS, 'cairo');
+    assert.ok(typeof result !== 'string');
+    assert.equal(result.fee, 125);
+    assert.equal(result.reason, 'box');
+    assert.equal(result.extraFeeEgp, 10);
+  });
+
+  it('box + saved extra: 115 + 40 = 155', () => {
+    const result = quoteGov(1_000, [], withAswan, 'aswan');
+    assert.ok(typeof result !== 'string');
+    assert.equal(result.fee, 155);
+  });
+
+  it('free over makes the whole delivery free, the extra included', () => {
+    const settings: ShippingSettings = { ...withAswan, freeOver: { active: true, threshold: 3_000 } };
+    const result = quoteGov(3_000, [], settings, 'aswan');
+    assert.ok(typeof result !== 'string');
+    assert.equal(result.fee, 0);
+    assert.equal(result.reason, 'freeOver');
+  });
+
+  it('a Free shipping offer makes the whole delivery free, the extra included', () => {
+    const result = quoteGov(1_000, [freeShippingOffer()], withAswan, 'aswan');
+    assert.ok(typeof result !== 'string');
+    assert.equal(result.fee, 0);
+    assert.equal(result.reason, 'offer');
+  });
+
+  it('a promotion at 0 makes the whole delivery free', () => {
+    const settings: ShippingSettings = { ...withAswan, promo: { ...SETTINGS.promo, active: true, fee: 0 } };
+    const result = quoteGov(1_000, [], settings, 'aswan');
+    assert.ok(typeof result !== 'string');
+    assert.equal(result.fee, 0);
+    assert.equal(result.reason, 'promo');
+  });
+
+  it('a promotion above 0 is the whole fee (no extra on top) when it is the cheapest', () => {
+    const settings: ShippingSettings = { ...withAswan, promo: { ...SETTINGS.promo, active: true, fee: 50 } };
+    const result = quoteGov(1_000, [], settings, 'aswan');
+    assert.ok(typeof result !== 'string');
+    assert.equal(result.fee, 50);
+    assert.equal(result.reason, 'promo');
+    const dearPromo: ShippingSettings = { ...settings, promo: { ...settings.promo, fee: 200 } };
+    const boxWins = quoteGov(1_000, [], dearPromo, 'aswan');
+    assert.ok(typeof boxWins !== 'string');
+    assert.equal(boxWins.fee, 155);
+    assert.equal(boxWins.reason, 'box');
+  });
+
+  it('a switched-off governorate, an unknown id and a missing one are refused', () => {
+    assert.equal(quoteGov(1_000, [], withAswan, 'sohag'), 'inactive');
+    assert.equal(quoteGov(1_000, [], withAswan, 'atlantis'), 'unknown');
+    assert.equal(quoteGov(1_000, [], withAswan, null), 'missing');
+  });
+
+  it('abroad never adds a governorate extra', () => {
+    const result = shippingQuote(
+      SETTINGS,
+      { region: 'international', totalWeightGrams: 250, goodsSubtotal: 1_000, governorateExtraEgp: 10 },
+      [],
+      CTX,
+    );
+    assert.equal(result.fee, 1_800);
+    assert.equal(result.extraFeeEgp, 0);
+  });
+
+  it('"Shipping from" adds the lowest extra of the governorates we deliver to', () => {
+    assert.equal(shippingFromFee(SETTINGS), 125);
+    const allFive = Object.fromEntries(
+      EGYPT_GOVERNORATES.map((g) => [
+        g.id,
+        { extraFeeEgp: g.id === 'sohag' ? 0 : 5, active: g.id !== 'sohag' },
+      ]),
+    );
+    assert.equal(shippingFromFee({ ...SETTINGS, egyptGovernorates: allFive }), 120);
+  });
+
+  it('a switched-off governorate is left out of the list', () => {
+    const ids = activeGovernorates(withAswan).map((g) => g.id);
+    assert.equal(ids.length, 26);
+    assert.ok(!ids.includes('sohag'));
+  });
+
+  it('search finds governorates by English, Arabic and aliases', () => {
+    const find = (query: string) => searchGovernorates(EGYPT_GOVERNORATES, query).map((g) => g.id);
+    for (const query of ['Alex', 'Iskenderiya', 'Eskendereya', 'اسكندرية', 'الاسكندرية', 'alexANDRIA']) {
+      assert.ok(find(query).includes('alexandria'), query);
+    }
+    assert.deepEqual(find('Hurghada'), ['red-sea']);
+    assert.deepEqual(find('Sharm'), ['south-sinai']);
+    assert.deepEqual(find('October'), ['giza']);
+    assert.deepEqual(find('Sheikh Zayed'), ['giza']);
+    assert.deepEqual(find('Mansoura'), ['dakahlia']);
+    assert.deepEqual(find('port-said'), ['port-said']);
+    assert.deepEqual(find('zzz'), []);
+  });
+
+  it('an old typed city fills in its governorate when it names one exactly', () => {
+    assert.equal(governorateFromCity('cairo')?.id, 'cairo');
+    assert.equal(governorateFromCity(' Hurghada ')?.id, 'red-sea');
+    assert.equal(governorateFromCity('اسكندرية')?.id, 'alexandria');
+    assert.equal(governorateFromCity('Somewhere')?.id, undefined);
+  });
+
+  it('an address uses its saved id first, then a typed city that names a governorate', () => {
+    assert.equal(governorateOfAddress('giza', 'Cairo')?.id, 'giza');
+    assert.equal(governorateOfAddress(null, 'Mansoura')?.id, 'dakahlia');
+    assert.equal(governorateOfAddress('atlantis', 'Nowhere'), null);
   });
 });

@@ -5,6 +5,7 @@ import {
   boxesForRegion,
   liveOffers,
   parcelWeight,
+  checkGovernorate,
   planDelivery,
   priceBagDeals,
   priceItem,
@@ -499,6 +500,10 @@ async function priceWithOffers(
   const isInternational = input.shipping.country !== 'EG';
   const region = isInternational ? 'international' : 'egypt';
   const regionBoxes = boxesForRegion(shippingConfig.settings, region);
+  // Egypt: the governorate must be one we deliver to; its extra fee is added to the box fee.
+  const governorateExtraEgp = isInternational
+    ? 0
+    : egyptGovernorateExtraFee(shippingConfig.settings, input.shipping.governorateId);
 
   const usedOffers = new Map<string, UsedOffer>();
   // Pieces the order takes from stock, by product and size: every paid line first, then gifts as
@@ -660,6 +665,7 @@ async function priceWithOffers(
     cartProducts,
     offers,
     ctx,
+    governorateExtraEgp,
   });
 
   // A Free shipping offer counts only when it made the shipping free (not when the box fee, the
@@ -886,6 +892,21 @@ interface ShippingLineContext {
   readonly cartProducts: readonly ShippingQuoteLine[];
   readonly offers: readonly Offer[];
   readonly ctx: PricingContext;
+  /** Egypt: the governorate's extra fee on top of the box fee (0 abroad). */
+  readonly governorateExtraEgp: number;
+}
+
+/**
+ * The extra delivery fee of an Egypt order's governorate. Refuses a missing or unknown governorate
+ * and one we don't deliver to right now (switched off in Settings → Shipping).
+ */
+export function egyptGovernorateExtraFee(settings: ShippingSettings, governorateId: string | null): number {
+  const check = checkGovernorate(settings, governorateId);
+  if (check.ok) return check.extraFeeEgp;
+  if (check.code === 'inactive') {
+    throw new HttpsError('failed-precondition', `We don't deliver to ${check.governorate.name} right now.`);
+  }
+  throw new HttpsError('invalid-argument', 'Choose your governorate.');
 }
 
 /**
@@ -934,6 +955,7 @@ function quoteShippingLine(
         totalWeightGrams: plan.quoteWeightGrams,
         goodsSubtotal: c.subtotalEgp,
         lines: c.cartProducts,
+        governorateExtraEgp: c.governorateExtraEgp,
       },
       c.offers,
       c.ctx,
@@ -960,9 +982,13 @@ function quoteShippingLine(
  * itself already costs 0: the offer saved nothing).
  */
 export function freeShippingOfferIdOf(
-  quote: Pick<ShippingQuote, 'fee' | 'reason' | 'offerId'> & { readonly box: { readonly feeEgp: number } },
+  quote: Pick<ShippingQuote, 'fee' | 'reason' | 'offerId'> & {
+    readonly box: { readonly feeEgp: number };
+    readonly extraFeeEgp?: number;
+  },
 ): string | null {
-  const madeItFree = quote.reason === 'offer' && quote.fee === 0 && Math.round(quote.box.feeEgp) > 0;
+  const boxAndExtra = Math.round(quote.box.feeEgp) + Math.round(quote.extraFeeEgp ?? 0);
+  const madeItFree = quote.reason === 'offer' && quote.fee === 0 && boxAndExtra > 0;
   return madeItFree && quote.offerId ? quote.offerId : null;
 }
 

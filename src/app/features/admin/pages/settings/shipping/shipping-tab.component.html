@@ -132,6 +132,56 @@
       }
     </div>
 
+    @if (region() === 'egypt') {
+      <div
+        class="w-full border-t border-outline-variant pt-4 elements-start-col gap-4"
+        role="group"
+        aria-labelledby="governorate-fees-heading"
+      >
+        <div>
+          <h3 id="governorate-fees-heading" class="font-title-sm font-bold!">Delivery Fee by Governorate</h3>
+          <p class="font-body-sm text-on-surface-variant">
+            Added on top of the box fee for orders delivered to each governorate. Free shipping makes the
+            whole delivery free. Turn a governorate off to stop taking orders for it.
+          </p>
+        </div>
+        <ul class="w-full">
+          @for (governorate of governorateList; track governorate.id) {
+            @let row = d.governorates[governorate.id];
+            <li
+              class="w-full grid gap-x-4 gap-y-2 items-center border-b border-outline-variant py-3 @3xl:grid-cols-[minmax(0,1fr)_14rem_auto]"
+            >
+              <p class="font-body-md">
+                {{ governorate.name }} <span class="text-on-surface-variant">· {{ governorate.nameAr }}</span>
+              </p>
+              <mat-form-field appearance="outline" class="w-full">
+                <mat-label>Extra Fee (EGP)</mat-label>
+                <input
+                  matInput
+                  type="number"
+                  inputmode="numeric"
+                  min="0"
+                  [max]="maxExtraFee"
+                  step="1"
+                  [attr.aria-label]="'Extra Fee (EGP), ' + governorate.name"
+                  [value]="row.extraFee"
+                  (input)="patchGovernorate(governorate.id, { extraFee: textFrom($event) })"
+                />
+                <mat-hint>Whole pounds, 0 to 1,000</mat-hint>
+              </mat-form-field>
+              <mat-slide-toggle
+                [checked]="row.active"
+                [aria-label]="'We deliver here, ' + governorate.name"
+                (change)="patchGovernorate(governorate.id, { active: $event.checked })"
+              >
+                We deliver here
+              </mat-slide-toggle>
+            </li>
+          }
+        </ul>
+      </div>
+    }
+
     <div class="w-full border-t border-outline-variant pt-4 elements-start-col gap-3">
       <mat-checkbox [checked]="d.freeOverActive" (change)="patch({ freeOverActive: $event.checked })">
         Free shipping over a set amount

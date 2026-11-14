@@ -16,6 +16,7 @@ export interface ShippingSettingsSeed {
     readonly banner: string | null;
   };
   readonly note?: string;
+  readonly egyptGovernorates?: ShippingSettingsDoc['egyptGovernorates'];
 }
 
 export const SHIPPING_SETTINGS_KEY = makeStateKey<ShippingSettingsSeed | null>('shipping-settings');
@@ -49,6 +50,7 @@ export function toShippingSettingsSeed(doc: ShippingSettingsDoc): ShippingSettin
       banner: doc.promo.banner,
     },
     note: doc.note,
+    egyptGovernorates: doc.egyptGovernorates,
   };
 }
 
@@ -67,5 +69,6 @@ export function shippingSeedToDoc(seed: ShippingSettingsSeed): ShippingSettingsD
       banner: seed.promo.banner,
     },
     note: seed.note ?? '',
+    egyptGovernorates: seed.egyptGovernorates ?? {},
   };
 }

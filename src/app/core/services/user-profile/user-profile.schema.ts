@@ -7,7 +7,7 @@ const optionalText = (max: number) =>
 
 /**
  * The one delivery address a shopper keeps in `users/{uid}.address` (Account → Delivery Address).
- * Same fields as checkout: Egypt uses full name, city, address and phone; abroad adds line 2,
+ * Same fields as checkout: Egypt uses full name, governorate (saved as `governorateId` and its English name in `city`), address and phone; abroad adds line 2,
  * region and postal code. Checkout fills it in when `country` matches the delivery country.
  */
 export const SavedAddressSchema = v.object({
@@ -19,6 +19,8 @@ export const SavedAddressSchema = v.object({
   postalCode: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(20)), ''),
   country: v.pipe(v.string(), v.trim(), v.length(2)),
   phone: text(6, 20),
+  /** Egypt: the governorate id (ATS-306); `city` is its English name. Null abroad and on old addresses. */
+  governorateId: v.fallback(v.optional(v.nullable(v.pipe(v.string(), v.maxLength(40))), null), null),
 });
 
 /**
