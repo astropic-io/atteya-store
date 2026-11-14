@@ -134,7 +134,7 @@ export class AddressSectionComponent {
       valueOf(path.country) === 'EG' ? undefined : textRule('region', 80, false)(value()),
     );
     validate(path.postalCode, ({ value, valueOf }) =>
-      valueOf(path.country) === 'EG' ? undefined : textRule('postal code', 20, true)(value()),
+      valueOf(path.country) === 'EG' ? undefined : textRule('postal code', 20, false)(value()),
     );
     validate(path.phone, ({ value, valueOf }) => {
       const phone = value().trim();

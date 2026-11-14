@@ -301,6 +301,8 @@ Located in `src/app/core/services/` or layout services. Inject them using `injec
   - `<div class="scroll-row" appHorizontalScroll appRowScrollLock #lock="rowScrollLock" [enableWheel]="false" [snapToItems]="!lock.enabled()">` inside the section's `<section>`; arrows call `lock.step(±1)`.
   - Desktop scroll lock for New Arrivals and Padel: GSAP ScrollTrigger scrub, sticky section + spacer in the component host. Details and limits in the `navigation-and-home` skill (Home Page and motion).
   - `rowLockFit=".product-card__media"` (optional, New Arrivals): a section taller than the window shrinks those photos so heading, cards and arrows fit below the nav while locked. The directive sets `--row-lock-media-max` (px) on the section; the section's CSS caps the photo height with it (`home-product-rows.css`).
+- **`FieldErrorDirective`** (`src/app/shared/directives/field-error`):
+  - Selector: `input[matInput][appFieldError]` for a Material input with no form control (plain `[value]` + `(input)`). While `appFieldError` holds a message the field shows Material's error state (red outline, `aria-invalid`); pair it with `@if (message) { <mat-error>{{ message }}</mat-error> }`. Inputs bound with `[formField]` don't need it. Used by checkout's delivery fields (<KEY>-318).
 - **`TemplateTypeDirective`** (`src/app/shared/directives/template-type`):
   - Provides type-safety for `ng-template` context variables.
 - **`PenceToPoundsPipe`** (`src/app/shared/pipes/pence-to-pounds.pipe.ts`):

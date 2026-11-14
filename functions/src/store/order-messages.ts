@@ -370,6 +370,21 @@ export function shopperWhatsappNumber(phone: string, country: string): string | 
   return intl.length >= 8 && intl.length <= 15 ? intl : null;
 }
 
+/**
+ * What checkout (under the field) and the order callables say when a required delivery field is
+ * empty (ATS-318). Required: full name, address (line 1), city (abroad; the governorate in Egypt),
+ * country and phone. Postal code, address line 2 and region are optional everywhere.
+ */
+export const DELIVERY_FIELD_MESSAGES = {
+  fullName: 'Enter the recipient name.',
+  line1: 'Enter your address.',
+  city: 'Enter your city.',
+  phone: 'Enter a phone number we can reach you on.',
+} as const;
+
+/** Checkout and the order callables refuse an Egypt phone that `isEgyptMobile()` rejects. */
+export const EGYPT_PHONE_MESSAGE = 'Enter an Egyptian mobile number, e.g. 010 1234 5678.';
+
 /** Checkout and the order callables refuse a phone abroad that `shopperWhatsappNumber()` can't read. */
 export const ABROAD_PHONE_MESSAGE = 'Enter your number with its country code, e.g. +971 50 123 4567.';
 

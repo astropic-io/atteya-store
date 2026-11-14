@@ -45,7 +45,11 @@
         <app-text-input [formField]="addressForm.city" label="City" />
         <app-text-input [formField]="addressForm.region" label="Region (optional)" />
       </div>
-      <app-text-input [formField]="addressForm.postalCode" label="Postal code" />
+      <app-text-input
+        [formField]="addressForm.postalCode"
+        label="Postal code (optional)"
+        hint="If your country uses one"
+      />
     }
 
     <app-text-input
