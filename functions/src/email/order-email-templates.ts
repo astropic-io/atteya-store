@@ -1033,8 +1033,19 @@ function joinParts(parts: readonly (string | null | undefined)[]): string {
 
 // ── Store-owner alert ("Bold Black", <KEY>-222) ───────────────────────────────
 
+/**
+ * Card (Paymob) order shipped abroad: what Paymob actually charged in whole pounds
+ * (`pricing.chargeEgp`, ATS-311), which differs from the Egypt price `totalEgp`. Null otherwise.
+ */
+function cardChargeEgp(order: OrderEmailOrder): number | null {
+  return order.paymentMethod === 'paymob' && order.chargeEgp !== null && !order.feeToBeAgreed
+    ? order.chargeEgp
+    : null;
+}
+
 function storeNewOrder(order: OrderEmailOrder, ctx: OrderEmailContext): RenderedEmail {
   const method = order.paymentMethod;
+  const charged = cardChargeEgp(order);
   const label =
     method === 'cash-on-delivery'
       ? 'Cash on Delivery'
@@ -1047,7 +1058,11 @@ function storeNewOrder(order: OrderEmailOrder, ctx: OrderEmailContext): Rendered
     ? `${formatEgp(order.subtotalEgp)} + Delivery`
     : method === 'bank-transfer' && order.payIn
       ? `${formatPayIn(order.payIn)} (${formatEgp(order.totalEgp)})`
-      : formatEgp(order.totalEgp);
+      : charged !== null
+        ? order.payIn
+          ? `${formatEgp(charged)} (${formatPayIn(order.payIn)})`
+          : formatEgp(charged)
+        : formatEgp(order.totalEgp);
   const subject = order.feeToBeAgreed
     ? `New Order ${order.ref} – ${amount} – Agree Delivery Fee`
     : `New Order ${order.ref} – ${amount} – ${label}`;
@@ -1168,8 +1183,20 @@ function storePayment(order: OrderEmailOrder): StorePayment {
         },
       };
     }
-    default:
-      return { cells: [{ label: 'Paid', amount: total }], step: null };
+    default: {
+      const charged = cardChargeEgp(order);
+      if (charged === null) return { cells: [{ label: 'Paid', amount: total }], step: null };
+      // Card abroad (ATS-311): Paymob charged the shopper-currency total converted at the plain
+      // rate, not the Egypt price, so show what was actually charged first.
+      return {
+        cells: [
+          { label: 'Paid', amount: formatEgp(charged) },
+          ...(order.payIn ? [{ label: 'Customer Paid', amount: formatPayIn(order.payIn) }] : []),
+          { label: 'Order Total in EGP', amount: total },
+        ],
+        step: null,
+      };
+    }
   }
 }
 
@@ -1179,12 +1206,21 @@ function staffTop(
   payment: StorePayment,
 ): { kicker: string; amount: string; amountNote: string | null; sentence: string | null } {
   const bank = order.paymentMethod === 'bank-transfer' && order.payIn !== null && !order.feeToBeAgreed;
+  const charged = cardChargeEgp(order);
   const amount = order.feeToBeAgreed
     ? `${formatEgp(order.subtotalEgp)} + Delivery`
     : bank
       ? formatPayIn(order.payIn!)
-      : formatEgp(order.totalEgp);
-  const amountNote = bank ? `${formatEgp(order.totalEgp)} order total` : null;
+      : charged !== null
+        ? formatEgp(charged)
+        : formatEgp(order.totalEgp);
+  const amountNote = bank
+    ? `${formatEgp(order.totalEgp)} order total`
+    : charged !== null
+      ? order.payIn
+        ? `${formatPayIn(order.payIn)} paid · ${formatEgp(order.totalEgp)} order total`
+        : `${formatEgp(order.totalEgp)} order total`
+      : null;
   if (order.needsReview) {
     return {
       kicker: 'Check This Order',
