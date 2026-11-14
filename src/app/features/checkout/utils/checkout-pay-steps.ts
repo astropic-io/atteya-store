@@ -57,6 +57,18 @@ export function bankTransferSteps(a: BankTransferAmounts): PayStep[] {
 }
 
 /**
+ * Bank Transfer abroad while delivery and the shipping fee are agreed on WhatsApp first (ATS-314):
+ * nothing to pay at Place Order, so no amounts yet.
+ */
+export function agreedBankTransferSteps(): PayStep[] {
+  return [
+    PLACE,
+    { title: 'We agree delivery on WhatsApp', note: 'Shipping fee and total', amount: null },
+    { title: 'Send the total from your bank', note: 'Once we agree', amount: null },
+  ];
+}
+
+/**
  * "US dollars", "euros": a currency's name as it reads after "In …", from the browser's own names.
  * Falls back to the code.
  */

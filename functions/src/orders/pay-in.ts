@@ -156,6 +156,51 @@ export function payInAboveShown(
   return payIn.amount > shown.amount + halfUnit;
 }
 
+/**
+ * The saved `payIn` of an order abroad whose fee was to be agreed (`international-agreed`,
+ * ATS-314), with the fee staff agreed (whole EGP) added as its shipping. The fee is converted at
+ * the plain rate with no markup (ATS-311): the `shippingFactor` saved with the order, else
+ * `fallbackPlainRate` (the staff-only rate behind its factor). The items keep the amounts saved at
+ * Place Order; `amount` becomes items + shipping, rounded to the currency's decimals. Null when the
+ * saved `payIn` can't be read, is in EGP, or no plain rate is known.
+ */
+export function payInWithAgreedShipping(
+  saved: unknown,
+  feeEgp: number,
+  fallbackPlainRate: number | null,
+): OrderPayIn | null {
+  if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return null;
+  const raw = saved as Record<string, unknown>;
+  const currency = raw['currency'];
+  const amount = raw['amount'];
+  if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency) || currency === 'EGP') return null;
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0) return null;
+  const savedPlain = raw['shippingFactor'];
+  const plainRate = isPositive(savedPlain)
+    ? savedPlain
+    : isPositive(fallbackPlainRate)
+      ? fallbackPlainRate
+      : null;
+  if (plainRate === null) return null;
+  const decimals = displayDecimals(currency);
+  const round = (value: number) => Number(value.toFixed(decimals));
+  const lines = Array.isArray(raw['lines']) ? raw['lines'] : null;
+  const savedShipping =
+    typeof raw['shipping'] === 'number' && Number.isFinite(raw['shipping']) ? raw['shipping'] : 0;
+  const itemsAmount =
+    lines && lines.every((value) => typeof value === 'number' && Number.isFinite(value))
+      ? round((lines as number[]).reduce((sum, value) => sum + value, 0))
+      : round(Math.max(0, amount - savedShipping));
+  const shipping = round(toDisplayAmount(feeEgp, { code: currency, factor: plainRate }));
+  return {
+    ...(raw as unknown as OrderPayIn),
+    currency,
+    amount: round(itemsAmount + shipping),
+    shipping,
+    ...(isPositive(savedPlain) ? {} : { shippingFactor: plainRate }),
+  };
+}
+
 function isPositive(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }

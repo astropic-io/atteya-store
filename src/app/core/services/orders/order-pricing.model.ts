@@ -100,12 +100,15 @@ export interface OrderShippingLine {
    * `domestic-zone` is legacy (pre box model); new orders use `domestic-box`.
    * `domestic-agreed`: Egypt order heavier than the biggest box. The fee is 0 and the total is the
    * items only until staff set the agreed fee (`setDeliveryFee`), which sets `feeAgreed`.
+   * `international-agreed` (ATS-314): the same for an order abroad to a country with no set
+   * shipping price, or heavier than the biggest abroad box.
    */
-  readonly kind: 'domestic-zone' | 'domestic-box' | 'international-box' | 'domestic-agreed';
+  readonly kind:
+    'domestic-zone' | 'domestic-box' | 'international-box' | 'domestic-agreed' | 'international-agreed';
   /** Server-assigned parcel. Stored for admins; customers never send or see it. */
   readonly boxId: string | null;
   readonly priceEgp: number;
   readonly priceDisplay: number;
-  /** Only on `domestic-agreed`: true once staff saved the fee. */
+  /** Only on `domestic-agreed` and `international-agreed`: true once staff saved the fee. */
   readonly feeAgreed?: boolean;
 }

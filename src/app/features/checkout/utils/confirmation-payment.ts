@@ -118,6 +118,15 @@ export function paymentParts(stage: OrderStage | null, input: PaymentPartsInput)
           ]
         : [part('total', 'cash-on-delivery', 'Order total', 'In cash at your door', cash)];
     case 'fee-to-be-agreed':
+      // Abroad (ATS-314): delivery and the shipping fee agreed on WhatsApp, then a Bank Transfer.
+      if (method === 'bank-transfer') {
+        return [
+          part('fee', 'bank-transfer', 'Shipping fee', "We'll agree it on WhatsApp", 'To be agreed', {
+            soft: true,
+          }),
+          part('rest', 'bank-transfer', 'Items', 'From your bank, with the fee', input.items),
+        ];
+      }
       return [
         part('fee', 'instapay', 'Delivery fee', "We'll agree it on WhatsApp", 'To be agreed', { soft: true }),
         method === 'cash-on-delivery'

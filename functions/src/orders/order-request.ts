@@ -1,6 +1,6 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 import * as v from 'valibot';
-import { governorateOfAddress } from '../offers/engine/index.js';
+import { governorateOfAddress, isDeliveryCountry } from '../offers/engine/index.js';
 import { isEgyptMobile } from '../store/order-messages.js';
 
 const COUNTRY_CODE = /^[A-Z]{2}$/;
@@ -372,7 +372,8 @@ function readCountry(raw: unknown): string {
     throw new HttpsError('invalid-argument', 'Choose a delivery country.');
   }
   const code = raw.trim().toUpperCase();
-  if (!COUNTRY_CODE.test(code)) {
+  // Any real country can be ordered to (ATS-314); the shipping settings decide its fee.
+  if (!COUNTRY_CODE.test(code) || !isDeliveryCountry(code)) {
     throw new HttpsError('invalid-argument', 'Choose a valid delivery country.');
   }
   return code;

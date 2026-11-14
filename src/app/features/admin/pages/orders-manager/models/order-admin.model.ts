@@ -196,6 +196,8 @@ export interface OrderDetails {
   readonly address: { readonly lines: readonly string[]; readonly copyText: string };
   /** "Box 2", "Box 1 (abroad)", "Large order · fee to be agreed". */
   readonly shippingBox: string | null;
+  /** "Delivery to be confirmed · Brazil" while an order abroad waits for its fee (ATS-314), else null. */
+  readonly deliveryToConfirm: string | null;
   readonly payment: { readonly method: string; readonly rows: readonly OrderDetailRow[] };
   readonly items: readonly OrderDetailItem[];
   /** Up to 2 items with a photo, for the list row (one on a phone). */

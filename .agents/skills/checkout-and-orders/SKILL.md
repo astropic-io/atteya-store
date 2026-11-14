@@ -108,3 +108,9 @@ Moved here word for word from AGENTS.md so that file stays small (<KEY>-282). Th
 - The page asks Firestore for the longest typed word (`array-contains`) and checks the other words in the browser with the same function; with a search or dates the list is newest placed first (`createdAt`), otherwise last changed first as before; indexes `orders` (`searchTokens` contains, `createdAt`) and (`searchTokens` contains, `status`, `createdAt`).
 - The Date field is a Material menu (Any Date, Today, Yesterday, Last 7 Days, This Month, Pick a Day…, Pick a Range…); Pick a Day opens `mat-datepicker`, Pick a Range opens `mat-date-range-picker` with Cancel / Apply (one day picked then Apply = that day), both under the field and stopping at today; days are whole days in the admin's own time, by the day the order was placed.
 - A Delivered order can get return and exchange requests: the order's `returns` array (server-written, copied to `orderViews`) and `returnRequests/{id}`; every rule is in the `returns-and-exchanges` skill.
+
+## Orders abroad with delivery to be agreed (<KEY>-314)
+
+- A Bank Transfer order to a country with no set shipping price, or heavier than every abroad box, is saved with `pricing.shipping.kind: 'international-agreed'` and waits in `fee-to-be-agreed` until staff use Set Delivery Fee; then it is a normal `bank-transfer-due` order with the full amount in `payIn`. The full rules are in the `shipping-and-currency` skill (**Orders from any country**).
+- The order page shows "Nothing to pay yet. We'll contact you on WhatsApp.", the Items amount in the shopper's currency, Shipping fee "To be agreed" and the steps "We agree delivery on WhatsApp" → "Send the total from your bank" → "We confirm and ship" (`confirmationSteps(..., { agreeDeliveryTo })`).
+

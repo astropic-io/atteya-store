@@ -4,6 +4,7 @@ export * from './bundle-price';
 export * from './bundle-set';
 export * from './buy-x-get-y';
 export * from './cairo-time';
+export * from './delivery-countries';
 export * from './currency';
 export * from './gifts';
 export * from './governorates';
