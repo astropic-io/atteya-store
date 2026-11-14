@@ -1,4 +1,4 @@
-import { isPlatformBrowser, NgOptimizedImage, NgTemplateOutlet } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser, NgOptimizedImage, NgTemplateOutlet } from '@angular/common';
 import {
   Component,
   computed,
@@ -37,7 +37,6 @@ import { CartService } from '@core/services/cart/cart.service';
 import { CurrencyService } from '@core/services/currency/currency.service';
 import { MetaPixelService, metaPixelContents } from '@core/services/analytics/meta-pixel.service';
 import { injectFirestore } from '@core/firebase';
-import { ABROAD_PHONE_MESSAGE, isEgyptMobile, shopperWhatsappNumber } from '@core/config/order-messages';
 import { isBankTransferLive, isCardOrWalletLive, STORE_INFO, whatsappChatUrl } from '@core/config/store-info';
 import { toPricedProduct } from '@core/services/offers/offer.model';
 import { OffersService } from '@core/services/offers/offers.service';
@@ -83,6 +82,7 @@ import { ShippingSettingsService } from '@core/services/shipping/shipping-settin
 import { SnackbarService } from '@core/services/snack-bar/snack-bar.service';
 import { UserProfileService, type SavedAddress } from '@core/services/user-profile';
 import { AppImageFallbackDirective } from '@shared/directives/image-fallback';
+import { FieldErrorDirective } from '@shared/directives/field-error';
 import { callableMessage } from '@shared/utils/firebase/firebase-errors';
 import { createValibotConverter } from '@shared/utils/firebase/firestore-converter';
 import { normalizeImageKitPath } from '@shared/utils/image';
@@ -103,6 +103,14 @@ import {
   type CheckoutCountryCode,
 } from '../utils/checkout-countries';
 import { selectionLabel } from '../utils/checkout-line';
+import {
+  CHECKOUT_FIELD_ORDER,
+  checkoutFieldErrors,
+  checkoutFieldId,
+  FIELDS_ABOVE_GOVERNORATE,
+  type CheckoutField,
+  type CheckoutFieldErrors,
+} from '../utils/checkout-fields';
 import { guestEmail } from '../utils/guest-email';
 import { rememberGuestOrder } from '../utils/guest-order-storage';
 import { SharedIconModule } from '@shared/ui/mat-icon';
@@ -250,6 +258,7 @@ type CheckoutSummary =
     NgOptimizedImage,
     NgTemplateOutlet,
     AppImageFallbackDirective,
+    FieldErrorDirective,
     MatAutocompleteModule,
     MatButtonModule,
     MatFormFieldModule,
@@ -283,6 +292,11 @@ export class CheckoutPageComponent implements OnInit {
   readonly governorates = inject(ShippingSettingsService).governorates;
   /** Shows "Choose your governorate." on the field after Place Order with none picked. */
   readonly governorateError = signal(false);
+  /** The message under each required field Place Order found empty or wrong (ATS-318). */
+  readonly fieldErrors = signal<CheckoutFieldErrors>({});
+  /** The `id` of each field's input, so Place Order can put the cursor on the first error. */
+  readonly fieldId = checkoutFieldId;
+  readonly #document = inject(DOCUMENT);
   /** Phone only: the order summary folds into a bar above the form until tapped. */
   readonly summaryOpen = signal(false);
   /** The signed-in shopper's email; empty for a guest. */
@@ -894,6 +908,8 @@ export class CheckoutPageComponent implements OnInit {
         this.#savedAddressFilled = true;
         if (hasTypedAddress(this.shipping())) return;
         this.shipping.update((current) => fillFromSavedAddress(current, saved));
+        // The saved address filled the fields: messages from an earlier Place Order no longer apply.
+        this.fieldErrors.set({});
       });
     });
   }
@@ -915,6 +931,15 @@ export class CheckoutPageComponent implements OnInit {
   }
 
   patchShipping<K extends keyof CheckoutShippingInput>(key: K, value: CheckoutShippingInput[K]): void {
+    if (key === 'country') {
+      // A new country changes what is required (city, phone format): those messages start over.
+      if (value !== this.shipping().country) {
+        this.clearFieldError('city');
+        this.clearFieldError('phone');
+      }
+    } else {
+      this.clearFieldError(key);
+    }
     this.shipping.update((current) => {
       const next = { ...current, [key]: value };
       if (key === 'country' && typeof value === 'string' && isCheckoutCountry(value)) {
@@ -927,6 +952,29 @@ export class CheckoutPageComponent implements OnInit {
       }
       return next;
     });
+  }
+
+  /** Typing in a field clears its message; Place Order checks it again. */
+  clearFieldError(field: CheckoutField | keyof CheckoutShippingInput): void {
+    if (!(field in this.fieldErrors())) return;
+    this.fieldErrors.update((errors) => {
+      const next = { ...errors };
+      delete next[field as CheckoutField];
+      return next;
+    });
+  }
+
+  onGuestEmailInput(value: string): void {
+    this.guestEmailInput.set(value);
+    this.clearFieldError('email');
+  }
+
+  /** Scrolls to the first field with an error and puts the cursor in it. */
+  #focusElement(selector: string): void {
+    const element = this.#document.querySelector<HTMLElement>(selector);
+    if (!element) return;
+    element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    element.focus({ preventScroll: true });
   }
 
   /** The Governorate field picked (or cleared) a governorate: its English name is the city. */
@@ -1096,43 +1144,30 @@ export class CheckoutPageComponent implements OnInit {
     }
     // A guest orders with an email (the order emails and the order link go there).
     const guest = this.isGuest() ? guestEmail(this.guestEmailInput()) : null;
-    if (this.isGuest() && !guest) {
-      this.#snackbar.error(
-        this.guestEmailInput().trim() ? 'Check your email address.' : 'Enter your email to place your order.',
-      );
-      return;
-    }
     const draft = this.shipping();
-    const settings = this.#shippingSettings.settings();
-    if (draft.country === 'EG' && !checkGovernorate(settings ?? {}, draft.governorateId).ok) {
-      this.governorateError.set(true);
-      this.#snackbar.error(CHOOSE_GOVERNORATE_MESSAGE);
-      return;
-    }
-    if (!draft.fullName.trim() || !draft.line1.trim() || !draft.city.trim()) {
-      this.#snackbar.error('Fill in your delivery address to continue.');
-      return;
-    }
-    if (draft.country !== 'EG' && !draft.postalCode.trim()) {
-      this.#snackbar.error('Enter your postal code to continue.');
-      return;
-    }
     if (!isCheckoutCountry(draft.country)) {
+      this.fieldErrors.set({});
       this.#snackbar.error('Choose a delivery country.');
       return;
     }
-    if (!draft.phone.trim()) {
-      this.#snackbar.error('Add a phone number we can reach you on.');
-      return;
-    }
-    // We reach Egypt shoppers on WhatsApp (InstaPay screenshot, cash-on-delivery fee).
-    if (draft.country === 'EG' && !isEgyptMobile(draft.phone)) {
-      this.#snackbar.error('Enter an Egyptian mobile number, e.g. 010 1234 5678.');
-      return;
-    }
-    // Abroad we agree delivery and payment on WhatsApp, so the number needs its country code.
-    if (draft.country !== 'EG' && shopperWhatsappNumber(draft.phone, draft.country) === null) {
-      this.#snackbar.error(ABROAD_PHONE_MESSAGE);
+    const settings = this.#shippingSettings.settings();
+    const governorateMissing =
+      draft.country === 'EG' && !checkGovernorate(settings ?? {}, draft.governorateId).ok;
+    if (governorateMissing) this.governorateError.set(true);
+    // Every required field that is empty or wrong gets its message under it (ATS-318); the first
+    // one gets the cursor and the snackbar repeats its message.
+    const errors = checkoutFieldErrors(draft, this.isGuest() ? this.guestEmailInput() : null, !!guest);
+    this.fieldErrors.set(errors);
+    const firstField = CHECKOUT_FIELD_ORDER.find((field) => errors[field]);
+    if (firstField || governorateMissing) {
+      // The governorate sits between the name and the address: report what comes first on the page.
+      if (governorateMissing && (!firstField || !FIELDS_ABOVE_GOVERNORATE.has(firstField))) {
+        this.#focusElement('app-governorate-input input');
+        this.#snackbar.error(CHOOSE_GOVERNORATE_MESSAGE);
+      } else if (firstField) {
+        this.#focusElement(`#${checkoutFieldId(firstField)}`);
+        this.#snackbar.error(errors[firstField] ?? '');
+      }
       return;
     }
     const unavailable = this.unavailableMessage();

@@ -1,7 +1,13 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 import * as v from 'valibot';
 import { governorateOfAddress, isDeliveryCountry } from '../offers/engine/index.js';
-import { ABROAD_PHONE_MESSAGE, isEgyptMobile, shopperWhatsappNumber } from '../store/order-messages.js';
+import {
+  ABROAD_PHONE_MESSAGE,
+  DELIVERY_FIELD_MESSAGES,
+  EGYPT_PHONE_MESSAGE,
+  isEgyptMobile,
+  shopperWhatsappNumber,
+} from '../store/order-messages.js';
 
 const COUNTRY_CODE = /^[A-Z]{2}$/;
 const MAX_LINES = 20;
@@ -136,7 +142,7 @@ export function parseCreateStoreOrderRequest(data: unknown): CreateStoreOrderReq
   const paymentMethod = parsePaymentMethod(data['paymentMethod'], shipping.country);
   // Staff reach Egypt shoppers on WhatsApp (InstaPay screenshot, cash-on-delivery fee).
   if (shipping.country === 'EG' && !isEgyptMobile(shipping.phone)) {
-    throw new HttpsError('invalid-argument', 'Enter an Egyptian mobile number, e.g. 010 1234 5678.');
+    throw new HttpsError('invalid-argument', EGYPT_PHONE_MESSAGE);
   }
   // Abroad we agree delivery and payment on WhatsApp (ATS-314): the number must be one we can open.
   if (shipping.country !== 'EG' && shopperWhatsappNumber(shipping.phone, shipping.country) === null) {
@@ -335,8 +341,8 @@ function parseShipping(raw: unknown): OrderShippingInput {
     throw new HttpsError('invalid-argument', 'Enter your delivery address to continue.');
   }
   const country = readCountry(raw['country']);
-  const fullName = readText(raw['fullName'], MAX_NAME, 'Enter the recipient name.');
-  const line1 = readText(raw['line1'], MAX_LINE, 'Enter the street address.');
+  const fullName = readText(raw['fullName'], MAX_NAME, DELIVERY_FIELD_MESSAGES.fullName);
+  const line1 = readText(raw['line1'], MAX_LINE, DELIVERY_FIELD_MESSAGES.line1);
   const line2 = readOptionalText(raw['line2'], MAX_LINE);
   // Egypt: the governorate picked from the list decides the city (and the delivery fee). A checkout
   // page opened before the Governorate field sends only a typed city: it counts when it names a
@@ -351,13 +357,11 @@ function parseShipping(raw: unknown): OrderShippingInput {
   if (country === 'EG' && !governorate) {
     throw new HttpsError('invalid-argument', 'Choose your governorate.');
   }
-  const city = governorate ? governorate.name : readText(raw['city'], MAX_CITY, 'Enter the city.');
+  const city = governorate ? governorate.name : readText(raw['city'], MAX_CITY, DELIVERY_FIELD_MESSAGES.city);
   const region = governorate ? null : readOptionalText(raw['region'], MAX_CITY);
-  const postalCode =
-    country === 'EG'
-      ? (readOptionalText(raw['postalCode'], MAX_POSTAL) ?? '')
-      : readText(raw['postalCode'], MAX_POSTAL, 'Enter the postal code.');
-  const phone = readText(raw['phone'], MAX_PHONE, 'Enter a phone number we can reach you on.');
+  // Optional for every country (ATS-318): many countries have no postal codes. Egypt never keeps one.
+  const postalCode = country === 'EG' ? '' : readPostalCode(raw['postalCode']);
+  const phone = readText(raw['phone'], MAX_PHONE, DELIVERY_FIELD_MESSAGES.phone);
   return {
     fullName,
     line1,
@@ -407,6 +411,16 @@ function readText(raw: unknown, max: number, message: string): string {
   const trimmed = raw.trim();
   if (trimmed.length === 0 || trimmed.length > max) {
     throw new HttpsError('invalid-argument', message);
+  }
+  return trimmed;
+}
+
+/** Optional postal code abroad: empty or missing is fine, too long is refused (never dropped). */
+function readPostalCode(raw: unknown): string {
+  if (raw === null || raw === undefined || typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  if (trimmed.length > MAX_POSTAL) {
+    throw new HttpsError('invalid-argument', `Postal codes are ${MAX_POSTAL} characters or fewer.`);
   }
   return trimmed;
 }
