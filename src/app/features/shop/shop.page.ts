@@ -14,7 +14,12 @@ import {
 import { MatButtonModule } from '@angular/material/button';
 import { Router } from '@angular/router';
 import { displayDecimals, toDisplayAmount, type Offer } from '@core/services/offers/engine';
-import { bundleOfferLink, offerShopSubtitle, offerTitleVisible } from '@core/services/offers/offer-shop';
+import {
+  bundleOfferLink,
+  offerShopSubtitle,
+  offerTextFor,
+  offerTitleVisible,
+} from '@core/services/offers/offer-shop';
 import { CurrencyService } from '@core/services/currency/currency.service';
 import { CatalogService } from '@core/services/products/catalog.service';
 import { ShopCategoriesService } from '@core/services/products/shop-categories.service';
@@ -198,7 +203,10 @@ export class ShopPage {
    */
   readonly #titledOffer = computed((): Offer | null | undefined => {
     const offer = this.#offer();
-    return offer && !offerTitleVisible(offer, this.#currency.visitorCountry()) ? null : offer;
+    if (!offer) return offer;
+    // A title naming pounds is left out for a visitor paying in another currency (ATS-309).
+    if (offerTextFor(offer.title, this.#currency.selected()) === '') return null;
+    return offerTitleVisible(offer, this.#currency.visitorCountry()) ? offer : null;
   });
 
   readonly pageSubtitle = computed(() => {

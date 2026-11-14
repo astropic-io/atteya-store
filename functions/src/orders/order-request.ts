@@ -95,12 +95,6 @@ export interface CreateStoreOrderRequest {
    * lowers a price.
    */
   readonly shownTotalEgp: number | null;
-  /**
-   * Bank Transfer only: the currency code checkout showed prices in (e.g. `USD`), or null when it
-   * sent none or an unreadable one. The server checks it against `settings/currency` itself and
-   * works out the amount to send (`payInFor()`); this never changes the EGP price.
-   */
-  readonly payInCurrency: string | null;
 }
 
 /** Longest email address a guest can order with (RFC 5321 path limit). */
@@ -137,7 +131,6 @@ export function parseCreateStoreOrderRequest(data: unknown): CreateStoreOrderReq
   const dealOfferIds = parseOfferIds(data['dealOfferIds']);
   const shownShippingEgp = parseShownAmountEgp(data['shownShippingEgp']);
   const shownTotalEgp = parseShownAmountEgp(data['shownTotalEgp']);
-  const payInCurrency = parsePayInCurrency(data['payInCurrency']);
   return {
     lines,
     shipping,
@@ -146,15 +139,7 @@ export function parseCreateStoreOrderRequest(data: unknown): CreateStoreOrderReq
     dealOfferIds,
     shownShippingEgp,
     shownTotalEgp,
-    payInCurrency,
   };
-}
-
-/** A three-letter currency code (upper-cased), or null when missing or unreadable. */
-export function parsePayInCurrency(raw: unknown): string | null {
-  if (typeof raw !== 'string') return null;
-  const code = raw.trim().toUpperCase();
-  return /^[A-Z]{3}$/.test(code) ? code : null;
 }
 
 /** Most whole EGP a shown shipping fee or order total can be; anything above is read as not sent. */

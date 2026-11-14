@@ -16,6 +16,8 @@ Moved here word for word from AGENTS.md so that file stays small (<KEY>-282). Th
 - **Bank Transfer orders keep their rate (<KEY>-304)**: `pricing.payIn` of an order paid in another currency saves the `factor` it was worked out with and each line and the shipping in that currency.
 - The `markupPercent` and the `rate` before the markup behind that factor go to the staff-only `orderStaffNotes/{orderId}.payInRate`, so the admin order page shows what the order comes to in pounds without reading live rates and shoppers never see the markup. See the `checkout-and-orders` skill.
 - **Price factors in one transaction (<KEY>-233)**: `setInternationalPricing` (writes `intlPricing/config`, `settings/currency` and the audit log) and `refreshRates()` (writes `intlPricing/rates` and `settings/currency`) in `functions/src/intl/` read `intlPricing/rates` and `intlPricing/config` in the same `db.runTransaction` as their writes, so a markup save and a rate refresh at the same moment never mix inputs; the provider fetch stays outside the transaction, and a fetch older than the saved `providerUpdatedAt` only stamps `lastAttemptAt`, so it never rolls rates back.
+- **The delivery country decides the currency at checkout (<KEY>-309)**: once the address is outside Egypt, checkout shows and prices everything in that country's currency (`CurrencyService.entryForDeliveryCountry()`), and the Bank Transfer `payIn` is worked out in it on the server (`currencyFromCountry(shipping.country)`), even when the visitor browsed in EGP. Egypt delivery shows EGP. See the `checkout-and-orders` skill for the order page and emails.
+
 
 ## Egypt delivery by governorate (<KEY>-306)
 

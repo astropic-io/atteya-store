@@ -34,7 +34,7 @@ import {
   toDisplayAmount,
 } from '@core/services/offers/engine';
 import { toPricedProduct } from '@core/services/offers/offer.model';
-import { bundleSetSavingLabel, canShopOffer } from '@core/services/offers/offer-shop';
+import { bundleSetSavingLabel, canShopOffer, offerTextFor } from '@core/services/offers/offer-shop';
 import { fromTransferOffer } from '@core/services/offers/offer-transfer';
 import { OffersService } from '@core/services/offers/offers.service';
 import { SeoService } from '@core/services/seo';
@@ -177,6 +177,12 @@ export class BundlePage {
   readonly #auth = inject(AuthService);
   readonly #cart = inject(CartService);
   readonly #currency = inject(CurrencyService);
+
+  /** The offer's title, left out when it names pounds and the visitor pays in another currency (<KEY>-309). */
+  readonly pageTitle = computed(() => {
+    const title = this.offer()?.title.trim() ?? '';
+    return offerTextFor(title, this.#currency.selected()) || 'Bundle & Save';
+  });
   readonly #drawer = inject(DrawerService);
   readonly #liveOffers = inject(OffersService);
   readonly #reader = inject(BundleProductsService);
@@ -607,7 +613,7 @@ export class BundlePage {
       this.#seo.setPageMetadata(
         offer
           ? {
-              title: `${offer.title.trim() || 'Bundle & Save'} | Atteya Store`,
+              title: `${offerTextFor(offer.title.trim(), this.#currency.selected()) || 'Bundle & Save'} | Atteya Store`,
               description: 'Pick one product from each group and add the whole bundle to your bag.',
               noindex: true,
             }

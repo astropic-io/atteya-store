@@ -2,6 +2,8 @@ import { Component, computed, inject, input } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { offerNoteText } from '@core/services/cart/bag-offer-notes';
 import { BagOfferNotesService } from '@core/services/cart/bag-offer-notes.service';
+import { CurrencyService } from '@core/services/currency/currency.service';
+import { offerTextFor } from '@core/services/offers/offer-shop';
 import { SharedIconModule } from '@shared/ui/mat-icon';
 
 /**
@@ -33,13 +35,25 @@ import { SharedIconModule } from '@shared/ui/mat-icon';
 })
 export class BagOfferNotesComponent {
   readonly #notes = inject(BagOfferNotesService);
+  readonly #currency = inject(CurrencyService);
 
   /** Extra classes on the list when it shows (its margins), so no gap is left when it is empty. */
   readonly spacing = input('');
 
-  readonly notes = computed(() =>
-    this.#notes.offerNotes().map((note) => ({ offerId: note.offerId, text: offerNoteText(note) })),
-  );
+  /**
+   * The currency the page shows prices in, when it isn't the visitor's own (checkout prices in the
+   * delivery country's currency). Null = the visitor's currency.
+   */
+  readonly currency = input<string | null>(null);
+
+  readonly notes = computed(() => {
+    // A title naming pounds is left out for a visitor paying in another currency (ATS-309).
+    const currency = this.currency() ?? this.#currency.selected();
+    return this.#notes.offerNotes().map((note) => ({
+      offerId: note.offerId,
+      text: offerNoteText({ ...note, title: offerTextFor(note.title, currency) }),
+    }));
+  });
 
   dismiss(offerId: string): void {
     this.#notes.dismiss(offerId);

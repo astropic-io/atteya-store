@@ -14,7 +14,7 @@ describe('payInEntry', () => {
     GBP: { factor: 0 },
   };
 
-  it('uses the currency checkout showed when it has a factor', () => {
+  it("uses the delivery country's currency when it has a factor", () => {
     assert.deepEqual(payInEntry('EUR', currencies), { code: 'EUR', factor: 0.026 });
   });
 
@@ -24,19 +24,9 @@ describe('payInEntry', () => {
     }
   });
 
-  it('keeps EGP when checkout showed pounds, with no conversion', () => {
-    assert.deepEqual(payInEntry('EGP', {}), { code: 'EGP', factor: 1 });
-    assert.deepEqual(
-      payInFor(
-        [{ unitEgp: 1000, quantity: 2, lineDisplay: 2000 }],
-        { priceEgp: 900 },
-        { code: 'EGP', factor: 1 },
-      ),
-      {
-        currency: 'EGP',
-        amount: 2900,
-      },
-    );
+  it('never pays in EGP: an order shipped abroad sends USD instead (ATS-309)', () => {
+    assert.deepEqual(payInEntry('EGP', currencies), USD);
+    assert.equal(payInEntry('EGP', {}), null);
   });
 
   it('is null when not even USD has a factor', () => {

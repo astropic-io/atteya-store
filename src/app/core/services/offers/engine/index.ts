@@ -12,5 +12,6 @@ export * from './labels';
 export * from './match';
 export * from './read-conditions';
 export * from './shipping';
+export * from './shopper-money';
 export * from './types';
 export * from './validate';

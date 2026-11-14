@@ -45,6 +45,7 @@ import {
   checkGovernorate,
   type CurrencyEntry,
   dealTag,
+  EGP_ENTRY,
   governorateById,
   governorateOfAddress,
   displayDecimals,
@@ -354,6 +355,37 @@ export class CheckoutPageComponent implements OnInit {
   readonly lines = this.#cart.lines;
   readonly isEmpty = this.#cart.isEmpty;
   readonly isEgypt = computed(() => this.shipping().country === 'EG');
+
+  /**
+   * The factors for a delivery country outside Egypt (ATS-309). Idle for Egypt and before a
+   * country is chosen.
+   */
+  readonly #deliveryEntry = resource({
+    params: () => {
+      const country = this.shipping().country;
+      return isCheckoutCountry(country) && country !== 'EG' ? country : undefined;
+    },
+    loader: ({ params: country }) => this.#currency.entryForDeliveryCountry(country),
+  });
+
+  /**
+   * The currency checkout shows and prices in (ATS-309): the delivery country decides. Egypt is
+   * EGP; abroad it is the delivery country's currency, whatever the visitor browsed in, so a
+   * shopper abroad never sees EGP or the Egypt price. Before a country is chosen, the visitor's
+   * own currency. Null while an abroad currency loads; undefined when it can't be read (no
+   * amounts are shown and the order can't be placed: the server would refuse it too).
+   */
+  readonly #entry = computed<CurrencyEntry | null | undefined>(() => {
+    const country = this.shipping().country;
+    if (!isCheckoutCountry(country)) return this.#currency.entry();
+    if (country === 'EG') return EGP_ENTRY;
+    if (this.#deliveryEntry.error()) return undefined;
+    if (!this.#deliveryEntry.hasValue()) return null;
+    return this.#deliveryEntry.value() ?? undefined;
+  });
+
+  /** The currency code checkout shows prices in, for the offer notes above the summary. */
+  readonly checkoutCurrency = computed(() => this.#entry()?.code ?? null);
   /** InstaPay and cash on delivery are Egypt-only. */
   readonly localMethodsAvailable = computed(() => this.isEgypt());
   /** A country outside Egypt is chosen while neither Card nor Bank Transfer can be used: order on WhatsApp. */
@@ -441,7 +473,10 @@ export class CheckoutPageComponent implements OnInit {
    * `orderSummary`. Display-only: place-order prices again on the server.
    */
   readonly #pricedBag = computed((): PricedBag => {
-    if (!this.#currency.ready() || !this.#offers.ready()) return { state: 'loading' };
+    const entry = this.#entry();
+    // Abroad with no factors to price in (never the Egypt price instead): delivery can't be worked out.
+    if (entry === undefined) return { state: 'unavailable' };
+    if (!this.#currency.ready() || !this.#offers.ready() || !entry) return { state: 'loading' };
     if (this.productsResource.error()) return { state: 'unavailable' };
     const products = this.productsResource.value();
     if (!products) return { state: 'loading' };
@@ -460,7 +495,6 @@ export class CheckoutPageComponent implements OnInit {
       signedIn: this.#auth.offerSignedIn(),
       codes: [],
     };
-    const entry = this.#currency.entry();
     // Per-item offers on each piece, then Buy X Get Y over the whole bag, like the server.
     const bag = priceBag(lines, products, offers, ctx);
     // Which picked gifts can be given right now, with the same checks as the order callables.
@@ -525,7 +559,7 @@ export class CheckoutPageComponent implements OnInit {
   readonly summaryItems = computed((): readonly CheckoutSummaryItem[] => {
     const products = this.productsResource.hasValue() ? this.productsResource.value() : undefined;
     const bag = this.#pricedBag();
-    const entry = this.#currency.entry();
+    const entry = this.#entry() ?? EGP_ENTRY;
     const decimals = displayDecimals(entry.code);
     const offers = this.#offers.all();
     const giftNotes = new Map(this.#notes.giftNotes().map((note) => [note.key, note]));
@@ -615,7 +649,8 @@ export class CheckoutPageComponent implements OnInit {
     if (!settings) return { state: 'loading' };
 
     const { offers, ctx, pricedLines, parcelLines, subtotalEgp, subtotalDisplay } = bag;
-    const entry = this.#currency.entry();
+    const entry = this.#entry();
+    if (!entry) return { state: 'loading' };
 
     const region = this.isEgypt() ? 'egypt' : 'international';
     const boxes = this.isEgypt() ? settings.egyptBoxes : settings.internationalBoxes;
@@ -722,7 +757,8 @@ export class CheckoutPageComponent implements OnInit {
     if (summary.state === 'ready') return summary.total;
     const bag = this.#pricedBag();
     if (bag.state !== 'ready') return '';
-    const entry = this.#currency.entry();
+    const entry = this.#entry();
+    if (!entry) return '';
     return formatMoney(bag.subtotalDisplay, entry.code, displayDecimals(entry.code));
   });
 
@@ -756,7 +792,7 @@ export class CheckoutPageComponent implements OnInit {
   readonly bankTransfer = computed(() => {
     const ready = this.readySummary();
     if (!ready) return null;
-    return { total: ready.total, currencyName: currencyPluralName(this.#currency.entry().code) };
+    return { total: ready.total, currencyName: currencyPluralName(this.#entry()?.code ?? 'USD') };
   });
 
   readonly bankTransferSteps = computed(() => {
@@ -1141,8 +1177,6 @@ export class CheckoutPageComponent implements OnInit {
 
       const result = await this.#checkout.placeManualOrder({
         method,
-        // Bank Transfer: the server works out the amount to send in this currency itself.
-        payInCurrency: this.#currency.entry().code,
         lines: this.lines(),
         shipping,
         endedOfferIds: this.#offers.endedIds(),

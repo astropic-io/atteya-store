@@ -2,7 +2,7 @@
   <h1 class="font-headline-sm font-bold! mb-6">Checkout</h1>
 
   <!-- An offer that stopped applying during this visit (above the summary, also on phones where it folds). -->
-  <app-bag-offer-notes spacing="mb-6" />
+  <app-bag-offer-notes spacing="mb-6" [currency]="checkoutCurrency()" />
 
   <div class="grid gap-6 lg:grid-cols-2 lg:gap-12 items-start">
     <!-- Order summary: a folding bar above the form on phones, the right half on desktop. -->
@@ -176,9 +176,9 @@
                   This is a large order, so we'll message you on WhatsApp to agree the delivery fee before we
                   send it.
                 </p>
-              } @else if (!abroadOrderingClosed() && paymentMethod() !== 'bank-transfer') {
+              } @else if (!isEgypt() && paymentMethod() === 'paymob') {
                 <p class="font-label-sm opacity-70">
-                  Your total is calculated in Egyptian pounds when you place the order.
+                  Your bank converts the payment to your currency, so your statement may differ slightly.
                 </p>
               }
             } @else if (summary.state === 'need-governorate') {

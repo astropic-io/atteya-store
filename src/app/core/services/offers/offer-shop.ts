@@ -35,6 +35,21 @@ export function offerTitleVisible(offer: Offer, visitorCountry: string | null): 
   return (visitorCountry ?? 'EG') === 'EG';
 }
 
+/**
+ * An amount in pounds that staff may type into an offer's title or banner: "EGP 200", "200 LE",
+ * "L.E. 200", "E£200", "200 جنيه", "200 ج.م".
+ */
+const POUNDS = /\bEGP\b|\bL\.?E\b|E£|جنيه|ج\.م/i;
+
+/**
+ * An offer's title or banner text as a visitor whose prices are in `currency` may see it
+ * (ATS-309): empty when it names an amount in pounds and their prices are not in EGP, so a
+ * shopper abroad never sees EGP or the Egypt price. Unchanged for EGP visitors.
+ */
+export function offerTextFor(text: string, currency: string): string {
+  return currency !== 'EGP' && POUNDS.test(text) ? '' : text;
+}
+
 /** Query params of the offer's Shop page. */
 export function offerShopQuery(offerId: string): { readonly offer: string } {
   return { offer: offerId };
@@ -98,7 +113,8 @@ export function bundleStripTitle(bundle: BagBundle, money: (egp: number) => stri
       row.count > 1 ? `${row.count} × ${bundleRowLabel(row, money)}` : bundleRowLabel(row, money),
     )
     .join(' + ');
-  return `${bundle.title} · ${rows}`;
+  const title = bundle.title.trim();
+  return title ? `${title} · ${rows}` : rows;
 }
 
 /** The bag's bundle nudge: "Add 1 more to get 3 for EGP 275". Null at the top row. */
@@ -159,7 +175,8 @@ export function bundleSaveTagText(
  */
 export function bundleSetStripTitle(set: Pick<BagBundleSet, 'title' | 'sets'>): string | null {
   if (set.sets <= 0) return null;
-  return set.sets === 1 ? set.title : `${set.title} · ${set.sets} bundles`;
+  const title = set.title.trim() || 'Bundle & Save';
+  return set.sets === 1 ? title : `${title} · ${set.sets} bundles`;
 }
 
 /**
@@ -310,6 +327,7 @@ export function bannerOffers(
   offers: readonly Offer[],
   now: Date,
   visitorCountry: string | null,
+  currency = 'EGP',
 ): readonly Offer[] {
   const nowMs = now.getTime();
   return offers
@@ -318,7 +336,8 @@ export function bannerOffers(
         offer.banner?.show === true &&
         canShopOffer(offer) &&
         offerRunning(offer, nowMs) &&
-        offerTitleVisible(offer, visitorCountry),
+        offerTitleVisible(offer, visitorCountry) &&
+        offerTextFor(bannerText(offer), currency) !== '',
     )
     .sort((a, b) => b.priority - a.priority || (b.updatedAtMs ?? 0) - (a.updatedAtMs ?? 0))
     .slice(0, MAX_BANNER_OFFERS);

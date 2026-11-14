@@ -155,11 +155,6 @@ export class CheckoutOrderService {
   /** Orders confirmed by staff: Cash on Delivery or InstaPay (Egypt), Bank Transfer (abroad). */
   async placeManualOrder<M extends ManualCheckoutPaymentMethod>(args: {
     readonly method: M;
-    /**
-     * Bank Transfer: the currency checkout showed prices in. The server checks it and works out
-     * the amount to send itself (`pricing.payIn`). Ignored for the other methods.
-     */
-    readonly payInCurrency?: string | null;
     readonly lines: readonly CartLineDraft[];
     readonly shipping: CheckoutShippingInput;
     readonly endedOfferIds: readonly string[];
@@ -181,7 +176,6 @@ export class CheckoutOrderService {
         dealOfferIds: readonly string[];
         shownShippingEgp: number | null;
         shownTotalEgp: number | null;
-        payInCurrency?: string;
         guest?: GuestCheckoutInput;
       },
       CreateManualOrderResult<M>
@@ -194,7 +188,6 @@ export class CheckoutOrderService {
       dealOfferIds: args.dealOfferIds,
       shownShippingEgp: args.shownTotals.shippingEgp,
       shownTotalEgp: args.shownTotals.totalEgp,
-      ...(args.method === 'bank-transfer' && args.payInCurrency ? { payInCurrency: args.payInCurrency } : {}),
       ...(args.guest ? { guest: { email: args.guest.email } } : {}),
     });
     return response.data;

@@ -1,9 +1,8 @@
 import { Component, computed, inject, input } from '@angular/core';
 import { CurrencyService } from '@core/services/currency/currency.service';
 import { displayDecimals, toDisplayAmount } from '@core/services/offers/engine';
+import { offerTextFor } from '@core/services/offers/offer-shop';
 import { formatMoney } from '@shared/utils/money';
-
-const EGP_AMOUNT = /\bEGP\b/;
 
 @Component({
   selector: 'app-product-price',
@@ -59,8 +58,8 @@ export class ProductPriceComponent {
     // Cards never show offer/% chips — only PDP default tone does.
     if (this.isListing()) return [];
     const badges = this.badges();
-    if (this.#currency.entry().code === 'EGP') return badges;
-    return badges.filter((badge) => !EGP_AMOUNT.test(badge));
+    const code = this.#currency.entry().code;
+    return badges.filter((badge) => offerTextFor(badge, code) !== '');
   });
 
   #amount(egp: number): number {

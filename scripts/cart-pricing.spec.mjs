@@ -96,6 +96,7 @@ import {
   bundleSetStripTitle,
   bundleStripTitle,
   offerShopSubtitle,
+  offerTextFor,
   offerTitleVisible,
   shortItemWord,
 } from '../src/app/core/services/offers/offer-shop.ts';
@@ -562,6 +563,37 @@ describe('Bundle & Save wording (ATS-254)', () => {
   });
 });
 
+describe('offer text that names pounds (ATS-309)', () => {
+  it('is hidden from a visitor whose prices are not in EGP', () => {
+    for (const text of [
+      'EGP 100 off',
+      'Save 200 egp',
+      'خصم 100 جنيه',
+      'Save 100 LE',
+      'L.E. 50 off',
+      'E£200 off',
+      'خصم 100 ج.م',
+    ]) {
+      assert.equal(offerTextFor(text, 'QAR'), '', text);
+      assert.equal(offerTextFor(text, 'EGP'), text, text);
+    }
+  });
+
+  it('keeps every other text', () => {
+    assert.equal(offerTextFor('Autumn Sale', 'QAR'), 'Autumn Sale');
+    assert.equal(offerTextFor('Buy 2, get 1 free', 'USD'), 'Buy 2, get 1 free');
+  });
+
+  it('a bag strip with its title left out still shows the rows', () => {
+    const bundle = { title: '', units: 2, rows: [{ quantity: 2, price: 200, count: 1 }], next: null };
+    assert.equal(
+      bundleStripTitle(bundle, (egp) => 'USD ' + egp),
+      '2 for USD 200',
+    );
+    assert.equal(bundleSetStripTitle({ title: '', sets: 1 }), 'Bundle & Save');
+  });
+});
+
 describe('Free shipping offer title abroad', () => {
   const freeShipping = { id: 'ship', title: 'Free shipping', reward: { kind: 'freeShipping' } };
   const percent = { id: 'sale', title: '20% off', reward: { kind: 'percentOff', percent: 20 } };
@@ -624,6 +656,15 @@ describe('top announcement bar offers (ATS-145)', () => {
     assert.deepEqual(ids(bannerOffers([ship], NOW, 'EG')), ['ship']);
     assert.deepEqual(ids(bannerOffers([ship], NOW, null)), ['ship']);
     assert.deepEqual(ids(bannerOffers([ship], NOW, 'GB')), []);
+  });
+
+  it('leaves out a banner that names pounds for a visitor paying in another currency (ATS-309)', () => {
+    const pounds = offer('pounds', {
+      banner: { show: true, text: 'Spend EGP 500, get a gift', countdown: 'hide', countdownDays: 7 },
+    });
+    assert.deepEqual(ids(bannerOffers([pounds], NOW, 'EG')), ['pounds']);
+    assert.deepEqual(ids(bannerOffers([pounds], NOW, 'EG', 'EGP')), ['pounds']);
+    assert.deepEqual(ids(bannerOffers([pounds], NOW, 'QA', 'QAR')), []);
   });
 
   it('uses the banner text, or the customer title when it is empty', () => {

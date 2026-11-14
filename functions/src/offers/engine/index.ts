@@ -11,5 +11,6 @@ export * from './labels.js';
 export * from './match.js';
 export * from './read-conditions.js';
 export * from './shipping.js';
+export * from './shopper-money.js';
 export * from './types.js';
 export * from './validate.js';

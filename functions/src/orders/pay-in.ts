@@ -10,10 +10,10 @@ import type { OrderLinePrice, OrderPayIn, OrderShippingLine } from './order-pric
 export const PAY_IN_FALLBACK_CURRENCY = 'USD';
 
 /**
- * The currency a Bank Transfer order is paid in: the one checkout showed (`requested`) when
- * `settings/currency` has a usable factor for it, else USD. EGP (a visitor whose prices show in
- * pounds, shipping abroad) stays EGP with no conversion, so the amount is the total checkout
- * showed. Null when neither has a factor (the order is then refused: we can't say how much to send).
+ * The currency a Bank Transfer order is paid in: the delivery country's (`requested`, from
+ * `currencyFromCountry()`) when `settings/currency` has a usable factor for it, else USD. Never
+ * EGP: a shopper whose order ships abroad never sees pounds or the Egypt price (ATS-309). Null
+ * when neither has a factor (the order is then refused: we can't say how much to send).
  */
 export function payInEntry(
   requested: string | null,
@@ -26,7 +26,6 @@ export function payInEntry(
     const factor = (entry as Record<string, unknown>)['factor'];
     return typeof factor === 'number' && Number.isFinite(factor) && factor > 0 ? { code, factor } : null;
   };
-  if (requested === 'EGP') return { code: 'EGP', factor: 1 };
   return usable(requested) ?? usable(PAY_IN_FALLBACK_CURRENCY);
 }
 
