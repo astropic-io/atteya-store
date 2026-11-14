@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 import { isUnreliableCurrency } from '@core/services/offers/engine';
+import { currencyForCountry, currencyForTimeZone, EGYPT_TIME_ZONE } from './browsing-currency';
 import { COUNTRY_CURRENCY } from './country-currency';
 import type { PublicCurrencyMap } from './currency.schema';
 
@@ -44,24 +45,18 @@ export function readTimeZone(): string | undefined {
  * Unknown or unreliable currency codes become USD.
  */
 export function currencyFromCountry(country: string | null | undefined): string {
-  if (!country) return 'EGP';
-  const iso = country.trim().toUpperCase();
-  if (iso === 'EG') return 'EGP';
-  const code = COUNTRY_CURRENCY[iso];
-  if (!code || isUnreliableCurrency(code)) return 'USD';
-  return code;
+  return currencyForCountry(country, COUNTRY_CURRENCY, isUnreliableCurrency);
 }
 
 /**
- * @deprecated Timezone inference replaced by IP/geo country. Kept for tooling only.
+ * Browser time zone → display currency, used when the visitor's country could not be found
+ * (ATS-313). `Africa/Cairo` and a missing time zone are EGP; any other zone is its currency
+ * at abroad prices, or USD. The zone table is loaded only when it is needed.
  */
 export async function currencyFromTimeZone(timeZone: string | undefined): Promise<string> {
-  if (timeZone === 'Africa/Cairo') return 'EGP';
-  if (!timeZone) return 'USD';
+  if (!timeZone || timeZone === EGYPT_TIME_ZONE) return 'EGP';
   const { TZ_CURRENCY } = await import('./tz-currency');
-  const code = TZ_CURRENCY[timeZone];
-  if (!code || isUnreliableCurrency(code)) return 'USD';
-  return code;
+  return currencyForTimeZone(timeZone, TZ_CURRENCY, isUnreliableCurrency);
 }
 
 export function readCachedCurrencyMap(maxAgeMs: number | null): PublicCurrencyMap | null {

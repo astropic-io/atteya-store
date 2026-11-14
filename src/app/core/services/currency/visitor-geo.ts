@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { IpWhoCountrySchema } from './visitor-geo.schema';
+import { CountryIsSchema, IpWhoCountrySchema } from './visitor-geo.schema';
 
 const ISO_COUNTRY = /^[A-Z]{2}$/;
 
@@ -15,7 +15,15 @@ const HEADER_COUNTRY = [
   'x-vercel-ip-country',
 ] as const;
 
-const GEO_LOOKUP_MS = 1200;
+/** One lookup service call. */
+const GEO_ATTEMPT_MS = 900;
+/** All lookups for one visitor together, so a page never waits long on them. */
+const GEO_BUDGET_MS = 2000;
+/** A found country is kept per IP for a few hours (ATS-313). */
+const GEO_CACHE_MS = 6 * 60 * 60 * 1000;
+/** A failed lookup is kept briefly, so one page view never runs all the lookups twice. */
+const GEO_MISS_CACHE_MS = 60 * 1000;
+const GEO_CACHE_MAX = 5000;
 
 /** Drops a client-sent country hint; only middleware may set {@link VISITOR_COUNTRY_HEADER}. */
 export function stripUntrustedVisitorCountry(headers: Headers): Headers {
@@ -163,31 +171,105 @@ function isPrivateIp(ip: string): boolean {
   return false;
 }
 
+interface CachedCountry {
+  readonly country: string | null;
+  readonly expiresAt: number;
+}
+
+const countryByIp = new Map<string, CachedCountry>();
+
+/**
+ * IP → country (ATS-313): `ipwho.is`, one quick retry when it failed fast (not after a
+ * timeout), then `api.country.is`. All within {@link GEO_BUDGET_MS}. Found countries are
+ * cached per IP for a few hours; a miss for a minute. Each failure logs
+ * `Visitor country lookup failed` with the reason.
+ */
 async function lookupCountryByIp(ip: string): Promise<string | null> {
+  const now = Date.now();
+  const cached = countryByIp.get(ip);
+  if (cached && cached.expiresAt > now) return cached.country;
+  if (cached) countryByIp.delete(ip);
+
+  const deadline = now + GEO_BUDGET_MS;
+  const first = await attemptLookup(ipWhoIs, ip, deadline);
+  let country = first.country;
+  if (!country && !first.timedOut) country = (await attemptLookup(ipWhoIs, ip, deadline)).country;
+  if (!country) country = (await attemptLookup(countryIs, ip, deadline)).country;
+
+  rememberCountry(ip, country);
+  return country;
+}
+
+function rememberCountry(ip: string, country: string | null): void {
+  if (countryByIp.size >= GEO_CACHE_MAX) {
+    const oldest = countryByIp.keys().next();
+    if (!oldest.done) countryByIp.delete(oldest.value);
+  }
+  const ttl = country ? GEO_CACHE_MS : GEO_MISS_CACHE_MS;
+  countryByIp.set(ip, { country, expiresAt: Date.now() + ttl });
+}
+
+interface LookupService {
+  readonly name: string;
+  readonly url: (ip: string) => string;
+  readonly read: (body: unknown) => string | null;
+}
+
+const ipWhoIs: LookupService = {
+  name: 'ipwho.is',
+  url: (ip) => `https://ipwho.is/${encodeURIComponent(ip)}`,
+  read: (body) => {
+    const parsed = v.safeParse(IpWhoCountrySchema, body);
+    return parsed.success ? parsed.output.country_code : null;
+  },
+};
+
+const countryIs: LookupService = {
+  name: 'country.is',
+  url: (ip) => `https://api.country.is/${encodeURIComponent(ip)}`,
+  read: (body) => {
+    const parsed = v.safeParse(CountryIsSchema, body);
+    return parsed.success ? parsed.output.country : null;
+  },
+};
+
+async function attemptLookup(
+  service: LookupService,
+  ip: string,
+  deadline: number,
+): Promise<{ country: string | null; timedOut: boolean }> {
+  const remaining = Math.min(GEO_ATTEMPT_MS, deadline - Date.now());
+  if (remaining <= 0) {
+    console.warn(`Visitor country lookup failed: no time left for ${service.name}`);
+    return { country: null, timedOut: true };
+  }
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), GEO_LOOKUP_MS);
+  const timer = setTimeout(() => controller.abort(), remaining);
   try {
-    const response = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`, {
+    const response = await fetch(service.url(ip), {
       signal: controller.signal,
       headers: { Accept: 'application/json' },
     });
     if (!response.ok) {
-      console.warn(`Visitor country lookup failed: ipwho.is answered ${response.status}`);
-      return null;
+      console.warn(`Visitor country lookup failed: ${service.name} answered ${response.status}`);
+      return { country: null, timedOut: false };
     }
     const body: unknown = await response.json();
-    const parsed = v.safeParse(IpWhoCountrySchema, body);
-    if (!parsed.success) {
+    const country = normalizeCountry(service.read(body));
+    if (!country) {
       console.warn(
-        'Visitor country lookup failed: unexpected ipwho.is answer',
+        `Visitor country lookup failed: unexpected ${service.name} answer`,
         JSON.stringify(body).slice(0, 300),
       );
-      return null;
     }
-    return parsed.output.country_code;
+    return { country, timedOut: false };
   } catch (error) {
-    console.warn('Visitor country lookup failed:', error instanceof Error ? error.message : error);
-    return null;
+    const timedOut = controller.signal.aborted;
+    console.warn(
+      `Visitor country lookup failed (${service.name}):`,
+      timedOut ? 'timed out' : error instanceof Error ? error.message : error,
+    );
+    return { country: null, timedOut };
   } finally {
     clearTimeout(timer);
   }

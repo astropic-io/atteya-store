@@ -16,7 +16,9 @@ import { environment } from '@env/environment';
 import { EGP_ENTRY, type CurrencyEntry } from '@core/services/offers/engine';
 import {
   currencyFromCountry,
+  currencyFromTimeZone,
   normalizeCurrencyCode,
+  readTimeZone,
   readCachedCurrencyMap,
   readFreshCurrencyMap,
   storeCachedCurrencyMap,
@@ -35,7 +37,8 @@ const PENDING_TIMEOUT_MS = 2500;
 const VISITOR_LOCATION_PATH = '/api/visitor-location';
 
 /**
- * Storefront display currency from visitor geo (CDN headers or IP lookup).
+ * Storefront display currency from visitor geo (CDN headers or IP lookup), then the
+ * browser's time zone when the country can't be found, then EGP (ATS-313).
  * Egypt stays on EGP and keeps the domestic shipping banner.
  * `?cur=` overrides for one visit and is never saved.
  */
@@ -108,6 +111,13 @@ export class CurrencyService {
     const resolved = preset ?? (headers ? await resolveVisitorCountry(headers) : null);
     const country = applyDevLocalGeoFallback(resolved, !environment.production);
     this.#visitorCountry.set(country);
+    if (country === null) {
+      // Unknown country (ATS-313): render EGP with prices hidden; the browser decides by time zone.
+      this.#apply(EGP_ENTRY);
+      this.#syncDocumentHints(null, false, true);
+      this.#transfer.set(CURRENCY_BOOT_KEY, { country: null, code: null, map: null });
+      return;
+    }
     const code = currencyFromCountry(country);
     await this.#finishWithCode(code, country, { pendingIntl: code !== 'EGP' });
     this.#publishTransfer(code);
@@ -151,6 +161,12 @@ export class CurrencyService {
         });
         return;
       }
+      if (transferred.code === null) {
+        // The server already tried every lookup; go straight to the time zone.
+        const code = await currencyFromTimeZone(readTimeZone());
+        await this.#finishWithCode(code, null, { pendingIntl: code !== 'EGP' });
+        return;
+      }
       if (transferred.code === 'EGP') {
         this.#apply(EGP_ENTRY);
         this.#settled = true;
@@ -175,6 +191,11 @@ export class CurrencyService {
     if (!transferred) return;
     this.#visitorCountry.set(transferred.country);
     if (transferred.map) this.#map = transferred.map;
+    if (transferred.code === null) {
+      // Match the server's hidden EGP render; `#bootClient` decides by time zone.
+      this.#apply(EGP_ENTRY);
+      return;
+    }
     if (transferred.code === 'EGP') {
       this.#apply(EGP_ENTRY);
       this.#settled = true;
@@ -249,7 +270,8 @@ export class CurrencyService {
     if (fromQuery) return fromQuery;
     const country = await this.#resolveVisitorCountryClient();
     this.#visitorCountry.set(country);
-    return currencyFromCountry(country);
+    if (country) return currencyFromCountry(country);
+    return currencyFromTimeZone(readTimeZone());
   }
 
   async #resolveVisitorCountryClient(): Promise<string | null> {

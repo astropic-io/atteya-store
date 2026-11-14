@@ -110,6 +110,13 @@ import {
   readProductPicks,
   writeProductPicks,
 } from '../src/app/features/admin/pages/offers-manager/models/offer-product-picks.ts';
+import {
+  browsingCurrency,
+  currencyForTimeZone,
+} from '../src/app/core/services/currency/browsing-currency.ts';
+import { COUNTRY_CURRENCY } from '../src/app/core/services/currency/country-currency.ts';
+import { TZ_CURRENCY } from '../src/app/core/services/currency/tz-currency.ts';
+import { isUnreliableCurrency } from '../src/app/core/services/offers/engine/currency.ts';
 describe('cart-pricing (AS-33)', () => {
   it('lineDisplayAmount multiplies converted unit price by quantity', () => {
     assert.equal(lineDisplayAmount(100, 3), 300);
@@ -1761,5 +1768,37 @@ describe('Bundle & Save page (ATS-279)', () => {
     picks = pickProduct(group, picks, 'y');
     assert.equal(pickProduct(group, picks, 'x').length, 2);
     assert.deepEqual(removeProductPiece(picks, 'x'), [{ productId: 'y', sizeId: null }]);
+  });
+});
+
+describe('browsing currency: country, then time zone, then Egypt (ATS-313)', () => {
+  const tables = { countries: COUNTRY_CURRENCY, zones: TZ_CURRENCY, isUnreliable: isUnreliableCurrency };
+
+  it('shows the Egypt price to a visitor found in Egypt, whatever the time zone', () => {
+    assert.equal(browsingCurrency('EG', 'Europe/London', tables), 'EGP');
+    assert.equal(browsingCurrency('eg', undefined, tables), 'EGP');
+  });
+
+  it('shows abroad prices to a visitor found abroad, whatever the time zone', () => {
+    assert.equal(browsingCurrency('SA', 'Africa/Cairo', tables), 'SAR');
+    assert.equal(browsingCurrency('US', undefined, tables), 'USD');
+  });
+
+  it('shows the Egypt price when the country is unknown and the time zone is Africa/Cairo', () => {
+    assert.equal(browsingCurrency(null, 'Africa/Cairo', tables), 'EGP');
+  });
+
+  it('shows QAR abroad prices when the country is unknown and the time zone is Asia/Qatar', () => {
+    assert.equal(browsingCurrency(null, 'Asia/Qatar', tables), 'QAR');
+  });
+
+  it('shows the Egypt price when both the country and the time zone are unknown', () => {
+    assert.equal(browsingCurrency(null, undefined, tables), 'EGP');
+    assert.equal(browsingCurrency(null, '  ', tables), 'EGP');
+  });
+
+  it('shows USD for a time zone with no usable currency', () => {
+    assert.equal(currencyForTimeZone('Mars/Olympus', TZ_CURRENCY, isUnreliableCurrency), 'USD');
+    assert.equal(currencyForTimeZone('Etc/UTC', TZ_CURRENCY, isUnreliableCurrency), 'USD');
   });
 });

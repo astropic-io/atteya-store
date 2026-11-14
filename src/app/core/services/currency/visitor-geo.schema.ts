@@ -13,3 +13,8 @@ export const IpWhoCountrySchema = v.object({
   success: v.literal(true),
   country_code: isoCountry,
 });
+
+/** api.country.is success payload (fields we use only). */
+export const CountryIsSchema = v.object({
+  country: isoCountry,
+});
