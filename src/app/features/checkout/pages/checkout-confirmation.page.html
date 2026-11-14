@@ -353,14 +353,18 @@
             }
           </ul>
           <dl class="elements-start-col items-stretch! gap-2 border-t border-outline-variant pt-4">
-            <div class="elements-between gap-4">
-              <dt class="font-body-md text-on-surface-variant">Subtotal</dt>
-              <dd class="font-body-md">{{ subtotal() }}</dd>
-            </div>
-            <div class="elements-between gap-4">
-              <dt class="font-body-md text-on-surface-variant">Shipping</dt>
-              <dd class="font-body-md">{{ shippingLabel() }}</dd>
-            </div>
+            @if (subtotal(); as subtotalText) {
+              <div class="elements-between gap-4">
+                <dt class="font-body-md text-on-surface-variant">Subtotal</dt>
+                <dd class="font-body-md">{{ subtotalText }}</dd>
+              </div>
+            }
+            @if (shippingLabel(); as shippingText) {
+              <div class="elements-between gap-4">
+                <dt class="font-body-md text-on-surface-variant">Shipping</dt>
+                <dd class="font-body-md">{{ shippingText }}</dd>
+              </div>
+            }
             <div class="elements-between items-baseline! gap-4 pt-1">
               <dt class="font-title-md font-bold!">Total</dt>
               <dd class="font-title-lg font-bold!">{{ displayTotal() }}</dd>

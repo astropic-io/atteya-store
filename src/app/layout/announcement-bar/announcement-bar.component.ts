@@ -67,6 +67,7 @@ export class AnnouncementBarComponent {
       this.#bannerOffers.offers(),
       now,
       this.#currency.visitorCountry(),
+      this.#currency.selected(),
     ).map((offer) => ({
       id: `offer-${offer.id}`,
       kind: 'offer',

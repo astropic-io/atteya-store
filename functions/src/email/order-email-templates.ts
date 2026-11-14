@@ -117,6 +117,16 @@ export function formatPayIn(payIn: PayIn): string {
   }
 }
 
+/**
+ * An amount in a SHOPPER email (ATS-309): EGP for an Egypt order, the shopper's own currency for
+ * an order shipped abroad (`order.shopper`), so a shopper abroad never sees EGP. Null = none.
+ */
+function shopperAmount(order: OrderEmailOrder, amount: number | null): string | null {
+  if (amount === null) return null;
+  const currency = order.shopper.currency;
+  return currency === 'EGP' ? formatEgp(amount) : formatPayIn({ currency, amount });
+}
+
 /** Amount paid in cash at the door for a cash-on-delivery order. */
 export function cashOnDeliveryEgp(order: OrderEmailOrder): number {
   return Math.max(0, order.totalEgp - order.shippingEgp);
@@ -387,7 +397,7 @@ function bankTransferPlaced(order: OrderEmailOrder, ctx: OrderEmailContext): Ren
     status: ['Order', 'Placed'],
     sentence: `Thanks, ${firstName(order)}. Send the total from your bank and we'll confirm your order as soon as the money arrives.`,
     blocks: [
-      pay ? amountRow([sentAmount(order, 'Send from your bank', true)]) : null,
+      pay ? amountRow([sentAmount(order, 'Send from your bank')]) : null,
       pay ? stepsRow([placeStep(order), ...pay.steps]) : null,
       pay?.button ? buttonRow(pay.button) : null,
       ...orderSummary(order, ctx, {
@@ -400,18 +410,12 @@ function bankTransferPlaced(order: OrderEmailOrder, ctx: OrderEmailContext): Ren
 }
 
 /**
- * A Bank Transfer amount in the shopper's currency, with the EGP total under it (the items and
- * totals are in Egyptian pounds, so the two amounts must not look like a mismatch).
+ * A Bank Transfer amount in the shopper's currency. The items and totals below are in the same
+ * currency (ATS-309), so no EGP amount is shown next to it.
  */
-function sentAmount(order: OrderEmailOrder, label: string, pricesNote: boolean): AmountCell {
-  if (!order.payIn || order.payIn.currency === 'EGP') {
-    return { label, amount: formatEgp(order.totalEgp) };
-  }
-  return {
-    label,
-    amount: formatPayIn(order.payIn),
-    note: `Same total as ${formatEgp(order.totalEgp)}.${pricesNote ? ' Item prices below are in EGP.' : ''}`,
-  };
+function sentAmount(order: OrderEmailOrder, label: string): AmountCell {
+  if (order.payIn) return { label, amount: formatPayIn(order.payIn) };
+  return { label, amount: shopperAmount(order, order.shopper.total) ?? 'The total' };
 }
 
 /**
@@ -489,9 +493,12 @@ function deliveryFeeSet(order: OrderEmailOrder, ctx: OrderEmailContext, changed:
 function paidConfirmed(order: OrderEmailOrder, ctx: OrderEmailContext): RenderedEmail {
   const bank = order.paymentMethod === 'bank-transfer';
   const name = methodName(order);
-  const cell: AmountCell = bank
-    ? sentAmount(order, `Paid by ${name}`, false)
-    : { label: `Paid by ${name}`, amount: formatEgp(order.totalEgp) };
+  const paid = shopperAmount(order, order.shopper.total);
+  const cell: AmountCell | null = bank
+    ? sentAmount(order, `Paid by ${name}`)
+    : paid
+      ? { label: `Paid by ${name}`, amount: paid }
+      : null;
   const cardAbroad = order.paymentMethod === 'paymob' && order.isInternational;
   return renderShopper(order, ctx, {
     subject: `Payment received – order ${order.ref} is confirmed`,
@@ -500,10 +507,10 @@ function paidConfirmed(order: OrderEmailOrder, ctx: OrderEmailContext): Rendered
     sentence: `Thanks, ${firstName(order)}. We're getting your order ready and will email you when it's on its way.`,
     progress: 1,
     blocks: [
-      amountRow([cell], true),
+      cell ? amountRow([cell], true) : null,
       cardAbroad
         ? noteRow(
-            'You were charged in Egyptian pounds (EGP). Your bank converts it to your currency, so the amount on your statement may differ slightly.',
+            'Your bank converts the payment to your currency, so the amount on your statement may differ slightly.',
             TEXT_MUTED,
           )
         : null,
@@ -571,7 +578,7 @@ function orderShipped(order: OrderEmailOrder, ctx: OrderEmailContext): RenderedE
           ])
         : null,
       boxesRow([{ label: 'On its way to', lines: addressLines(order) }], 32),
-      itemsRow('In This Delivery', order.lines, ctx, { prices: false }),
+      itemsRow('In This Delivery', order, order.lines, ctx, { prices: false }),
       view ? buttonRow(view, 8) : null,
     ],
   });
@@ -582,7 +589,7 @@ function orderDelivered(order: OrderEmailOrder, ctx: OrderEmailContext): Rendere
   const waLink = whatsappChatUrl(ctx.whatsappNumber.trim());
   const shown = order.lines.slice(0, 3);
   // Edge to edge across 600px: ask ImageKit for twice the shown width.
-  const cards = itemCards(shown, ctx, false, Math.min(1200, Math.ceil(1200 / shown.length)));
+  const cards = itemCards(order, shown, ctx, false, Math.min(1200, Math.ceil(1200 / shown.length)));
   const more = order.lines.length - shown.length;
   const names = [...shown.map((line) => lineTitle(line)), ...(more > 0 ? [`+ ${more} more`] : [])];
   const help = waLink
@@ -607,7 +614,7 @@ function orderDelivered(order: OrderEmailOrder, ctx: OrderEmailContext): Rendere
     blocks: [
       {
         html: photoStrip(cards, names.join(' · ')),
-        text: `In this delivery:\n${itemsText(order.lines, false)}`,
+        text: `In this delivery:\n${itemsText(order, order.lines, false)}`,
       },
       {
         html: section(
@@ -637,12 +644,13 @@ function paymentFailed(order: OrderEmailOrder, ctx: OrderEmailContext): Rendered
       amountRow([
         {
           label: 'Charged',
-          amount: formatEgp(0),
+          // Abroad: no amount in pounds (ATS-309).
+          amount: order.isInternational ? 'Nothing' : formatEgp(0),
           note: "You haven't been charged. Nothing left your account.",
         },
       ]),
       ctx.storefrontUrl ? buttonRow({ label: 'Shop Again', url: `${ctx.storefrontUrl}/shop` }) : null,
-      itemsRow('Still Want These?', bought.length ? bought : order.lines, ctx, { prices: true }),
+      itemsRow('Still Want These?', order, bought.length ? bought : order.lines, ctx, { prices: true }),
     ],
   });
 }
@@ -848,20 +856,21 @@ function boxesRow(boxes: readonly InfoBox[], padTop = 24): Block {
 
 function itemsRow(
   title: string,
+  order: OrderEmailOrder,
   lines: readonly OrderEmailLine[],
   ctx: OrderEmailContext,
   opts: { prices: boolean },
 ): Block {
   const compactAfter = 4;
-  const cards = itemCards(lines, ctx, opts.prices, 520);
+  const cards = itemCards(order, lines, ctx, opts.prices, 520);
   // Twice the shown width: big photos in the grid, 64px thumbnails in the compact list.
   const grid = itemGrid(
-    cards.length > compactAfter ? itemCards(lines, ctx, opts.prices, 128) : cards,
+    cards.length > compactAfter ? itemCards(order, lines, ctx, opts.prices, 128) : cards,
     compactAfter,
   );
   return {
     html: section(`${sectionTitle(title)}${grid}`, 40),
-    text: `${title}:\n${itemsText(lines, opts.prices)}`,
+    text: `${title}:\n${itemsText(order, lines, opts.prices)}`,
   };
 }
 
@@ -880,14 +889,14 @@ interface SummaryOptions {
 
 /** Your Items, totals, Delivery To / Payment and the order link: the end of most order emails. */
 function orderSummary(order: OrderEmailOrder, ctx: OrderEmailContext, opts: SummaryOptions): Block[] {
-  const rows = opts.totalRows ?? totalsFor(order, opts.totalLabel ?? 'Total');
+  const rows = opts.totalRows ?? shopperTotals(order, opts.totalLabel ?? 'Total');
   const after = opts.youSend ? [opts.youSend] : [];
   const boxes: InfoBox[] = [];
   if (opts.delivery !== false) boxes.push({ label: 'Delivery to', lines: addressLines(order) });
   if (opts.payment) boxes.push({ label: 'Payment', lines: opts.payment });
   const view = orderButton(order, ctx);
   const out: Block[] = [
-    itemsRow('Your Items', order.lines, ctx, { prices: true }),
+    itemsRow('Your Items', order, order.lines, ctx, { prices: true }),
     {
       html: section(totals(rows, after), 8),
       text: [...rows, ...after].map(([label, value]) => `${label}: ${value}`).join('\n'),
@@ -896,6 +905,27 @@ function orderSummary(order: OrderEmailOrder, ctx: OrderEmailContext, opts: Summ
   if (boxes.length) out.push(boxesRow(boxes));
   if (view) out.push(opts.viewAsButton ? buttonRow(view) : linkRow(view));
   return out;
+}
+
+/**
+ * The totals of a shopper email: as `totalsFor()` for an Egypt order; for one shipped abroad, in
+ * the shopper's own currency only, leaving out a row the order didn't save (ATS-309).
+ */
+function shopperTotals(order: OrderEmailOrder, totalLabel: string): [string, string][] {
+  if (!order.isInternational) return totalsFor(order, totalLabel);
+  const money = order.shopper;
+  const rows: [string, string][] = [];
+  const subtotal = shopperAmount(order, money.subtotal);
+  if (subtotal) rows.push(['Subtotal', subtotal]);
+  if (money.shipping !== null) {
+    rows.push([
+      shippingLabel(order),
+      money.shipping > 0 ? (shopperAmount(order, money.shipping) ?? '') : 'Free',
+    ]);
+  }
+  const total = shopperAmount(order, money.total);
+  if (total) rows.push([totalLabel, total]);
+  return rows;
 }
 
 /** Shopper emails say we'll message them; the staff alert says the fee is not set yet. */
@@ -938,6 +968,7 @@ function methodName(order: OrderEmailOrder): string {
 }
 
 function itemCards(
+  order: OrderEmailOrder,
   lines: readonly OrderEmailLine[],
   ctx: OrderEmailContext,
   prices: boolean,
@@ -948,7 +979,8 @@ function itemCards(
     (line) => ({
       name: lineTitle(line),
       details: lineDetails(line),
-      price: prices ? formatEgp(line.lineEgp) : null,
+      // An older order shipped abroad saved only its total: its items show no price.
+      price: prices ? shopperAmount(order, line.shopperAmount) : null,
       imageSrc: imageUrl(line.imagePath, ctx, photoWidth),
       tags: line.dealTag ? [line.dealTag] : [],
     }),
@@ -1365,13 +1397,15 @@ function countryName(code: string): string {
   }
 }
 
-function itemsText(lines: readonly OrderEmailLine[], prices = true): string {
+function itemsText(order: OrderEmailOrder, lines: readonly OrderEmailLine[], prices = true): string {
   return lines
     .map((line) => {
+      const price = prices ? shopperAmount(order, line.shopperAmount) : null;
+      if (!price && line.giftName === null) return `- ${lineTitle(line)} (${lineDetails(line)})`;
       if (!prices) return `- ${lineTitle(line)} (${lineDetails(line)})`;
       return line.giftName !== null
         ? `  + ${line.giftName}: ${lineTitle(line)} (${lineDetails(line)}): Free`
-        : `- ${lineTitle(line)} (${lineDetails(line)}): ${formatEgp(line.lineEgp)}${line.dealTag ? ` (${line.dealTag})` : ''}`;
+        : `- ${lineTitle(line)} (${lineDetails(line)}): ${price}${line.dealTag ? ` (${line.dealTag})` : ''}`;
     })
     .join('\n');
 }

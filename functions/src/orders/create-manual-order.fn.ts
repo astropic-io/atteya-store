@@ -9,6 +9,7 @@ import { readOfferUses, savedOfferUses } from './offer-usage.js';
 import { utcDayKey } from './order-rate-limit.js';
 import { logGuestStoreCapReached, readOrderRateLimits } from './order-rate-limit-docs.js';
 import { newOrderViewKey } from './order-view.js';
+import { currencyFromCountry } from '../intl/currency-from-country.js';
 import { payInEntry, payInFor, payInRateFor, type PayInRate } from './pay-in.js';
 import { markupOrDefault, readStoredRates } from '../intl/exchange-rates.js';
 import { orderStaffNotesRef } from './order-staff-notes.js';
@@ -63,7 +64,8 @@ export const createInstapayOrder = onCall(adminCallableOptions(), (request) =>
 );
 
 /**
- * Outside Egypt. The shopper sends the total in the currency checkout showed them (`pricing.payIn`)
+ * Outside Egypt. The shopper sends the total in the delivery country's currency, the one checkout
+ * showed them (`pricing.payIn`, ATS-309: never EGP, whatever currency they browsed in)
  * from their bank to our IBAN and sends the receipt on WhatsApp; staff confirm once the money
  * arrives, which takes the items out of stock. Refused while no IBAN is set (`isBankTransferLive()`).
  */
@@ -98,7 +100,7 @@ async function createManualOrder<M extends ManualPaymentMethod>(
   const priced = await priceStoreOrder(db, input, customer.signedIn, customer.offerKeys);
   const { pricing, payInRate } =
     method === 'bank-transfer'
-      ? await withPayIn(db, priced.pricing, input.payInCurrency)
+      ? await withPayIn(db, priced.pricing, currencyFromCountry(input.shipping.country))
       : { pricing: priced.pricing, payInRate: null };
   const orderRef = db.collection('orders').doc();
   const viewKey = customer.kind === 'guest' ? newOrderViewKey() : null;

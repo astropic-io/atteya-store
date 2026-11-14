@@ -176,10 +176,6 @@
                   This is a large order, so we'll message you on WhatsApp to agree the delivery fee before we
                   send it.
                 </p>
-              } @else if (!abroadOrderingClosed() && paymentMethod() !== 'bank-transfer') {
-                <p class="font-label-sm opacity-70">
-                  Your total is calculated in Egyptian pounds when you place the order.
-                </p>
               }
             } @else if (summary.state === 'need-governorate') {
               <dl class="space-y-2 border-t border-outline-variant pt-4">

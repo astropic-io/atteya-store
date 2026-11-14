@@ -76,6 +76,21 @@ export class CurrencyService {
     this.#destroyRef.onDestroy(() => this.#clearTimer());
   }
 
+  /**
+   * Checkout only (ATS-309): the currency an order shipped to `country` is shown and priced in,
+   * whatever the visitor browsed in. Egypt is EGP. Abroad it is the delivery country's currency
+   * (`currencyFromCountry()`, USD for a country without a usable one), never EGP: null while the
+   * factors can't be read, so checkout shows no amount rather than the Egypt price. Not saved,
+   * and it never changes `entry()`.
+   */
+  async entryForDeliveryCountry(country: string): Promise<CurrencyEntry | null> {
+    const code = currencyFromCountry(country);
+    if (code === 'EGP') return EGP_ENTRY;
+    const map = await this.#loadMap();
+    if (!map) return null;
+    return factorsEntry(code, map) ?? factorsEntry('USD', map);
+  }
+
   /** Runs during SSR before the storefront HTML is rendered. */
   async prepareForServerRender(): Promise<void> {
     this.#resetForRequest();

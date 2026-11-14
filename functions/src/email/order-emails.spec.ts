@@ -34,8 +34,8 @@ function orderDoc(overrides: {
   email?: string | null;
   /** Large order: `domestic-agreed` shipping, fee not set (`false`) or set (`true`). */
   feeAgreed?: boolean;
-  /** Bank Transfer: the amount to send in the shopper's currency. */
-  payIn?: { currency: string; amount: number };
+  /** Bank Transfer: the amount to send in the shopper's currency (and, from ATS-304, each line). */
+  payIn?: { currency: string; amount: number; lines?: number[]; shipping?: number; factor?: number };
 }): Record<string, unknown> {
   const subtotal = overrides.subtotalEgp ?? 2370;
   const shipping = overrides.shippingEgp ?? 80;
@@ -307,7 +307,7 @@ describe('order email wording and amounts', () => {
     assert.ok(email.text.includes(`Shipping · paid: ${formatEgp(80)}`));
   });
 
-  it('paid online: full total, EGP note only abroad', () => {
+  it('paid online: full total; abroad a bank conversion note and no EGP (ATS-309)', () => {
     const egypt = renderOrderEmail(
       'paid-confirmed',
       read(orderDoc({ paymentMethod: 'paymob', status: 'confirmed' })),
@@ -323,7 +323,8 @@ describe('order email wording and amounts', () => {
       read(orderDoc({ paymentMethod: 'paymob', status: 'confirmed', country: 'GB' })),
       ctx,
     );
-    assert.match(abroad.text, /charged in Egyptian pounds/);
+    assert.match(abroad.text, /Your bank converts the payment to your currency/);
+    assert.doesNotMatch(abroad.text, /EGP|Egyptian pounds/);
     assert.match(abroad.text, /United Kingdom/);
   });
 
@@ -595,7 +596,7 @@ describe('Bank Transfer emails', () => {
   it('placed asks for the amount in the shopper currency with the bank details and the fee line', () => {
     const email = renderOrderEmail('bank-transfer-placed', read(bankDoc()), withBank);
     assert.match(email.text, /Send from your bank: \$205/);
-    assert.ok(email.text.includes(`Same total as ${formatEgp(2450)}. Item prices below are in EGP.`));
+    assert.doesNotMatch(email.text, /EGP|Same total as/);
     assert.match(email.text, /2\. Send \$205 from your bank/);
     assert.match(email.text, /You send: \$205/);
     assert.match(email.text, /IBAN: EG52 0003 0233 5001 6856 6300 0015 0/);
@@ -955,5 +956,83 @@ describe('Bold Black staff alert (<KEY>-222)', () => {
   it('leaves links out when the storefront address is not set', () => {
     const email = alert(cases.codPaid, { ...full, storefrontUrl: '' });
     assert.ok(!email.html.includes('Open This Order'));
+  });
+});
+
+describe('shoppers abroad never see EGP (ATS-309)', () => {
+  const BANK = {
+    accountName: 'Atteya Store',
+    bankName: 'National Bank of Egypt',
+    iban: 'EG520003023350016856630000150',
+    swift: 'NBEGEGCXXXX',
+  };
+  const full: OrderEmailContext = { ...withPay, bankTransfer: BANK };
+  // Order #AK6KDE on dev: Wilson Padel Balls QAR 35 · Shipping QAR 43 · Total QAR 78.
+  const qatar = (
+    status: string,
+    payIn = { currency: 'QAR', amount: 78, lines: [35], shipping: 43, factor: 0.096 },
+  ) =>
+    orderDoc({
+      paymentMethod: 'bank-transfer',
+      country: 'QA',
+      status,
+      subtotalEgp: 360,
+      shippingEgp: 450,
+      payIn,
+    });
+  const shopperKinds = [
+    ['bank-transfer-placed', 'pending'],
+    ['bank-transfer-confirmed', 'confirmed'],
+    ['order-shipped', 'shipped'],
+    ['order-delivered', 'delivered'],
+  ] as const;
+
+  it('every shopper email shows the items, shipping and total in the shopper currency only', () => {
+    for (const [kind, status] of shopperKinds) {
+      const email = renderOrderEmail(kind, read(qatar(status)), full);
+      assert.doesNotMatch(email.text, /EGP|E£|pounds/i, kind);
+      assert.doesNotMatch(email.html, /EGP|E£|pounds/i, kind);
+      assert.doesNotMatch(email.text, /\b360\b|\b450\b|\b810\b/, kind);
+    }
+    const placed = renderOrderEmail('bank-transfer-placed', read(qatar('pending')), full);
+    assert.match(placed.text, /Padel Racket <Pro> \(Size M · Qty 2\): QAR\s?35/);
+    assert.match(placed.text, /Subtotal: QAR\s?35/);
+    assert.match(placed.text, /Shipping: QAR\s?43/);
+    assert.match(placed.text, /Total: QAR\s?78/);
+  });
+
+  it('an older order abroad that saved only its total shows no item prices and only the total', () => {
+    const email = renderOrderEmail(
+      'bank-transfer-placed',
+      read(qatar('pending', { currency: 'QAR', amount: 78 } as never)),
+      full,
+    );
+    assert.doesNotMatch(email.text, /EGP/);
+    assert.match(email.text, /- Padel Racket <Pro> \(Size M · Qty 2\)\n/);
+    assert.doesNotMatch(email.text, /Subtotal|Shipping:/);
+    assert.match(email.text, /Total: QAR\s?78/);
+  });
+
+  it('a card order abroad with no amount in the shopper currency shows no EGP amount', () => {
+    const card = orderDoc({ paymentMethod: 'paymob', country: 'QA', status: 'confirmed' });
+    for (const kind of ['paid-confirmed', 'order-shipped', 'payment-failed'] as const) {
+      const email = renderOrderEmail(
+        kind,
+        read({ ...card, status: kind === 'payment-failed' ? 'failed' : 'confirmed' }),
+        full,
+      );
+      assert.doesNotMatch(email.text, /EGP|pounds/i, kind);
+      assert.doesNotMatch(email.html, /EGP|pounds/i, kind);
+    }
+  });
+
+  it('the staff alert keeps EGP', () => {
+    const email = renderOrderEmail('store-new-order', read(qatar('pending')), full);
+    assert.ok(email.text.includes(formatEgp(810)));
+  });
+
+  it('Egypt orders still show EGP', () => {
+    const email = renderOrderEmail('cod-placed', read(orderDoc({})), full);
+    assert.ok(email.text.includes(formatEgp(2450)));
   });
 });

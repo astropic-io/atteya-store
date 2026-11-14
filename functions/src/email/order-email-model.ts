@@ -4,10 +4,12 @@
  *
  * Every amount comes from the saved order in whole Egyptian pounds:
  * `pricing.subtotalEgp`, `pricing.shipping.priceEgp`, `pricing.totalEgp`.
- * Orders show EGP, except a Bank Transfer order's amount to send (`pricing.payIn`), which is in
- * the shopper's own currency.
+ * Staff emails show EGP. Shopper emails show `shopper` (ATS-309): EGP for an Egypt order, and
+ * only the shopper's own currency (`pricing.payIn`) for an order shipped abroad, never EGP or the
+ * Egypt price.
  */
 import { dealTag } from '../offers/engine/buy-x-get-y.js';
+import { shopperMoney, type ShopperMoney, type ShopperMoneyLine } from '../offers/engine/shopper-money.js';
 import { isDeliveryFeeToBeAgreed, readPayIn, type PayIn } from '../store/order-messages.js';
 
 export type OrderEmailPaymentMethod = 'paymob' | 'cash-on-delivery' | 'instapay' | 'bank-transfer';
@@ -24,6 +26,8 @@ export interface OrderEmailLine {
   readonly giftName: string | null;
   /** Buy X Get Y discount on the line ("Free", "1 free", "−50%"); `lineEgp` is after it. */
   readonly dealTag: string | null;
+  /** The line in the order's `shopper` currency (`lineEgp` for an Egypt order); null = no price shown. */
+  readonly shopperAmount: number | null;
 }
 
 export interface OrderEmailAddress {
@@ -75,6 +79,11 @@ export interface OrderEmailOrder {
   readonly guestCheckout: boolean;
   /** The shipping box the server picked (`pricing.shipping.boxId`, e.g. `box1`), or null. */
   readonly boxId: string | null;
+  /**
+   * What shopper emails show (ATS-309): the EGP amounts for an Egypt order, the amounts in the
+   * shopper's currency from `pricing.payIn` for an order shipped abroad (null = not shown).
+   */
+  readonly shopper: ShopperMoney;
 }
 
 /**
@@ -142,24 +151,36 @@ export function readOrderForEmail(
   const pricing = isRecord(data['pricing']) ? data['pricing'] : null;
   if (!pricing) return null;
   const rawLines = Array.isArray(pricing['lines']) ? pricing['lines'] : [];
-  const lines: OrderEmailLine[] = [];
-  for (const raw of rawLines) {
-    if (!isRecord(raw)) continue;
+  const lines: Omit<OrderEmailLine, 'shopperAmount'>[] = [];
+  // Index-matched to the saved lines (and so to `pricing.payIn.lines`), skipped ones included.
+  const moneyLines: ShopperMoneyLine[] = [];
+  const kept: number[] = [];
+  for (const [index, raw] of rawLines.entries()) {
+    if (!isRecord(raw)) {
+      moneyLines.push({ lineEgp: 0, wasEgp: null });
+      continue;
+    }
     const productId = text(raw['productId']);
     const quantity = wholeNumber(raw['quantity']);
-    if (!productId || quantity < 1) continue;
+    if (!productId || quantity < 1) {
+      moneyLines.push({ lineEgp: 0, wasEgp: null });
+      continue;
+    }
     const unitEgp = wholeNumber(raw['unitEgp']);
     const discountEgp = wholeNumber(raw['discountEgp']);
     // Pieces in a Buy X Get Y group pay the price before per-item offers: `fullEgp` is the line
     // before the discount. Older orders and other lines don't have it.
     const fullEgp = typeof raw['fullEgp'] === 'number' ? wholeNumber(raw['fullEgp']) : unitEgp * quantity;
+    const lineEgp = Math.max(0, fullEgp - discountEgp);
+    moneyLines.push({ lineEgp, wasEgp: discountEgp > 0 ? fullEgp : null });
+    kept.push(index);
     lines.push({
       productId,
       name: text(raw['name']),
       optionLabels: readOptionLabels(raw['optionLabels']),
       imagePath: text(raw['imagePath']) || null,
       quantity,
-      lineEgp: Math.max(0, fullEgp - discountEgp),
+      lineEgp,
       giftName: readGiftName(raw['gift']),
       dealTag: readDealTag(raw['deals'], quantity),
     });
@@ -175,6 +196,25 @@ export function readOrderForEmail(
       ? wholeNumber(storedTotal)
       : subtotalEgp + shippingEgp;
 
+  const isInternational = pricing['isInternational'] === true;
+  const payIn = isRecord(pricing['payIn']) ? pricing['payIn'] : null;
+  const shopper = shopperMoney({
+    abroad: isInternational,
+    lines: moneyLines,
+    subtotalEgp,
+    shippingEgp,
+    totalEgp,
+    payIn: payIn
+      ? {
+          currency: text(payIn['currency']),
+          amount: finiteNumber(payIn['amount']),
+          lines: Array.isArray(payIn['lines']) ? payIn['lines'].map(finiteNumber) : undefined,
+          shipping: typeof payIn['shipping'] === 'number' ? finiteNumber(payIn['shipping']) : undefined,
+          factor: typeof payIn['factor'] === 'number' ? finiteNumber(payIn['factor']) : undefined,
+        }
+      : null,
+  });
+
   const shippingAddress = isRecord(data['shipping']) ? data['shipping'] : {};
   const email = text(data['customerEmail']);
 
@@ -184,7 +224,7 @@ export function readOrderForEmail(
     status,
     paymentMethod,
     customerEmail: email.includes('@') ? email : null,
-    isInternational: pricing['isInternational'] === true,
+    isInternational,
     address: {
       fullName: text(shippingAddress['fullName']),
       line1: text(shippingAddress['line1']),
@@ -195,7 +235,7 @@ export function readOrderForEmail(
       country: text(shippingAddress['country']),
       phone: text(shippingAddress['phone']),
     },
-    lines,
+    lines: lines.map((line, at) => ({ ...line, shopperAmount: shopper.lines[kept[at]!] ?? null })),
     subtotalEgp,
     shippingEgp,
     totalEgp,
@@ -210,6 +250,7 @@ export function readOrderForEmail(
     createdAtMs: timestampMs(data['createdAt']),
     guestCheckout: !text(data['customerId']),
     boxId: (shipping && text(shipping['boxId'])) || null,
+    shopper,
   };
 }
 
@@ -238,6 +279,11 @@ function readOptionLabels(raw: unknown): { label: string; value: string }[] {
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+/** A finite number, or NaN (which the shopper amounts treat as unreadable). */
+function finiteNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : Number.NaN;
 }
 
 function wholeNumber(value: unknown): number {
