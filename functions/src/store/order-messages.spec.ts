@@ -273,9 +273,19 @@ describe('shopperWhatsappNumber', () => {
     assert.equal(shopperWhatsappNumber('00971501234567', 'AE'), '971501234567');
   });
 
-  it('adds the country code only after a local leading 0', () => {
-    assert.equal(shopperWhatsappNumber('050 123 4567', 'AE'), '971501234567');
-    assert.equal(shopperWhatsappNumber('07700 900123', 'GB'), '447700900123');
+  it('keeps a Qatar number typed with its country code (ATS-322)', () => {
+    assert.equal(shopperWhatsappNumber('+974 5500 0318', 'QA'), '97455000318');
+    assert.equal(shopperWhatsappNumber('00974 5500 0318', 'QA'), '97455000318');
+  });
+
+  it('refuses a leading 0 abroad instead of guessing the country code (ATS-322)', () => {
+    assert.equal(shopperWhatsappNumber('010 1234 5678', 'QA'), null);
+    assert.equal(shopperWhatsappNumber('050 123 4567', 'AE'), null);
+    assert.equal(shopperWhatsappNumber('07700 900123', 'GB'), null);
+  });
+
+  it('still accepts an Egypt number with a leading 0 for Egypt (ATS-322)', () => {
+    assert.equal(shopperWhatsappNumber('010 1234 5678', 'EG'), '201012345678');
   });
 
   it('gives up on numbers it cannot place safely', () => {

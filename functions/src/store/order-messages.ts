@@ -342,8 +342,9 @@ export function staffWhatsappText(
 /**
  * Phone number from checkout → international digits for `wa.me`, or null when it can't be done
  * safely (then the admin copies the number instead of opening a chat with a stranger).
- * Egypt: must be a mobile (010/011/012/015). Abroad without `+`/`00`: only a leading trunk `0`
- * is replaced by the country's dialling code; anything else is ambiguous.
+ * Egypt: must be a mobile (010/011/012/015). Abroad the number needs `+` or `00` and its country
+ * code (ATS-322): a leading `0` is never guessed into the country's code, because an Egyptian
+ * number typed before the country changed would become a number nobody can reach.
  */
 export function shopperWhatsappNumber(phone: string, country: string): string | null {
   const trimmed = phone.trim();
@@ -361,8 +362,7 @@ export function shopperWhatsappNumber(phone: string, country: string): string | 
     else if (digits.length === 10 && digits.startsWith('1')) intl = `20${digits}`;
     else intl = null;
   } else {
-    const code = DIALLING_CODES[country];
-    intl = code && digits.startsWith('0') && !digits.startsWith('00') ? `${code}${digits.slice(1)}` : null;
+    intl = null;
   }
 
   if (!intl) return null;
@@ -396,27 +396,6 @@ export function isEgyptMobile(phone: string): boolean {
 
 /** `+20 …` international mobile: 20 + 1[0125] + 8 digits. */
 const EGYPT_MOBILE = /^201[0125]\d{8}$/;
-
-/** Dialling codes for the checkout countries (`checkout-countries.ts`). */
-const DIALLING_CODES: Readonly<Record<string, string>> = {
-  EG: '20',
-  AE: '971',
-  AU: '61',
-  BH: '973',
-  CA: '1',
-  DE: '49',
-  ES: '34',
-  FR: '33',
-  GB: '44',
-  IT: '39',
-  JO: '962',
-  KW: '965',
-  NL: '31',
-  OM: '968',
-  QA: '974',
-  SA: '966',
-  US: '1',
-};
 
 /** Account name, IBAN, SWIFT and bank, one per line, or null when no IBAN is set. */
 function bankWhere(bank: BankTransferInfo): string | null {
