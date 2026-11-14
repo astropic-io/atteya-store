@@ -368,9 +368,15 @@ export class CurrencyService {
       return;
     }
     this.#map = map;
-    this.#apply(entryFor(code, map));
+    const entry = entryFor(code, map);
+    this.#apply(entry);
     this.#settled = true;
-    if (isPlatformBrowser(this.#platformId) && this.#document.documentElement.hasAttribute(BY_ZONE_ATTR)) {
+    // Only a changed price needs a render first; an EGP fallback changes nothing on screen.
+    if (
+      entry.code !== 'EGP' &&
+      isPlatformBrowser(this.#platformId) &&
+      this.#document.documentElement.hasAttribute(BY_ZONE_ATTR)
+    ) {
       // Time-zone path (ATS-321): the prices stay hidden until Angular has drawn the new currency,
       // so the EGP price the server rendered never shows for a frame.
       afterNextRender(
