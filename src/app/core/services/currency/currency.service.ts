@@ -3,6 +3,7 @@ import {
   afterNextRender,
   DestroyRef,
   inject,
+  Injector,
   PLATFORM_ID,
   REQUEST,
   Service,
@@ -59,6 +60,7 @@ export class CurrencyService {
   readonly #router = inject(Router);
   readonly #firestore = injectFirestore();
   readonly #destroyRef = inject(DestroyRef);
+  readonly #injector = inject(Injector);
   readonly #transfer = inject(TransferState);
   readonly #request = inject(REQUEST, { optional: true });
 
@@ -368,6 +370,19 @@ export class CurrencyService {
     this.#map = map;
     this.#apply(entryFor(code, map));
     this.#settled = true;
+    if (isPlatformBrowser(this.#platformId) && this.#document.documentElement.hasAttribute(BY_ZONE_ATTR)) {
+      // Time-zone path (ATS-321): the prices stay hidden until Angular has drawn the new currency,
+      // so the EGP price the server rendered never shows for a frame.
+      afterNextRender(
+        () => {
+          if (generation === this.#generation && this.#settled) {
+            this.#syncDocumentHints(this.#visitorCountry(), true, false);
+          }
+        },
+        { injector: this.#injector },
+      );
+      return;
+    }
     this.#syncDocumentHints(this.#visitorCountry(), true, false);
   }
 

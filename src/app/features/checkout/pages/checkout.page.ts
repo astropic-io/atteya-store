@@ -880,7 +880,7 @@ export class CheckoutPageComponent implements OnInit {
     // Prefill from AS-21 visitor geo when the code is on the checkout list.
     // Localhost has no CDN headers and a private IP, so /api/visitor-location
     // returns null — fall back to EG (store home market) once currency has settled.
-    // The time-zone fallback (ATS-313) picks a currency only, never visitorCountry.
+    // The time-zone fallback (ATS-313) also sets visitorCountry, when the zone maps to a country.
     effect(() => {
       if (this.#countryTouched()) return;
       const geo = this.#currency.visitorCountry();
