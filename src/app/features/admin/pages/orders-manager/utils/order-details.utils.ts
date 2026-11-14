@@ -6,11 +6,24 @@ import { orderDate } from '@core/services/orders/shopper-orders.service';
 import { normalizeImageKitPath } from '@shared/utils/image';
 import { formatMoney } from '@shared/utils/money';
 import type {
+  AbroadOrderView,
+  AbroadPriceCells,
+  AbroadTotalRow,
   OrderDetailItem,
   OrderDetailRow,
   OrderDetails,
   ProductStockLookup,
 } from '../models/order-admin.model';
+import {
+  abroadExtra,
+  abroadPrices,
+  abroadRateLine,
+  customerMoney,
+  customerUnit,
+  customerWas,
+  inPounds,
+  type AbroadPrices,
+} from './abroad-prices.utils';
 import { currentStockForLine, paymentLabel, selectionLabel } from './order-admin.utils';
 
 const SHORT_DATE = new Intl.DateTimeFormat('en-GB', {
@@ -79,14 +92,71 @@ function nextStep(stage: OrderStage, order: OrderDoc, money: (egp: number) => st
   }
 }
 
+const egpMoney = (amount: number) => formatMoney(amount, 'EGP', 0);
+
+/** One price three ways: customer's currency, pounds (null: rate unknown) and Egypt; "Free" at 0. */
+function abroadCells(prices: AbroadPrices, customer: number, egypt: number, free: boolean): AbroadPriceCells {
+  if (free) {
+    return {
+      customer: 'Free',
+      pounds: prices.egpPerUnit === null ? null : 'Free',
+      egypt: 'Free',
+      extra: null,
+    };
+  }
+  const pounds = inPounds(prices, customer);
+  return {
+    customer: customerMoney(prices, customer),
+    pounds: pounds === null ? null : egpMoney(pounds),
+    egypt: egpMoney(egypt),
+    extra: abroadExtra(pounds, egypt),
+  };
+}
+
+/** Subtotal, Shipping and Total of an order from abroad in three columns, and the grey note under them. */
+function abroadView(order: OrderDoc, prices: AbroadPrices): AbroadOrderView | null {
+  const lines = prices.lines;
+  const shippingAmount = prices.shipping;
+  if (!lines || shippingAmount === null) return null;
+  const pricing = order.pricing;
+  const subtotal = Number(lines.reduce((sum, value) => sum + value, 0).toFixed(prices.decimals));
+  const shippingLabelText = shippingLabel(order);
+  const totals: AbroadTotalRow[] = [
+    { label: 'Subtotal', ...abroadCells(prices, subtotal, pricing.subtotalDisplay, false) },
+  ];
+  if (pricing.shipping) {
+    totals.push({
+      label: shippingLabelText ? `Shipping · ${shippingLabelText}` : 'Shipping',
+      ...abroadCells(prices, shippingAmount, pricing.shipping.priceEgp, pricing.shipping.priceEgp === 0),
+    });
+  }
+  totals.push({
+    label: 'Total',
+    strong: true,
+    ...abroadCells(prices, prices.amount, prices.egyptTotal, false),
+  });
+  const poundsTotal = inPounds(prices, prices.amount);
+  return {
+    showPounds: prices.egpPerUnit !== null,
+    totals,
+    note:
+      poundsTotal === null
+        ? null
+        : {
+            extra: `${poundsTotal >= prices.egyptTotal ? '+' : '−'}${egpMoney(Math.abs(poundsTotal - prices.egyptTotal))}`,
+            rate: abroadRateLine(prices),
+          },
+  };
+}
+
 /** Every saved line as staff see it: photo, options, offer, prices and live stock. */
 function detailItems(
   order: OrderDoc,
   productsById: ReadonlyMap<string, ProductStockLookup>,
   money: (amount: number) => string,
+  abroad: AbroadPrices | null,
 ): OrderDetailItem[] {
-  const pricing = order.pricing;
-  return pricing.lines.map((line, index) => {
+  return order.pricing.lines.map((line, index) => {
     const product = productsById.get(line.productId) ?? null;
     const selection = line.selection ?? {};
     const stock = currentStockForLine(product, selection);
@@ -97,8 +167,9 @@ function detailItems(
         ? selectionLabel(product, selection)
         : '';
     const gift = line.gift ? line.gift.giftName || 'Free gift' : null;
-    const discounted = (line.discountEgp ?? 0) > 0;
-    return {
+    const discounted = (line.discountEgp ?? 0) > 0 && !gift;
+    const free = !!gift || line.lineDisplay === 0;
+    const base = {
       key: `${index}:${line.productId}`,
       productId: line.productId,
       productExists: product !== null,
@@ -109,9 +180,6 @@ function detailItems(
       quantity: line.quantity,
       gift,
       deal: line.deals?.length ? dealTag(line.deals, line.quantity) || null : null,
-      unit: gift ? null : `${money(line.unitDisplay)} × ${line.quantity}`,
-      price: gift || line.lineDisplay === 0 ? 'Free' : money(line.lineDisplay),
-      was: discounted && !gift ? money(line.fullEgp ?? line.unitDisplay * line.quantity) : null,
       stock:
         stock.status === 'missing'
           ? 'Product removed'
@@ -120,11 +188,49 @@ function detailItems(
             : `${stock.count} left${stock.count > 0 && stock.count <= 2 ? ' · Low' : ''}`,
       stockStatus: stock.status,
     };
+
+    // Order from abroad: prices in the customer's currency, in pounds and at the Egypt price.
+    const customerLine = abroad?.lines?.[index];
+    if (abroad && customerLine !== undefined) {
+      const unit = gift ? null : customerUnit(abroad, line.unitEgp);
+      const was = discounted ? customerWas(abroad, line) : null;
+      return {
+        ...base,
+        abroad: abroadCells(abroad, customerLine, line.lineDisplay, free),
+        unit: unit === null ? null : `${customerMoney(abroad, unit)} × ${line.quantity}`,
+        price: free ? 'Free' : customerMoney(abroad, customerLine),
+        was: was === null ? null : customerMoney(abroad, was),
+      };
+    }
+    return {
+      ...base,
+      abroad: null,
+      unit: gift ? null : `${money(line.unitDisplay)} × ${line.quantity}`,
+      price: free ? 'Free' : money(line.lineDisplay),
+      was: discounted ? money(line.fullEgp ?? line.unitDisplay * line.quantity) : null,
+    };
   });
 }
 
+/** Order from abroad (with saved line amounts): what the transfer comes to in pounds, and in Egypt. */
+function abroadPaymentRows(abroad: AbroadPrices | null): OrderDetailRow[] {
+  if (!abroad?.lines) return [];
+  const rows: OrderDetailRow[] = [];
+  const pounds = inPounds(abroad, abroad.amount);
+  if (pounds !== null) {
+    rows.push({ label: 'Comes to in pounds', value: `about ${egpMoney(pounds)}`, strong: true });
+  }
+  rows.push({ label: 'Same order in Egypt', value: egpMoney(abroad.egyptTotal), muted: true });
+  return rows;
+}
+
 /** Payment rows: what to receive, what came in, and the Card / Bank Transfer details. */
-function paymentRows(order: OrderDoc, stage: OrderStage, egp: (amount: number) => string): OrderDetailRow[] {
+function paymentRows(
+  order: OrderDoc,
+  stage: OrderStage,
+  egp: (amount: number) => string,
+  abroad: AbroadPrices | null,
+): OrderDetailRow[] {
   const rows: OrderDetailRow[] = [];
   const pricing = order.pricing;
   const due = paymentDue(stage, orderMessageInput(order));
@@ -135,6 +241,7 @@ function paymentRows(order: OrderDoc, stage: OrderStage, egp: (amount: number) =
         value: formatMoney(due.payIn.amount, due.payIn.currency, displayDecimals(due.payIn.currency)),
         strong: true,
       });
+      rows.push(...abroadPaymentRows(abroad));
     } else if (due.amountEgp != null) {
       rows.push({
         label: due.reason === 'shipping-fee' ? 'Delivery fee by InstaPay' : 'To receive by InstaPay',
@@ -152,6 +259,7 @@ function paymentRows(order: OrderDoc, stage: OrderStage, egp: (amount: number) =
         displayDecimals(pricing.payIn.currency),
       ),
     });
+    rows.push(...abroadPaymentRows(abroad));
   }
 
   if (
@@ -200,7 +308,8 @@ export function orderDetails(
     countryName(shipping.country),
   ].filter((part): part is string => !!part && part.trim() !== '');
 
-  const items = detailItems(order, productsById, money);
+  const prices = abroadPrices(order);
+  const items = detailItems(order, productsById, money, prices);
   const pieces = pricing.lines.filter((line) => !line.gift).reduce((sum, line) => sum + line.quantity, 0);
 
   const totals: OrderDetailRow[] = [
@@ -237,7 +346,7 @@ export function orderDetails(
     shippingBox: shippingLabel(order),
     payment: {
       method: paymentLabel(order),
-      rows: paymentRows(order, stage, egp),
+      rows: paymentRows(order, stage, egp, prices),
     },
     items,
     thumbs: items.filter((item) => item.imagePath).slice(0, 2),
@@ -245,6 +354,7 @@ export function orderDetails(
     totals,
     total,
     totalEgp,
+    abroad: prices ? abroadView(order, prices) : null,
     needsReview: 'needsReview' in order && order.needsReview === true,
     placedShort: shortOrderDate(order.createdAt),
   };

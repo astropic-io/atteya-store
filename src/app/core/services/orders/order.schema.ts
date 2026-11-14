@@ -107,6 +107,14 @@ export const OrderPricingSnapshotSchema = v.object({
     v.object({
       currency: v.pipe(v.string(), v.regex(/^[A-Z]{3}$/)),
       amount: v.pipe(v.number(), v.finite(), v.minValue(0)),
+      /** Not in EGP, orders from ATS-304 on: each line (index-matched, 0 for gifts) and the shipping fee. */
+      lines: v.optional(v.array(v.pipe(v.number(), v.finite(), v.minValue(0)))),
+      shipping: v.optional(v.pipe(v.number(), v.finite(), v.minValue(0))),
+      /** The factor `amount` was worked out with (shopper currency per EGP, markup in). */
+      factor: v.optional(v.pipe(v.number(), v.finite(), v.gtValue(0))),
+      /** The abroad markup and the rate before it (shopper currency per 1 EGP) behind `factor`. */
+      markupPercent: v.optional(v.pipe(v.number(), v.finite(), v.minValue(0))),
+      rate: v.optional(v.pipe(v.number(), v.finite(), v.gtValue(0))),
     }),
   ),
 });

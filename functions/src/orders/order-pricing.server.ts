@@ -50,6 +50,22 @@ export type OrderFulfilment =
 export interface OrderPayIn {
   readonly currency: string;
   readonly amount: number;
+  /**
+   * Not in EGP only (orders from ATS-304 on): each `pricing.lines` entry in the shopper's currency
+   * (index-matched, 0 for free gifts) and the shipping fee, rounded the same way as `amount`, so
+   * `lines` + `shipping` add up exactly to `amount`. Staff see them on the admin order page.
+   */
+  readonly lines?: readonly number[];
+  readonly shipping?: number;
+  /** The `settings/currency` factor `amount` was worked out with (shopper currency per EGP, markup in). */
+  readonly factor?: number;
+  /**
+   * The abroad markup and the rate before it (shopper currency per 1 EGP) that `factor` was built
+   * from (`intlPricing/config`, `intlPricing/rates`). Left out when they can't be read or don't
+   * match `factor`.
+   */
+  readonly markupPercent?: number;
+  readonly rate?: number;
 }
 
 /** One chosen option, saved as the shopper saw it (e.g. `Size` → `M`). */

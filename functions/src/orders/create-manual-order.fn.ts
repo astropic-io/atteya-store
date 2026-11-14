@@ -9,7 +9,9 @@ import { readOfferUses, savedOfferUses } from './offer-usage.js';
 import { utcDayKey } from './order-rate-limit.js';
 import { logGuestStoreCapReached, readOrderRateLimits } from './order-rate-limit-docs.js';
 import { newOrderViewKey } from './order-view.js';
-import { payInEntry, payInFor } from './pay-in.js';
+import { payInEntry, payInFor, payInRateFor } from './pay-in.js';
+import { DEFAULT_MARKUP_PERCENT, parseMarkup } from '../intl/currency-config.js';
+import { readStoredRates } from '../intl/exchange-rates.js';
 import { isBankTransferLive } from '../store/store-info.js';
 
 /**
@@ -149,14 +151,20 @@ async function createManualOrder<M extends ManualPaymentMethod>(
 
 /**
  * The order pricing plus the amount to send by Bank Transfer in the shopper's currency, from the
- * public `settings/currency` factors (the same ones checkout converted with).
+ * public `settings/currency` factors (the same ones checkout converted with). Outside EGP it also
+ * saves the markup and rate the factor was built from (read in the same snapshot), so staff see
+ * what the order comes to in pounds (ATS-304). Those two never change the amount.
  */
 async function withPayIn(
   db: Firestore,
   pricing: OrderPricingSnapshot,
   requested: string | null,
 ): Promise<OrderPricingSnapshot> {
-  const snap = await db.doc('settings/currency').get();
+  const [snap, configSnap, ratesSnap] = await db.getAll(
+    db.doc('settings/currency'),
+    db.doc('intlPricing/config'),
+    db.doc('intlPricing/rates'),
+  );
   const currencies = snap.get('currencies');
   const entry = payInEntry(requested, isRecord(currencies) ? currencies : {});
   if (!entry) {
@@ -165,7 +173,11 @@ async function withPayIn(
       "We couldn't work out the amount in your currency. Please try again in a moment.",
     );
   }
-  return { ...pricing, payIn: payInFor(pricing.lines, pricing.shipping, entry) };
+  const payIn = payInFor(pricing.lines, pricing.shipping, entry);
+  // intlPricing/rates without a markup saved was built with the default (refreshRates does the same).
+  const markupPercent = parseMarkup(configSnap.get('markupPercent')) ?? DEFAULT_MARKUP_PERCENT;
+  const rate = payInRateFor(entry, markupPercent, readStoredRates(ratesSnap.data()));
+  return { ...pricing, payIn: rate ? { ...payIn, ...rate } : payIn };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

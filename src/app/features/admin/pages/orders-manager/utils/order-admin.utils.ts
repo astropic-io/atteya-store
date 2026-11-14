@@ -18,6 +18,7 @@ import { shortOrderRef } from '@core/services/orders/order-ref';
 import type { OrderDoc, OrderStaffNotes } from '@core/services/orders/order.schema';
 import { formatMoney } from '@shared/utils/money';
 import { orderDate } from '@core/services/orders/shopper-orders.service';
+import { abroadPrices, abroadTag, customerMoney } from './abroad-prices.utils';
 import type {
   OrderCard,
   OrderDetails,
@@ -53,6 +54,9 @@ export function formatPlacedAt(order: OrderDoc): string {
 }
 
 export function formatOrderTotal(order: OrderDoc): string {
+  // Bank Transfer from abroad in another currency: what the customer pays (ATS-304).
+  const abroad = abroadPrices(order);
+  if (abroad) return customerMoney(abroad, abroad.amount);
   const total = formatMoney(
     order.pricing.totalDisplay,
     order.pricing.currency,
@@ -245,6 +249,9 @@ export function toOrderLineAdminRows(
     const updatedAtLabel = formatOrderDate(order.updatedAt);
     const payLabel = paymentLabel(order);
     const orderTotalLabel = formatOrderTotal(order);
+    const abroad = abroadPrices(order);
+    const egyptTotalLabel = abroad ? `${formatMoney(abroad.egyptTotal, 'EGP', 0)} in Egypt` : null;
+    const abroadTagLabel = abroad ? abroadTag(abroad) : null;
     const actions = orderActions(order, notesById.get(order.id) ?? null);
 
     order.pricing.lines.forEach((line, index) => {
@@ -275,6 +282,8 @@ export function toOrderLineAdminRows(
         currentStock: stock.count,
         stockStatus: stock.status,
         orderTotalLabel,
+        egyptTotalLabel,
+        abroadTag: abroadTagLabel,
         phone: order.shipping.phone,
         isFirstLine: index === 0,
         ...actions,

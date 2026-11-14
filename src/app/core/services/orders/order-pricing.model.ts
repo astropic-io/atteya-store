@@ -27,7 +27,22 @@ export interface OrderPricingSnapshot {
     | 'international-paymob'
     | 'international-bank-transfer';
   /** Bank Transfer only: the amount to send in the shopper's currency, worked out by the server. */
-  readonly payIn?: { readonly currency: string; readonly amount: number };
+  readonly payIn?: OrderPayIn;
+}
+
+/**
+ * Bank Transfer: what the shopper sends, in their currency. Outside EGP, orders from ATS-304 on
+ * also keep each line's amount (index-matched to `lines`, 0 for gifts), the shipping amount, the
+ * factor, and the markup and rate the factor was built from (left out when unreadable).
+ */
+export interface OrderPayIn {
+  readonly currency: string;
+  readonly amount: number;
+  readonly lines?: readonly number[];
+  readonly shipping?: number;
+  readonly factor?: number;
+  readonly markupPercent?: number;
+  readonly rate?: number;
 }
 
 export interface OrderLinePrice {

@@ -79,7 +79,7 @@ import type { OrderDetails } from '../../models/order-admin.model';
       <h3 class="admin-order-box__title">Payment</h3>
       <p class="font-bold!">{{ d.payment.method }}</p>
       @for (row of d.payment.rows; track row.label) {
-        <div class="admin-order-pair">
+        <div class="admin-order-pair" [class.admin-order-muted]="row.muted">
           <span>{{ row.label }}</span>
           <span [class.font-bold!]="row.strong" class="break-all">{{ row.value }}</span>
         </div>
