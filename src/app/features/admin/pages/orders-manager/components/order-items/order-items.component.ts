@@ -88,7 +88,7 @@ import type { OrderDetails } from '../../models/order-admin.model';
       </ul>
 
       @if (a) {
-        <div class="elements-start-col items-stretch! gap-2 pt-3 border-t border-outline-variant">
+        <div class="admin-order-totals">
           @for (row of a.totals; track row.label) {
             <div
               role="group"
@@ -132,9 +132,7 @@ import type { OrderDetails } from '../../models/order-admin.model';
           }
         </div>
       } @else {
-        <dl
-          class="elements-start-col items-stretch! gap-2 pt-3 border-t border-outline-variant @xl:ms-auto @xl:w-80"
-        >
+        <dl class="admin-order-totals @xl:ms-auto @xl:w-80">
           @for (row of d.totals; track row.label) {
             <div class="admin-order-pair">
               <dt>{{ row.label }}</dt>

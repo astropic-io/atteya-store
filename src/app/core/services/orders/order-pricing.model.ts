@@ -32,8 +32,8 @@ export interface OrderPricingSnapshot {
 
 /**
  * Bank Transfer: what the shopper sends, in their currency. Outside EGP, orders from ATS-304 on
- * also keep each line's amount (index-matched to `lines`, 0 for gifts), the shipping amount, the
- * factor, and the markup and rate the factor was built from (left out when unreadable).
+ * also keep each line's amount (index-matched to `lines`, 0 for gifts), the shipping amount and the
+ * factor. The markup and rate behind the factor are staff-only (`orderStaffNotes.payInRate`).
  */
 export interface OrderPayIn {
   readonly currency: string;
@@ -41,8 +41,6 @@ export interface OrderPayIn {
   readonly lines?: readonly number[];
   readonly shipping?: number;
   readonly factor?: number;
-  readonly markupPercent?: number;
-  readonly rate?: number;
 }
 
 export interface OrderLinePrice {

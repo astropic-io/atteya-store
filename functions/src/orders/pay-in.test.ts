@@ -90,6 +90,17 @@ describe('payInFor', () => {
     assert.equal(result.lines?.length, lines.length);
   });
 
+  it('line and shipping amounts round to the amount for 3-decimal currencies', () => {
+    const bhd = { code: 'BHD', factor: 0.0108 };
+    const lines = [
+      { unitEgp: 1234, quantity: 3, lineDisplay: 3702 },
+      { unitEgp: 877, quantity: 2, lineDisplay: 877, fullEgp: 1754 },
+    ];
+    const result = payInFor(lines, { priceEgp: 650 }, bhd);
+    const sum = (result.lines ?? []).reduce((a, b) => a + b, 0) + (result.shipping ?? 0);
+    assert.equal(Number(sum.toFixed(3)), result.amount);
+  });
+
   it('adds no line amounts when paid in EGP', () => {
     const result = payInFor([{ unitEgp: 100, quantity: 1, lineDisplay: 100 }], null, {
       code: 'EGP',

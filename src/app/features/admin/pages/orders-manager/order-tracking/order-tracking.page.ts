@@ -74,7 +74,9 @@ export class OrderTrackingPageComponent implements OnInit {
 
   readonly details = computed(() => {
     const data = this.dataResource.value();
-    return data ? orderDetails(data.order, data.productsById) : null;
+    return data
+      ? orderDetails(data.order, data.productsById, data.notesById.get(data.order.id) ?? null)
+      : null;
   });
 
   readonly steps = computed(() => {

@@ -53,9 +53,8 @@ export function formatPlacedAt(order: OrderDoc): string {
   return formatOrderDate(order.createdAt);
 }
 
-export function formatOrderTotal(order: OrderDoc): string {
+export function formatOrderTotal(order: OrderDoc, abroad = abroadPrices(order)): string {
   // Bank Transfer from abroad in another currency: what the customer pays (ATS-304).
-  const abroad = abroadPrices(order);
   if (abroad) return customerMoney(abroad, abroad.amount);
   const total = formatMoney(
     order.pricing.totalDisplay,
@@ -248,8 +247,8 @@ export function toOrderLineAdminRows(
     const placedAtLabel = formatPlacedAt(order);
     const updatedAtLabel = formatOrderDate(order.updatedAt);
     const payLabel = paymentLabel(order);
-    const orderTotalLabel = formatOrderTotal(order);
     const abroad = abroadPrices(order);
+    const orderTotalLabel = formatOrderTotal(order, abroad);
     const egyptTotalLabel = abroad ? `${formatMoney(abroad.egyptTotal, 'EGP', 0)} in Egypt` : null;
     const abroadTagLabel = abroad ? abroadTag(abroad) : null;
     const actions = orderActions(order, notesById.get(order.id) ?? null);

@@ -1,7 +1,7 @@
 import { orderStage, paymentDue, type OrderStage } from '@core/config/order-messages';
 import { dealTag, displayDecimals } from '@core/services/offers/engine';
 import { orderMessageInput } from '@core/services/orders/order-message-input';
-import type { OrderDoc } from '@core/services/orders/order.schema';
+import type { OrderDoc, OrderStaffNotes } from '@core/services/orders/order.schema';
 import { orderDate } from '@core/services/orders/shopper-orders.service';
 import { normalizeImageKitPath } from '@shared/utils/image';
 import { formatMoney } from '@shared/utils/money';
@@ -143,7 +143,8 @@ function abroadView(order: OrderDoc, prices: AbroadPrices): AbroadOrderView | nu
       poundsTotal === null
         ? null
         : {
-            extra: `${poundsTotal >= prices.egyptTotal ? '+' : '−'}${egpMoney(Math.abs(poundsTotal - prices.egyptTotal))}`,
+            extra:
+              poundsTotal > prices.egyptTotal ? `+${egpMoney(poundsTotal - prices.egyptTotal)}` : egpMoney(0),
             rate: abroadRateLine(prices),
           },
   };
@@ -192,7 +193,8 @@ function detailItems(
     // Order from abroad: prices in the customer's currency, in pounds and at the Egypt price.
     const customerLine = abroad?.lines?.[index];
     if (abroad && customerLine !== undefined) {
-      const unit = gift ? null : customerUnit(abroad, line.unitEgp);
+      // A Buy X Get Y group line is converted as a whole, so a converted unit × quantity wouldn't match it.
+      const unit = gift || line.fullEgp !== undefined ? null : customerUnit(abroad, line.unitEgp);
       const was = discounted ? customerWas(abroad, line) : null;
       return {
         ...base,
@@ -291,6 +293,7 @@ function paymentRows(
 export function orderDetails(
   order: OrderDoc,
   productsById: ReadonlyMap<string, ProductStockLookup>,
+  notes: OrderStaffNotes | null = null,
 ): OrderDetails {
   const pricing = order.pricing;
   const decimals = displayDecimals(pricing.currency);
@@ -308,7 +311,7 @@ export function orderDetails(
     countryName(shipping.country),
   ].filter((part): part is string => !!part && part.trim() !== '');
 
-  const prices = abroadPrices(order);
+  const prices = abroadPrices(order, notes?.payInRate ?? null);
   const items = detailItems(order, productsById, money, prices);
   const pieces = pricing.lines.filter((line) => !line.gift).reduce((sum, line) => sum + line.quantity, 0);
 

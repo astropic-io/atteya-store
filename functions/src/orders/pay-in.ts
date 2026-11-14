@@ -35,7 +35,8 @@ export function payInEntry(
  * amount to send matches what checkout showed: each line converted on its own (pieces in a Buy X
  * Get Y group as a whole line, the others unit price × quantity; free gifts 0), then the shipping
  * fee, each with `toDisplayAmount()`'s rounding. Outside EGP it also keeps each line's amount,
- * the shipping amount and the factor, for the admin order page (ATS-304); they add up to `amount`.
+ * the shipping amount and the factor, for the admin order page (ATS-304); rounded to the
+ * currency's decimals, they add up to `amount`.
  */
 export function payInFor(
   lines: readonly Pick<OrderLinePrice, 'unitEgp' | 'quantity' | 'lineDisplay' | 'fullEgp' | 'gift'>[],
@@ -64,6 +65,13 @@ export function payInFor(
   };
 }
 
+/** The abroad markup and rate behind a pay-in factor, saved staff-only in `orderStaffNotes`. */
+export interface PayInRate {
+  readonly markupPercent: number;
+  /** Shopper currency per 1 EGP, before the markup. */
+  readonly rate: number;
+}
+
 /**
  * The abroad markup and the rate before it that `factor` was built from (`intlPricing/config`
  * `markupPercent`, `intlPricing/rates` `rates[code]`), only when they rebuild `factor`
@@ -74,7 +82,7 @@ export function payInRateFor(
   entry: CurrencyEntry,
   markupPercent: number | null,
   rates: Readonly<Record<string, number>> | null,
-): { readonly markupPercent: number; readonly rate: number } | null {
+): PayInRate | null {
   if (entry.code === 'EGP' || markupPercent === null || !rates) return null;
   const rate = rates[entry.code];
   if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) return null;

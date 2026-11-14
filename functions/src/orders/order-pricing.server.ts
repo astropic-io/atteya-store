@@ -53,19 +53,14 @@ export interface OrderPayIn {
   /**
    * Not in EGP only (orders from ATS-304 on): each `pricing.lines` entry in the shopper's currency
    * (index-matched, 0 for free gifts) and the shipping fee, rounded the same way as `amount`, so
-   * `lines` + `shipping` add up exactly to `amount`. Staff see them on the admin order page.
+   * `lines` + `shipping` add up to `amount` once rounded to the currency's decimals. Staff see
+   * them on the admin order page. The markup and rate behind `factor` are staff-only, so they go to
+   * `orderStaffNotes/{orderId}.payInRate` instead (the owner can read this doc).
    */
   readonly lines?: readonly number[];
   readonly shipping?: number;
-  /** The `settings/currency` factor `amount` was worked out with (shopper currency per EGP, markup in). */
+  /** The public `settings/currency` factor `amount` was worked out with (shopper currency per EGP). */
   readonly factor?: number;
-  /**
-   * The abroad markup and the rate before it (shopper currency per 1 EGP) that `factor` was built
-   * from (`intlPricing/config`, `intlPricing/rates`). Left out when they can't be read or don't
-   * match `factor`.
-   */
-  readonly markupPercent?: number;
-  readonly rate?: number;
 }
 
 /** One chosen option, saved as the shopper saw it (e.g. `Size` → `M`). */

@@ -93,7 +93,8 @@ export async function refreshRates(
   }
 }
 
-function markupOrDefault(data: DocumentData | undefined): number {
+/** The saved abroad markup, or the default when none is saved (what `settings/currency` was built with). */
+export function markupOrDefault(data: DocumentData | undefined): number {
   return parseMarkup(data?.['markupPercent']) ?? DEFAULT_MARKUP_PERCENT;
 }
 

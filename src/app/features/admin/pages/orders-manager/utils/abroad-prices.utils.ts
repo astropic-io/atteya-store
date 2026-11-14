@@ -1,11 +1,12 @@
 import { displayDecimals, toDisplayAmount, type CurrencyEntry } from '@core/services/offers/engine';
-import type { OrderDoc } from '@core/services/orders/order.schema';
+import type { OrderDoc, OrderStaffNotes } from '@core/services/orders/order.schema';
 import { formatMoney } from '@shared/utils/money';
 
 /**
  * A Bank Transfer order shipped abroad and paid in another currency (ATS-304): what the customer
  * pays in their currency, what that comes to in pounds, and the same order's price in Egypt.
- * Everything comes from the order's own `pricing.payIn`; nothing about currencies is fixed here.
+ * Everything comes from the order's own `pricing.payIn` and, for the rate, its staff-only
+ * `orderStaffNotes.payInRate`; nothing about currencies is fixed here.
  */
 export interface AbroadPrices {
   readonly currency: string;
@@ -22,15 +23,16 @@ export interface AbroadPrices {
   readonly shipping: number | null;
   /** The factor `amount` was worked out with, for struck-out prices; null when not saved. */
   readonly entry: CurrencyEntry | null;
-  /** Pounds per 1 unit of the customer's currency, before the abroad markup; null when unknown. */
+  /** Pounds per 1 unit of the customer's currency on the day (1 ÷ the saved rate); null when not saved. */
   readonly egpPerUnit: number | null;
   readonly markupPercent: number | null;
-  /** 1 ÷ `payIn.rate` was saved (the rate on the day), not worked back from the factor. */
-  readonly rateSaved: boolean;
 }
 
 /** The abroad prices of an order, or null for every other order (they look as before). */
-export function abroadPrices(order: OrderDoc): AbroadPrices | null {
+export function abroadPrices(
+  order: OrderDoc,
+  payInRate: OrderStaffNotes['payInRate'] = null,
+): AbroadPrices | null {
   const pricing = order.pricing;
   const payIn = pricing.payIn;
   if (order.paymentMethod !== 'bank-transfer' || !payIn || payIn.currency === 'EGP') return null;
@@ -41,12 +43,6 @@ export function abroadPrices(order: OrderDoc): AbroadPrices | null {
     pricing.currency === 'EGP' &&
     payIn.lines.length === pricing.lines.length &&
     sameAmount(payIn.lines.reduce((sum, value) => sum + value, 0) + payIn.shipping, payIn.amount, decimals);
-  const markupPercent = payIn.markupPercent ?? null;
-  const egpPerUnit = payIn.rate
-    ? 1 / payIn.rate
-    : payIn.factor && markupPercent !== null
-      ? (1 + markupPercent / 100) / payIn.factor
-      : null;
   return {
     currency: payIn.currency,
     decimals,
@@ -55,9 +51,8 @@ export function abroadPrices(order: OrderDoc): AbroadPrices | null {
     lines: linesSaved ? (payIn.lines ?? null) : null,
     shipping: linesSaved ? (payIn.shipping ?? null) : null,
     entry: payIn.factor ? { code: payIn.currency, factor: payIn.factor } : null,
-    egpPerUnit,
-    markupPercent,
-    rateSaved: !!payIn.rate,
+    egpPerUnit: payInRate ? 1 / payInRate.rate : null,
+    markupPercent: payInRate?.markupPercent ?? null,
   };
 }
 
@@ -84,7 +79,7 @@ export function abroadExtra(pounds: number | null, egypt: number): string | null
 
 /** "Abroad prices +40% · rate on the day 1 QAR = 14.66 EGP"; null without the saved % and rate. */
 export function abroadRateLine(prices: AbroadPrices): string | null {
-  if (!prices.rateSaved || prices.egpPerUnit === null || prices.markupPercent === null) return null;
+  if (prices.egpPerUnit === null || prices.markupPercent === null) return null;
   const rate = prices.egpPerUnit.toLocaleString('en-US', {
     maximumFractionDigits: prices.egpPerUnit >= 1 ? 2 : 4,
     maximumSignificantDigits: prices.egpPerUnit >= 1 ? undefined : 3,

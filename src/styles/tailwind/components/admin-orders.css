@@ -50,6 +50,11 @@
     @apply @xl:col-span-1 @xl:block @xl:text-end;
   }
 
+  /* Subtotal, Shipping and Total under the items. */
+  .admin-order-totals {
+    @apply elements-start-col items-stretch! gap-2 pt-3 border-t border-outline-variant;
+  }
+
   /* Small outlined tag beside a name or total: "Guest", "Abroad · QAR" (ATS-304). */
   .admin-order-tag {
     @apply px-1.5 border border-outline-variant border-shape font-label-sm whitespace-nowrap;
