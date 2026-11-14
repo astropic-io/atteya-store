@@ -512,6 +512,53 @@ ${extra}
 </table>`;
 }
 
+/**
+ * Staff totals of an order shipped abroad (ATS-320): a label column and one column per price
+ * (Customer Pays / In Pounds / Price in Egypt), the last row the total in bold under a 3px black rule
+ * like `totals()`, and an optional grey note under the table. `null` cells show a dash.
+ */
+export function priceTable(
+  headers: readonly string[],
+  rows: readonly { readonly label: string; readonly cells: readonly (string | null)[] }[],
+  note: string | null = null,
+): string {
+  const labelWidth = 28;
+  const cellWidth = `${Math.floor((100 - labelWidth) / Math.max(1, headers.length))}%`;
+  const head = headers
+    .map(
+      (header) =>
+        `<td align="right" valign="bottom" width="${cellWidth}" style="padding:0 0 8px 8px;${FONT}font-size:11px;font-weight:600;letter-spacing:1px;line-height:1.3;color:${TEXT_MUTED};">${escapeHtml(header.toUpperCase())}</td>`,
+    )
+    .join('\n');
+  const body = rows
+    .map((row, index) => {
+      const isTotal = index === rows.length - 1;
+      const style = isTotal
+        ? `padding:12px 0 4px 8px;${FONT}font-size:17px;line-height:1.3;font-weight:800;color:${INK};border-top:1px solid ${GREY_LINE};`
+        : `padding:4px 0 4px 8px;${FONT}font-size:14px;line-height:1.4;color:${INK};`;
+      const cells = row.cells
+        .map((cell) => `<td align="right" valign="top" style="${style}">${escapeHtml(cell ?? '—')}</td>`)
+        .join('\n');
+      return `<tr>
+<td valign="top" style="${style}padding-left:0;">${escapeHtml(row.label)}</td>
+${cells}
+</tr>`;
+    })
+    .join('\n');
+  const noteRow = note
+    ? `<tr><td colspan="${headers.length + 1}" style="padding:10px 0 0;${FONT}font-size:13px;line-height:1.5;color:${TEXT_MUTED};">${escapeHtml(note)}</td></tr>`
+    : '';
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:3px solid ${INK};table-layout:fixed;">
+<tr><td colspan="${headers.length + 1}" style="height:12px;font-size:0;line-height:0;">&nbsp;</td></tr>
+<tr>
+<td width="${labelWidth}%" style="padding:0 0 8px;">&nbsp;</td>
+${head}
+</tr>
+${body}
+${noteRow}
+</table>`;
+}
+
 export interface InfoBox {
   readonly label: string;
   readonly lines: readonly string[];
