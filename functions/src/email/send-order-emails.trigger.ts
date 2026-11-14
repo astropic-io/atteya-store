@@ -4,7 +4,8 @@ import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { RESEND_API_KEY, RESEND_FROM, RESEND_REPLY_TO, STORE_ALERT_EMAIL } from './email-config.js';
 import { emailContext } from './email-context.js';
 import { claimId, orderEmailsForWrite, type OrderEmailKind } from './order-email-events.js';
-import { readOrderForEmail, type OrderEmailOrder } from './order-email-model.js';
+import { readOrderForEmail, readStaffRate, type OrderEmailOrder } from './order-email-model.js';
+import { orderStaffNotesRef } from '../orders/order-staff-notes.js';
 import { renderOrderEmail, type OrderEmailContext } from './order-email-templates.js';
 import { sendResendEmail } from './resend-client.js';
 
@@ -29,7 +30,8 @@ export const sendOrderEmails = onDocumentWritten(
     if (!after || kinds.length === 0) return;
 
     const db = getFirestore();
-    const order = await withMissingNames(db, after);
+    const named = await withMissingNames(db, after);
+    const order = kinds.includes('store-new-order') ? await withStaffRate(db, named) : named;
     const ctx = emailContext();
 
     for (const kind of kinds) {
@@ -92,6 +94,26 @@ function recipientFor(kind: OrderEmailKind, order: OrderEmailOrder): string | nu
     return alert.includes('@') ? alert : null;
   }
   return order.customerEmail;
+}
+
+/**
+ * The staff alert of an order shipped abroad: the rate behind its pay-in amount
+ * (`orderStaffNotes.payInRate`, written in the same transaction as the order), so the alert can
+ * say what the shopper's amount comes to in pounds (ATS-320). Shopper emails never read it.
+ */
+async function withStaffRate(db: Firestore, order: OrderEmailOrder): Promise<OrderEmailOrder> {
+  if (!order.isInternational || order.shopper.currency === 'EGP') return order;
+  try {
+    const snap = await orderStaffNotesRef(db, order.id).get();
+    return { ...order, staffRate: snap.exists ? readStaffRate(snap.get('payInRate')) : null };
+  } catch (error: unknown) {
+    // The alert still goes out, with the amount in the shopper's currency and the Egypt price.
+    logger.warn('Order email: could not read the abroad rate', {
+      orderId: order.id,
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+    return order;
+  }
 }
 
 /** Orders placed before line names were saved: fill names from the product docs. */

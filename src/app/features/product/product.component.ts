@@ -27,6 +27,7 @@ import {
   canShopOffer,
   type OfferLink,
   offerTitleVisible,
+  offerTextFor,
 } from '@core/services/offers/offer-shop';
 import { FavoritesGateService, FavoritesService } from '@core/services/favorites';
 import {
@@ -424,8 +425,8 @@ export class ProductComponent {
   ): { badges: string[]; offerLines: ProductOfferLine[] } {
     const shown: string[] = [];
     const lines: ProductOfferLine[] = [];
-    // An amount in EGP means nothing to a visitor paying in another currency.
-    const hideEgp = this.#currency.selected() !== 'EGP';
+    // An amount in EGP means nothing to a visitor paying in another currency (ATS-309).
+    const currency = this.#currency.selected();
     const country = this.#currency.visitorCountry();
     for (const badge of badges) {
       const kind = badge.labelOnly
@@ -443,7 +444,7 @@ export class ProductComponent {
         // Free shipping applies to Egypt orders only, so it is never promised abroad.
         if (offer && !offerTitleVisible(offer, country)) continue;
         const title = offer?.title.trim() || badge.text;
-        if (lines.some((line) => line.text === title) || (hideEgp && /\bEGP\b/.test(title))) continue;
+        if (lines.some((line) => line.text === title) || offerTextFor(title, currency) === '') continue;
         // A Bundle price line opens the offer's Shop page and a Bundle & Save line the offer's own
         // page with this product already picked; there the shopper picks the other pieces.
         // The Bundle & Save offer this product is in shows as the black strip instead (ATS-281).

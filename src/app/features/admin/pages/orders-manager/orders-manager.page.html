@@ -203,6 +203,9 @@
                         <span class="admin-order-tag">{{ tag }}</span>
                       }
                     </span>
+                    @if (d?.deliveryToConfirm; as toConfirm) {
+                      <span class="admin-order-tag">{{ toConfirm }}</span>
+                    }
                     @if (row.egyptTotalLabel; as egypt) {
                       <span class="admin-order-muted whitespace-nowrap">{{ egypt }}</span>
                     }

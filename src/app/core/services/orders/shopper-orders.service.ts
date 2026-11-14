@@ -8,6 +8,7 @@ import { orderStage } from '@core/config/order-messages';
 import { normalizeImageKitPath } from '@shared/utils/image';
 import { formatMoney } from '@shared/utils/money';
 import { orderMessageInput } from './order-message-input';
+import { formatShopperAmount, orderShopperMoney } from './order-shopper-money';
 import { shortOrderRef } from './order-ref';
 import { OrderSchema, ORDERS_COLLECTION, type OrderDoc } from './order.schema';
 import { orderStatusName } from './order-status-name';
@@ -20,7 +21,10 @@ export interface ShopperOrderRow {
   readonly ref: string;
   /** Placed date, e.g. "8 Nov 2026"; empty when unknown. */
   readonly placedOn: string;
-  /** Total in EGP from the saved order; "+ shipping" while a large order's fee is to be agreed. */
+  /**
+   * Total from the saved order: EGP for an Egypt order ("+ shipping" while a large order's fee is
+   * to be agreed), the shopper's own currency for one shipped abroad; empty when it has none.
+   */
   readonly total: string;
   readonly statusName: string;
   readonly itemCount: number;
@@ -101,8 +105,13 @@ export class ShopperOrdersService {
 export function toShopperOrderRow(order: OrderDoc): ShopperOrderRow {
   const input = orderMessageInput(order);
   const stage = orderStage(input);
-  const amount = formatMoney(input.totalEgp ?? order.pricing.subtotalEgp, 'EGP', 0);
-  const total = input.feeToBeAgreed ? `${amount} + shipping` : amount;
+  // An order shipped abroad shows only the currency the shopper pays in (ATS-309), never EGP.
+  const money = orderShopperMoney(order.pricing);
+  const amount =
+    money.currency === 'EGP'
+      ? formatMoney(input.totalEgp ?? order.pricing.subtotalEgp, 'EGP', 0)
+      : formatShopperAmount(money, money.total);
+  const total = amount === null ? '' : input.feeToBeAgreed ? `${amount} + shipping` : amount;
   const entry = returnEntry(order, Date.now());
   return {
     id: order.id,

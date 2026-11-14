@@ -1,5 +1,5 @@
 import type { OrderStage } from '@core/config/order-messages';
-import type { StaffOrderStatus } from '@core/config/order-status';
+import type { ReopenStatus, StaffOrderStatus } from '@core/config/order-status';
 import type { OrderDoc } from '@core/services/orders/order.schema';
 
 export type OrderStatusFilter = OrderDoc['status'] | 'all';
@@ -18,6 +18,19 @@ export interface OrderStatusMove {
   readonly status: StaffOrderStatus;
   /** "Shipped", or "Back to Confirmed" for a step back. */
   readonly label: string;
+  /**
+   * Confirmed, Shipped or Delivered: the shopper gets an email about it (only the first time the
+   * order gets there; the email is never sent twice).
+   */
+  readonly emailsShopper: boolean;
+}
+
+/** Reopen Order on a cancelled order (ATS-325): where it goes back to. */
+export interface OrderReopen {
+  /** The status before the cancel. */
+  readonly status: ReopenStatus;
+  /** Back to Confirmed: the items come out of stock again. */
+  readonly takesStock: boolean;
 }
 
 /** One saved status change, ready to show. */
@@ -84,6 +97,8 @@ export interface OrderLineAdminRow {
   readonly confirmAction: 'confirm-order' | 'confirm-payment' | null;
   /** The status dropdown: only the moves allowed from the current status (empty = no dropdown). */
   readonly statusMoves: readonly OrderStatusMove[];
+  /** Cancelled within 7 days (not Card, not Payment Failed): Reopen Order shows; else null. */
+  readonly reopen: OrderReopen | null;
   /** Items are out of stock for this order right now (a cancel puts them back). */
   readonly stockTaken: boolean;
   /** Every status change, oldest first (staff-only). */
@@ -196,6 +211,8 @@ export interface OrderDetails {
   readonly address: { readonly lines: readonly string[]; readonly copyText: string };
   /** "Box 2", "Box 1 (abroad)", "Large order · fee to be agreed". */
   readonly shippingBox: string | null;
+  /** "Delivery to be confirmed · Brazil" while an order abroad waits for its fee (ATS-314), else null. */
+  readonly deliveryToConfirm: string | null;
   readonly payment: { readonly method: string; readonly rows: readonly OrderDetailRow[] };
   readonly items: readonly OrderDetailItem[];
   /** Up to 2 items with a photo, for the list row (one on a phone). */

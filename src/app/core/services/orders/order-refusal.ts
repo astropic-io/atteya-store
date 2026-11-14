@@ -55,6 +55,25 @@ export function priceChangedFrom(error: unknown): boolean {
   return (details as { priceChanged?: unknown }).priceChanged === true;
 }
 
+/** The amount in the shopper's currency came out higher than checkout showed (ATS-311). */
+export function payInChangedFrom(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('details' in error)) return false;
+  const details = (error as { details?: unknown }).details;
+  if (typeof details !== 'object' || details === null) return false;
+  return (details as { payInChanged?: unknown }).payInChanged === true;
+}
+
+/** The amount in the shopper's currency the server worked out, from a `payInChanged` refusal, or null. */
+export function payInFrom(error: unknown): { readonly currency: string; readonly amount: number } | null {
+  if (!payInChangedFrom(error)) return null;
+  const payIn = (error as { details: { payIn?: unknown } }).details.payIn;
+  if (typeof payIn !== 'object' || payIn === null) return null;
+  const { currency, amount } = payIn as { currency?: unknown; amount?: unknown };
+  if (typeof currency !== 'string' || !currency) return null;
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0) return null;
+  return { currency, amount };
+}
+
 /**
  * Which offer checkout leaves out after a refused order, and the `changedOfferId` to remember for
  * the next try. An `endedOfferId` is always left out. A `changedOfferId` is left out only when the

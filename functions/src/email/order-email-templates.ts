@@ -33,6 +33,7 @@ import {
   outlinedButton,
   paragraphHtml,
   photoStrip,
+  priceTable,
   section,
   sectionTitle,
   siteLabel,
@@ -117,6 +118,16 @@ export function formatPayIn(payIn: PayIn): string {
   }
 }
 
+/**
+ * An amount in a SHOPPER email (ATS-309): EGP for an Egypt order, the shopper's own currency for
+ * an order shipped abroad (`order.shopper`), so a shopper abroad never sees EGP. Null = none.
+ */
+function shopperAmount(order: OrderEmailOrder, amount: number | null): string | null {
+  if (amount === null) return null;
+  const currency = order.shopper.currency;
+  return currency === 'EGP' ? formatEgp(amount) : formatPayIn({ currency, amount });
+}
+
 /** Amount paid in cash at the door for a cash-on-delivery order. */
 export function cashOnDeliveryEgp(order: OrderEmailOrder): number {
   return Math.max(0, order.totalEgp - order.shippingEgp);
@@ -152,6 +163,8 @@ export function renderOrderEmail(
       return orderShipped(order, ctx);
     case 'order-delivered':
       return orderDelivered(order, ctx);
+    case 'order-reopened':
+      return orderReopened(order, ctx);
     case 'store-new-order':
       return storeNewOrder(order, ctx);
   }
@@ -187,7 +200,8 @@ interface ShopperEmail {
   readonly footerNote?: string;
 }
 
-function renderShopper(order: OrderEmailOrder, ctx: OrderEmailContext, email: ShopperEmail): RenderedEmail {
+function renderShopper(order: OrderEmailOrder, ctx: OrderEmailContext, given: ShopperEmail): RenderedEmail {
+  const email = (ctx as ReopenedContext).reopened ? reopenedCopy(order, given) : given;
   const blocks = email.blocks.filter((block): block is Block => block !== null);
   const hasWhatsappButton = blocks.some((block) => block.whatsappButton === true);
   const help = footerHelp(ctx, email, !hasWhatsappButton);
@@ -379,6 +393,7 @@ function instapayPlaced(order: OrderEmailOrder, ctx: OrderEmailContext): Rendere
 }
 
 function bankTransferPlaced(order: OrderEmailOrder, ctx: OrderEmailContext): RenderedEmail {
+  if (order.feeToBeAgreed) return abroadAgreedPlaced(order, ctx);
   const due = dueFor(order);
   const pay = due?.reason === 'bank-transfer' ? bankSteps(order, ctx, due) : null;
   return renderShopper(order, ctx, {
@@ -387,7 +402,7 @@ function bankTransferPlaced(order: OrderEmailOrder, ctx: OrderEmailContext): Ren
     status: ['Order', 'Placed'],
     sentence: `Thanks, ${firstName(order)}. Send the total from your bank and we'll confirm your order as soon as the money arrives.`,
     blocks: [
-      pay ? amountRow([sentAmount(order, 'Send from your bank', true)]) : null,
+      pay ? amountRow([sentAmount(order, 'Send from your bank')]) : null,
       pay ? stepsRow([placeStep(order), ...pay.steps]) : null,
       pay?.button ? buttonRow(pay.button) : null,
       ...orderSummary(order, ctx, {
@@ -399,19 +414,57 @@ function bankTransferPlaced(order: OrderEmailOrder, ctx: OrderEmailContext): Ren
   });
 }
 
+/** Said on every email of an order abroad whose delivery and fee are agreed on WhatsApp (ATS-314). */
+function abroadAgreeLine(order: OrderEmailOrder): string {
+  return `We'll confirm delivery to ${countryName(order.address.country)} and the shipping fee with you on WhatsApp. You pay once we agree.`;
+}
+
 /**
- * A Bank Transfer amount in the shopper's currency, with the EGP total under it (the items and
- * totals are in Egyptian pounds, so the two amounts must not look like a mismatch).
+ * Bank Transfer order abroad whose delivery and shipping fee are agreed on WhatsApp first
+ * (ATS-314): nothing to pay yet. Amounts only in the shopper's currency.
  */
-function sentAmount(order: OrderEmailOrder, label: string, pricesNote: boolean): AmountCell {
-  if (!order.payIn || order.payIn.currency === 'EGP') {
-    return { label, amount: formatEgp(order.totalEgp) };
-  }
-  return {
-    label,
-    amount: formatPayIn(order.payIn),
-    note: `Same total as ${formatEgp(order.totalEgp)}.${pricesNote ? ' Item prices below are in EGP.' : ''}`,
-  };
+function abroadAgreedPlaced(order: OrderEmailOrder, ctx: OrderEmailContext): RenderedEmail {
+  return renderShopper(order, ctx, {
+    subject: `We got your order ${order.ref}`,
+    kicker: 'Bank Transfer',
+    status: ['Order', 'Placed'],
+    sentence: `Thanks, ${firstName(order)}. ${abroadAgreeLine(order)}`,
+    blocks: [
+      amountRow([
+        {
+          label: 'To pay now',
+          amount: 'Nothing yet',
+          note: "We'll message you on WhatsApp with the shipping fee and the total.",
+        },
+      ]),
+      stepsRow([
+        placeStep(order),
+        {
+          state: 'current',
+          title: 'We agree delivery on WhatsApp',
+          note: 'Shipping fee and total',
+        },
+        {
+          state: 'next',
+          title: 'Send the total from your bank',
+          note: "We'll confirm your order as soon as the money arrives.",
+        },
+      ]),
+      ...orderSummary(order, ctx, {
+        payment: ['Bank Transfer', 'Shipping fee coming soon'],
+        viewAsButton: true,
+      }),
+    ],
+  });
+}
+
+/**
+ * A Bank Transfer amount in the shopper's currency. The items and totals below are in the same
+ * currency (ATS-309), so no EGP amount is shown next to it.
+ */
+function sentAmount(order: OrderEmailOrder, label: string): AmountCell {
+  if (order.payIn) return { label, amount: formatPayIn(order.payIn) };
+  return { label, amount: shopperAmount(order, order.shopper.total) ?? 'The total' };
 }
 
 /**
@@ -419,6 +472,7 @@ function sentAmount(order: OrderEmailOrder, label: string, pricesNote: boolean):
  * later correction of that fee; the amounts to pay are the new ones).
  */
 function deliveryFeeSet(order: OrderEmailOrder, ctx: OrderEmailContext, changed: boolean): RenderedEmail {
+  if (order.paymentMethod === 'bank-transfer') return abroadFeeSet(order, ctx, changed);
   const now = changed ? 'now ' : '';
   const fee = order.shippingEgp > 0 ? formatEgp(order.shippingEgp) : null;
   const cod = order.paymentMethod === 'cash-on-delivery';
@@ -485,13 +539,64 @@ function deliveryFeeSet(order: OrderEmailOrder, ctx: OrderEmailContext, changed:
   });
 }
 
+/**
+ * Staff saved the shipping fee they agreed for a Bank Transfer order abroad (ATS-314): the fee and
+ * the total to send, in the shopper's currency only (never EGP, ATS-309), then the bank details.
+ */
+function abroadFeeSet(order: OrderEmailOrder, ctx: OrderEmailContext, changed: boolean): RenderedEmail {
+  const now = changed ? 'now ' : '';
+  const money = order.shopper;
+  const fee =
+    money.shipping === null ? null : money.shipping > 0 ? shopperAmount(order, money.shipping) : 'Free';
+  const due = dueFor(order);
+  const pay = due?.reason === 'bank-transfer' ? bankSteps(order, ctx, due) : null;
+  let sentence =
+    fee === 'Free'
+      ? `Good news: shipping is ${now}free on your order ${order.ref}.`
+      : fee
+        ? `The shipping fee for your order ${order.ref} is ${now}${fee}.`
+        : `We've ${changed ? 'updated' : 'set'} the shipping fee for your order ${order.ref}.`;
+  if (pay)
+    sentence += " Send the total from your bank and we'll confirm your order as soon as the money arrives.";
+  const agreed: EmailStep = {
+    state: 'done',
+    title: 'We agree delivery on WhatsApp',
+    note: fee ? `Done. Shipping ${fee}` : 'Done.',
+  };
+  return renderShopper(order, ctx, {
+    subject: changed
+      ? `Updated shipping fee for your order ${order.ref}`
+      : `Shipping fee for your order ${order.ref}`,
+    kicker: 'Shipping fee',
+    status: changed ? ['Fee', 'Updated'] : ['Fee', 'Ready'],
+    sentence,
+    blocks: [
+      pay ? amountRow([sentAmount(order, 'Send from your bank')]) : null,
+      pay ? stepsRow([placeStep(order), agreed, ...pay.steps]) : null,
+      pay?.button ? buttonRow(pay.button) : null,
+      changed
+        ? noteRow("If you've already sent a different amount, message us on WhatsApp and we'll sort it out.")
+        : null,
+      ...orderSummary(order, ctx, {
+        payment: ['Bank Transfer', 'Waiting for Payment'],
+        delivery: false,
+        youSend: order.payIn ? ['You send', formatPayIn(order.payIn)] : null,
+        viewAsButton: !pay?.button,
+      }),
+    ],
+  });
+}
+
 /** Paid in full and confirmed: InstaPay, Card (Paymob) or Bank Transfer share this email. */
 function paidConfirmed(order: OrderEmailOrder, ctx: OrderEmailContext): RenderedEmail {
   const bank = order.paymentMethod === 'bank-transfer';
   const name = methodName(order);
-  const cell: AmountCell = bank
-    ? sentAmount(order, `Paid by ${name}`, false)
-    : { label: `Paid by ${name}`, amount: formatEgp(order.totalEgp) };
+  const paid = shopperAmount(order, order.shopper.total);
+  const cell: AmountCell | null = bank
+    ? sentAmount(order, `Paid by ${name}`)
+    : paid
+      ? { label: `Paid by ${name}`, amount: paid }
+      : null;
   const cardAbroad = order.paymentMethod === 'paymob' && order.isInternational;
   return renderShopper(order, ctx, {
     subject: `Payment received – order ${order.ref} is confirmed`,
@@ -500,10 +605,10 @@ function paidConfirmed(order: OrderEmailOrder, ctx: OrderEmailContext): Rendered
     sentence: `Thanks, ${firstName(order)}. We're getting your order ready and will email you when it's on its way.`,
     progress: 1,
     blocks: [
-      amountRow([cell], true),
+      cell ? amountRow([cell], true) : null,
       cardAbroad
         ? noteRow(
-            'You were charged in Egyptian pounds (EGP). Your bank converts it to your currency, so the amount on your statement may differ slightly.',
+            'Your bank converts the payment to your currency, so the amount on your statement may differ slightly.',
             TEXT_MUTED,
           )
         : null,
@@ -571,7 +676,7 @@ function orderShipped(order: OrderEmailOrder, ctx: OrderEmailContext): RenderedE
           ])
         : null,
       boxesRow([{ label: 'On its way to', lines: addressLines(order) }], 32),
-      itemsRow('In This Delivery', order.lines, ctx, { prices: false }),
+      itemsRow('In This Delivery', order, order.lines, ctx, { prices: false }),
       view ? buttonRow(view, 8) : null,
     ],
   });
@@ -582,7 +687,7 @@ function orderDelivered(order: OrderEmailOrder, ctx: OrderEmailContext): Rendere
   const waLink = whatsappChatUrl(ctx.whatsappNumber.trim());
   const shown = order.lines.slice(0, 3);
   // Edge to edge across 600px: ask ImageKit for twice the shown width.
-  const cards = itemCards(shown, ctx, false, Math.min(1200, Math.ceil(1200 / shown.length)));
+  const cards = itemCards(order, shown, ctx, false, Math.min(1200, Math.ceil(1200 / shown.length)));
   const more = order.lines.length - shown.length;
   const names = [...shown.map((line) => lineTitle(line)), ...(more > 0 ? [`+ ${more} more`] : [])];
   const help = waLink
@@ -607,7 +712,7 @@ function orderDelivered(order: OrderEmailOrder, ctx: OrderEmailContext): Rendere
     blocks: [
       {
         html: photoStrip(cards, names.join(' · ')),
-        text: `In this delivery:\n${itemsText(order.lines, false)}`,
+        text: `In this delivery:\n${itemsText(order, order.lines, false)}`,
       },
       {
         html: section(
@@ -637,14 +742,65 @@ function paymentFailed(order: OrderEmailOrder, ctx: OrderEmailContext): Rendered
       amountRow([
         {
           label: 'Charged',
-          amount: formatEgp(0),
+          // Abroad: no amount in pounds (ATS-309).
+          amount: order.isInternational ? 'Nothing' : formatEgp(0),
           note: "You haven't been charged. Nothing left your account.",
         },
       ]),
       ctx.storefrontUrl ? buttonRow({ label: 'Shop Again', url: `${ctx.storefrontUrl}/shop` }) : null,
-      itemsRow('Still Want These?', bought.length ? bought : order.lines, ctx, { prices: true }),
+      itemsRow('Still Want These?', order, bought.length ? bought : order.lines, ctx, { prices: true }),
     ],
   });
+}
+
+/** The context `orderReopened` renders the usual email with, so `renderShopper` swaps the top copy. */
+interface ReopenedContext extends OrderEmailContext {
+  readonly reopened?: boolean;
+}
+
+/**
+ * "Your order is back on" (ATS-325): staff reopened an order cancelled by mistake. The body is the
+ * email for the status it went back to (how to pay for Waiting for Payment, as in the order-placed
+ * email; what to have ready for Confirmed), with the subject, status and sentence of a reopen.
+ * Amounts follow the same rules as those emails (abroad: only the shopper's currency, ATS-309).
+ */
+function orderReopened(order: OrderEmailOrder, ctx: OrderEmailContext): RenderedEmail {
+  const reopened: ReopenedContext = { ...ctx, reopened: true };
+  if (order.status === 'confirmed') {
+    return order.paymentMethod === 'cash-on-delivery'
+      ? codConfirmed(order, reopened)
+      : paidConfirmed(order, reopened);
+  }
+  switch (order.paymentMethod) {
+    case 'cash-on-delivery':
+      return codPlaced(order, reopened);
+    case 'instapay':
+      return instapayPlaced(order, reopened);
+    default:
+      return bankTransferPlaced(order, reopened);
+  }
+}
+
+function reopenedCopy(order: OrderEmailOrder, email: ShopperEmail): ShopperEmail {
+  const base = `Sorry for the mix-up, ${firstName(order)}. Your order ${order.ref} is back on.`;
+  let next: string;
+  if (order.status === 'confirmed') {
+    next = "It's confirmed, and we'll email you when it's on its way.";
+  } else if (order.feeToBeAgreed) {
+    next = order.paymentMethod === 'bank-transfer' ? abroadAgreeLine(order) : FEE_TO_AGREE;
+  } else if (dueFor(order)) {
+    // The cancel may have been the mistake on an order the shopper already paid for.
+    next =
+      "If you haven't paid yet, pay as shown below and we'll confirm it as soon as your payment arrives. If you already paid, there's nothing to do: we'll confirm it shortly.";
+  } else {
+    next = "We'll contact you to confirm it.";
+  }
+  return {
+    ...email,
+    subject: `Your order ${order.ref} is back on`,
+    status: ['Back', 'On'],
+    sentence: `${base} ${next}`,
+  };
 }
 
 // ── Shopper email parts ──────────────────────────────────────────────────────
@@ -848,20 +1004,21 @@ function boxesRow(boxes: readonly InfoBox[], padTop = 24): Block {
 
 function itemsRow(
   title: string,
+  order: OrderEmailOrder,
   lines: readonly OrderEmailLine[],
   ctx: OrderEmailContext,
   opts: { prices: boolean },
 ): Block {
   const compactAfter = 4;
-  const cards = itemCards(lines, ctx, opts.prices, 520);
+  const cards = itemCards(order, lines, ctx, opts.prices, 520);
   // Twice the shown width: big photos in the grid, 64px thumbnails in the compact list.
   const grid = itemGrid(
-    cards.length > compactAfter ? itemCards(lines, ctx, opts.prices, 128) : cards,
+    cards.length > compactAfter ? itemCards(order, lines, ctx, opts.prices, 128) : cards,
     compactAfter,
   );
   return {
     html: section(`${sectionTitle(title)}${grid}`, 40),
-    text: `${title}:\n${itemsText(lines, opts.prices)}`,
+    text: `${title}:\n${itemsText(order, lines, opts.prices)}`,
   };
 }
 
@@ -880,22 +1037,50 @@ interface SummaryOptions {
 
 /** Your Items, totals, Delivery To / Payment and the order link: the end of most order emails. */
 function orderSummary(order: OrderEmailOrder, ctx: OrderEmailContext, opts: SummaryOptions): Block[] {
-  const rows = opts.totalRows ?? totalsFor(order, opts.totalLabel ?? 'Total');
+  const rows = opts.totalRows ?? shopperTotals(order, opts.totalLabel ?? 'Total');
   const after = opts.youSend ? [opts.youSend] : [];
   const boxes: InfoBox[] = [];
   if (opts.delivery !== false) boxes.push({ label: 'Delivery to', lines: addressLines(order) });
   if (opts.payment) boxes.push({ label: 'Payment', lines: opts.payment });
   const view = orderButton(order, ctx);
-  const out: Block[] = [
-    itemsRow('Your Items', order.lines, ctx, { prices: true }),
-    {
+  const out: Block[] = [itemsRow('Your Items', order, order.lines, ctx, { prices: true })];
+  // Abroad with no amount in the shopper's currency there are no totals to show (<KEY>-309).
+  if (rows.length || after.length) {
+    out.push({
       html: section(totals(rows, after), 8),
       text: [...rows, ...after].map(([label, value]) => `${label}: ${value}`).join('\n'),
-    },
-  ];
+    });
+  }
   if (boxes.length) out.push(boxesRow(boxes));
   if (view) out.push(opts.viewAsButton ? buttonRow(view) : linkRow(view));
   return out;
+}
+
+/**
+ * The totals of a shopper email: as `totalsFor()` for an Egypt order; for one shipped abroad, in
+ * the shopper's own currency only, leaving out a row the order didn't save (ATS-309).
+ */
+function shopperTotals(order: OrderEmailOrder, totalLabel: string): [string, string][] {
+  if (!order.isInternational) return totalsFor(order, totalLabel);
+  const money = order.shopper;
+  const rows: [string, string][] = [];
+  const subtotal = shopperAmount(order, money.subtotal);
+  if (subtotal) rows.push(['Subtotal', subtotal]);
+  // Delivery and the fee still to be agreed on WhatsApp (ATS-314): no fee, items total + shipping.
+  if (order.feeToBeAgreed) {
+    rows.push(['Shipping', 'To be agreed']);
+    if (subtotal) rows.push([totalLabel, `${subtotal} + shipping`]);
+    return rows;
+  }
+  if (money.shipping !== null) {
+    rows.push([
+      shippingLabel(order),
+      money.shipping > 0 ? (shopperAmount(order, money.shipping) ?? '') : 'Free',
+    ]);
+  }
+  const total = shopperAmount(order, money.total);
+  if (total) rows.push([totalLabel, total]);
+  return rows;
 }
 
 /** Shopper emails say we'll message them; the staff alert says the fee is not set yet. */
@@ -919,8 +1104,9 @@ function totalsFor(
   ];
 }
 
-/** "Delivery" for a large order whose fee is agreed with us, "Shipping" for the rest. */
+/** "Delivery" for a large Egypt order whose fee is agreed with us, "Shipping" for the rest. */
 function shippingLabel(order: OrderEmailOrder): string {
+  if (order.isInternational) return 'Shipping';
   return order.feeToBeAgreed || order.deliveryFeeAgreed ? 'Delivery' : 'Shipping';
 }
 
@@ -938,6 +1124,7 @@ function methodName(order: OrderEmailOrder): string {
 }
 
 function itemCards(
+  order: OrderEmailOrder,
   lines: readonly OrderEmailLine[],
   ctx: OrderEmailContext,
   prices: boolean,
@@ -948,7 +1135,8 @@ function itemCards(
     (line) => ({
       name: lineTitle(line),
       details: lineDetails(line),
-      price: prices ? formatEgp(line.lineEgp) : null,
+      // An older order shipped abroad saved only its total: its items show no price.
+      price: prices ? shopperAmount(order, line.shopperAmount) : null,
       imageSrc: imageUrl(line.imagePath, ctx, photoWidth),
       tags: line.dealTag ? [line.dealTag] : [],
     }),
@@ -1000,8 +1188,173 @@ function joinParts(parts: readonly (string | null | undefined)[]): string {
 
 // ── Store-owner alert ("Bold Black", <KEY>-222) ───────────────────────────────
 
+/**
+ * Card (Paymob) order shipped abroad: what Paymob actually charged in whole pounds
+ * (`pricing.chargeEgp`, ATS-311), which differs from the Egypt price `totalEgp`. Null otherwise.
+ */
+function cardChargeEgp(order: OrderEmailOrder): number | null {
+  return order.paymentMethod === 'paymob' && order.chargeEgp !== null && !order.feeToBeAgreed
+    ? order.chargeEgp
+    : null;
+}
+
+/**
+ * The staff alert of an order shipped abroad (ATS-320): the same three prices as the admin order
+ * page (ATS-304). It leads with what the customer pays in their currency (`order.shopper`), then
+ * what that comes to in pounds (Card: what Paymob charged; otherwise at the rate behind the order's
+ * factor, `order.staffRate`, so "about"), then the same order at Egypt prices. Null for an Egypt
+ * order, or one abroad with no amount in the customer's currency (those keep the EGP alert).
+ */
+interface StaffAbroad {
+  /** An amount in the customer's currency, e.g. `QAR 66` or `R$54`. */
+  readonly money: (amount: number) => string;
+  /** Subject: `QAR 66 (about EGP 969)`, `QAR 66 (EGP 969)` for Card, `R$54 + Delivery` with the fee to be agreed. */
+  readonly subjectAmount: string;
+  readonly headerAmount: string;
+  readonly headerNote: string;
+  /** The items in the customer's currency (the strip's Items Total while the fee is to be agreed). */
+  readonly items: string;
+  readonly total: { readonly customer: string; readonly pounds: string | null; readonly egypt: string };
+  /** Subtotal, Shipping and Total: [customer, in pounds, price in Egypt]; a null cell is unknown. */
+  readonly rows: readonly { readonly label: string; readonly cells: readonly (string | null)[] }[];
+  /** "Abroad prices +40% · rate on the day 1 QAR = 14.66 EGP", or null without the saved rate. */
+  readonly rateLine: string | null;
+  /** The In Pounds column shows: the saved rate is known, or Paymob's charge is (Card). */
+  readonly showPounds: boolean;
+}
+
+function staffAbroad(order: OrderEmailOrder): StaffAbroad | null {
+  const shopper = order.shopper;
+  if (!order.isInternational || shopper.currency === 'EGP') return null;
+  const money = (amount: number) => formatPayIn({ currency: shopper.currency, amount });
+  const perUnit = order.staffRate ? 1 / order.staffRate.rate : null;
+  const pounds = (amount: number | null): number | null =>
+    perUnit === null || amount === null ? null : Math.round(amount * perUnit);
+  const egp = (amount: number | null) => (amount === null ? null : formatEgp(amount));
+  const rateLine = abroadRateLine(order, perUnit);
+
+  if (order.feeToBeAgreed) {
+    // No fee yet, so the saved total is the items alone when the lines weren't saved.
+    const itemsAmount = shopper.subtotal ?? shopper.total;
+    if (itemsAmount === null) return null;
+    const items = money(itemsAmount);
+    const itemsPounds = pounds(itemsAmount);
+    const egyptItems = formatEgp(order.subtotalEgp);
+    const later = 'To be agreed';
+    const plus = (value: string | null) => (value === null ? null : `${value} + shipping`);
+    return {
+      money,
+      subjectAmount: `${items} + Delivery`,
+      headerAmount: `${items} + Delivery`,
+      headerNote: joinWith(
+        [itemsPounds !== null ? `items about ${formatEgp(itemsPounds)}` : null, `${egyptItems} in Egypt`],
+        ' · ',
+      ),
+      items,
+      total: { customer: plus(items)!, pounds: plus(egp(itemsPounds)), egypt: plus(egyptItems)! },
+      rows: [
+        { label: 'Subtotal', cells: [items, egp(itemsPounds), egyptItems] },
+        { label: 'Shipping', cells: [later, later, later] },
+        { label: 'Total', cells: [plus(items), plus(egp(itemsPounds)), plus(egyptItems)] },
+      ],
+      rateLine,
+      showPounds: perUnit !== null,
+    };
+  }
+
+  if (shopper.total === null) return null;
+  const total = money(shopper.total);
+  const charged = cardChargeEgp(order);
+  const totalPounds = charged ?? pounds(shopper.total);
+  const egyptTotal = formatEgp(order.totalEgp);
+  const poundsText =
+    totalPounds === null
+      ? null
+      : charged !== null
+        ? formatEgp(totalPounds)
+        : `about ${formatEgp(totalPounds)}`;
+  const rows: { label: string; cells: (string | null)[] }[] = [];
+  if (shopper.subtotal !== null) {
+    rows.push({
+      label: 'Subtotal',
+      cells: [money(shopper.subtotal), egp(pounds(shopper.subtotal)), formatEgp(order.subtotalEgp)],
+    });
+  }
+  if (shopper.shipping !== null) {
+    rows.push(
+      order.shippingEgp === 0
+        ? { label: 'Shipping', cells: ['Free', 'Free', 'Free'] }
+        : {
+            label: 'Shipping',
+            cells: [
+              money(shopper.shipping),
+              // Shipping abroad has no markup (ATS-311): in pounds it is its Egypt price.
+              order.shippingAtPlainRate ? formatEgp(order.shippingEgp) : egp(pounds(shopper.shipping)),
+              formatEgp(order.shippingEgp),
+            ],
+          },
+    );
+  }
+  rows.push({ label: 'Total', cells: [total, egp(totalPounds), egyptTotal] });
+  return {
+    money,
+    // Without the saved rate (older orders), the Egypt price is named as such, never as the amount.
+    subjectAmount: `${total} (${poundsText ?? `${egyptTotal} in Egypt`})`,
+    headerAmount: total,
+    headerNote: joinWith(
+      [
+        totalPounds === null
+          ? null
+          : charged !== null
+            ? `${formatEgp(charged)} charged`
+            : `about ${formatEgp(totalPounds)} in pounds`,
+        `${egyptTotal} in Egypt`,
+      ],
+      ' · ',
+    ),
+    items: total,
+    total: { customer: total, pounds: poundsText, egypt: egyptTotal },
+    rows,
+    rateLine,
+    showPounds: perUnit !== null || charged !== null,
+  };
+}
+
+/** Same line as the admin order page: "Abroad prices +40% · rate on the day 1 QAR = 14.66 EGP". */
+function abroadRateLine(order: OrderEmailOrder, perUnit: number | null): string | null {
+  if (perUnit === null || !order.staffRate) return null;
+  const rate = perUnit.toLocaleString('en-US', {
+    maximumFractionDigits: perUnit >= 1 ? 2 : 4,
+    maximumSignificantDigits: perUnit >= 1 ? undefined : 3,
+  });
+  const percent = order.staffRate.markupPercent.toLocaleString('en-US', { maximumFractionDigits: 1 });
+  return `Abroad prices +${percent}% · rate on the day 1 ${order.shopper.currency} = ${rate} EGP`;
+}
+
+const STAFF_PRICE_HEADERS = ['Customer Pays', 'In Pounds', 'Price in Egypt'] as const;
+
+/** The three-column totals of the staff alert abroad, and the same rows as text. */
+function staffAbroadTotals(abroad: StaffAbroad): Block {
+  const showPounds = abroad.showPounds;
+  const headers = showPounds ? STAFF_PRICE_HEADERS : [STAFF_PRICE_HEADERS[0], STAFF_PRICE_HEADERS[2]];
+  const rows = abroad.rows.map((row) => ({
+    label: row.label,
+    cells: showPounds ? row.cells : [row.cells[0] ?? null, row.cells[2] ?? null],
+  }));
+  const text = [
+    `Prices: ${headers.join(' · ')}`,
+    ...rows.map((row) => `${row.label}: ${row.cells.map((cell) => cell ?? '—').join(' · ')}`),
+    abroad.rateLine,
+  ];
+  return {
+    html: section(priceTable(headers, rows, abroad.rateLine), 8),
+    text: joinWith(text, '\n'),
+  };
+}
+
 function storeNewOrder(order: OrderEmailOrder, ctx: OrderEmailContext): RenderedEmail {
   const method = order.paymentMethod;
+  const charged = cardChargeEgp(order);
   const label =
     method === 'cash-on-delivery'
       ? 'Cash on Delivery'
@@ -1010,24 +1363,32 @@ function storeNewOrder(order: OrderEmailOrder, ctx: OrderEmailContext): Rendered
         : method === 'bank-transfer'
           ? 'Bank Transfer – Waiting for Transfer'
           : 'Paid Online';
-  const amount = order.feeToBeAgreed
-    ? `${formatEgp(order.subtotalEgp)} + Delivery`
-    : method === 'bank-transfer' && order.payIn
-      ? `${formatPayIn(order.payIn)} (${formatEgp(order.totalEgp)})`
-      : formatEgp(order.totalEgp);
+  const abroad = staffAbroad(order);
+  const amount = abroad
+    ? abroad.subjectAmount
+    : order.feeToBeAgreed
+      ? `${formatEgp(order.subtotalEgp)} + Delivery`
+      : method === 'bank-transfer' && order.payIn
+        ? `${formatPayIn(order.payIn)} (${formatEgp(order.totalEgp)})`
+        : charged !== null
+          ? order.payIn
+            ? `${formatEgp(charged)} (${formatPayIn(order.payIn)})`
+            : formatEgp(charged)
+          : formatEgp(order.totalEgp);
   const subject = order.feeToBeAgreed
     ? `New Order ${order.ref} – ${amount} – Agree Delivery Fee`
     : `New Order ${order.ref} – ${amount} – ${label}`;
 
-  const payment = storePayment(order);
-  const top = staffTop(order, payment);
+  const payment = storePayment(order, abroad);
+  const top = staffTop(order, payment, abroad);
   const strip: AmountCell[] = [{ label: 'Items', amount: String(pieceCount(order.lines)) }, ...payment.cells];
   // When the note is already the header sentence (a large order), the box only names the action.
   const step = payment.step;
   const stepNote = step && step.note !== top.sentence ? step.note : null;
   const customer = staffCustomer(order, ctx);
-  const pack = packList(order.lines, ctx);
+  const pack = packList(order, ctx, abroad);
   const totalRows = totalsFor(order, 'Total', 'Not set yet');
+  const totalsBlock = abroad ? staffAbroadTotals(abroad) : null;
   const button = ctx.storefrontUrl
     ? { label: 'Open This Order', url: `${ctx.storefrontUrl}/admin/orders/${encodeURIComponent(order.id)}` }
     : null;
@@ -1045,7 +1406,7 @@ function storeNewOrder(order: OrderEmailOrder, ctx: OrderEmailContext): Rendered
     step ? section(nextStepBox(step.action, stepNote), 32) : '',
     customer.html,
     pack.html,
-    section(totals(totalRows), 8),
+    totalsBlock ? totalsBlock.html : section(totals(totalRows), 8),
     button ? mainButton(button) : '',
     SPACER,
     footer({
@@ -1068,7 +1429,7 @@ function storeNewOrder(order: OrderEmailOrder, ctx: OrderEmailContext): Rendered
     step ? joinParts([`Next Step: ${step.action}`, stepNote]) : null,
     customer.text,
     pack.text,
-    totalRows.map(([rowLabel, value]) => `${rowLabel}: ${value}`).join('\n'),
+    totalsBlock ? totalsBlock.text : totalRows.map(([rowLabel, value]) => `${rowLabel}: ${value}`).join('\n'),
     button ? `${button.label}: ${button.url}` : null,
     STAFF_FOOTER,
   ]);
@@ -1084,8 +1445,23 @@ interface StorePayment {
   readonly step: { readonly action: string; readonly note: string } | null;
 }
 
-function storePayment(order: OrderEmailOrder): StorePayment {
+function storePayment(order: OrderEmailOrder, abroad: StaffAbroad | null): StorePayment {
   const total = formatEgp(order.totalEgp);
+  if (order.feeToBeAgreed && order.isInternational) {
+    const country = countryName(order.address.country);
+    return {
+      cells: [
+        abroad
+          ? { label: 'Items Total', amount: abroad.items }
+          : { label: 'Items Total', amount: formatEgp(order.subtotalEgp) },
+        { label: 'Shipping Fee', amount: 'Not Set Yet' },
+      ],
+      step: {
+        action: `Delivery to be confirmed · ${country}`,
+        note: `Check that we can deliver to ${country}, agree the shipping fee with the customer on WhatsApp, then use Set Delivery Fee.`,
+      },
+    };
+  }
   if (order.feeToBeAgreed) {
     return {
       cells: [
@@ -1125,18 +1501,42 @@ function storePayment(order: OrderEmailOrder): StorePayment {
     case 'bank-transfer': {
       const sends = order.payIn ? formatPayIn(order.payIn) : 'The Total';
       return {
-        cells: [
-          { label: 'Customer Sends', amount: sends },
-          { label: 'Order Total in EGP', amount: total },
-        ],
+        cells: abroad
+          ? [
+              { label: 'Customer Sends', amount: abroad.total.customer },
+              ...(abroad.total.pounds ? [{ label: 'In Pounds', amount: abroad.total.pounds }] : []),
+              { label: 'Price in Egypt', amount: abroad.total.egypt },
+            ]
+          : [
+              { label: 'Customer Sends', amount: sends },
+              { label: 'Order Total in EGP', amount: total },
+            ],
         step: {
           action: order.payIn ? `Wait for ${sends} by bank transfer` : 'Wait for the bank transfer',
           note: "Confirm the order in the dashboard once the money is in the account and the receipt shows the full amount in the customer's currency. Prices abroad include the international markup, so more pounds than the order total usually arrive.",
         },
       };
     }
-    default:
-      return { cells: [{ label: 'Paid', amount: total }], step: null };
+    default: {
+      const charged = cardChargeEgp(order);
+      if (charged === null) return { cells: [{ label: 'Paid', amount: total }], step: null };
+      // Card abroad (ATS-311): Paymob charged the shopper-currency total converted at the plain
+      // rate, not the Egypt price, so show what was actually charged first.
+      return {
+        cells: abroad
+          ? [
+              { label: 'Customer Paid', amount: abroad.total.customer },
+              { label: 'Charged in Pounds', amount: formatEgp(charged) },
+              { label: 'Price in Egypt', amount: abroad.total.egypt },
+            ]
+          : [
+              { label: 'Paid', amount: formatEgp(charged) },
+              ...(order.payIn ? [{ label: 'Customer Paid', amount: formatPayIn(order.payIn) }] : []),
+              { label: 'Order Total in EGP', amount: total },
+            ],
+        step: null,
+      };
+    }
   }
 }
 
@@ -1144,14 +1544,27 @@ function storePayment(order: OrderEmailOrder): StorePayment {
 function staffTop(
   order: OrderEmailOrder,
   payment: StorePayment,
+  abroad: StaffAbroad | null,
 ): { kicker: string; amount: string; amountNote: string | null; sentence: string | null } {
   const bank = order.paymentMethod === 'bank-transfer' && order.payIn !== null && !order.feeToBeAgreed;
-  const amount = order.feeToBeAgreed
+  const charged = cardChargeEgp(order);
+  const egyptAmount = order.feeToBeAgreed
     ? `${formatEgp(order.subtotalEgp)} + Delivery`
     : bank
       ? formatPayIn(order.payIn!)
-      : formatEgp(order.totalEgp);
-  const amountNote = bank ? `${formatEgp(order.totalEgp)} order total` : null;
+      : charged !== null
+        ? formatEgp(charged)
+        : formatEgp(order.totalEgp);
+  const amount = abroad ? abroad.headerAmount : egyptAmount;
+  const amountNote = abroad
+    ? abroad.headerNote
+    : bank
+      ? `${formatEgp(order.totalEgp)} order total`
+      : charged !== null
+        ? order.payIn
+          ? `${formatPayIn(order.payIn)} paid · ${formatEgp(order.totalEgp)} order total`
+          : `${formatEgp(order.totalEgp)} order total`
+        : null;
   if (order.needsReview) {
     return {
       kicker: 'Check This Order',
@@ -1161,7 +1574,8 @@ function staffTop(
     };
   }
   if (order.feeToBeAgreed) {
-    return { kicker: 'Agree the Delivery Fee', amount, amountNote, sentence: payment.step?.note ?? null };
+    const kicker = order.isInternational ? 'Confirm Delivery' : 'Agree the Delivery Fee';
+    return { kicker, amount, amountNote, sentence: payment.step?.note ?? null };
   }
   const when = cairoDateTime(order.createdAtMs);
   return { kicker: when ? `New Order · ${when}` : 'New Order', amount, amountNote, sentence: null };
@@ -1255,7 +1669,15 @@ ${wa ? `<div style="margin-top:18px;">${outlinedButton(wa)}</div>` : ''}`,
 }
 
 /** Pack List: 2 photos per row with a ×2 tag on each, gifts under their item; 5 or more items use the compact list. */
-function packList(lines: readonly OrderEmailLine[], ctx: OrderEmailContext): Block {
+function packList(order: OrderEmailOrder, ctx: OrderEmailContext, abroad: StaffAbroad | null): Block {
+  const lines = order.lines;
+  // Abroad (ATS-320): each line in the shopper's currency, as the customer saw it; EGP otherwise.
+  const linePrice = (line: OrderEmailLine): string =>
+    !abroad
+      ? formatEgp(line.lineEgp)
+      : line.shopperAmount !== null
+        ? abroad.money(line.shopperAmount)
+        : `${formatEgp(line.lineEgp)} in Egypt`;
   const compactAfter = 4;
   const bought = lines.filter((line, index) => line.giftName === null || index === 0).length;
   const width = bought > compactAfter ? 128 : 520;
@@ -1264,7 +1686,7 @@ function packList(lines: readonly OrderEmailLine[], ctx: OrderEmailContext): Blo
     (line) => ({
       name: lineTitle(line),
       details: lineTags(line).join(' · '),
-      price: formatEgp(line.lineEgp),
+      price: linePrice(line),
       imageSrc: imageUrl(line.imagePath, ctx, width),
       tags: [`×${line.quantity}`, ...(line.dealTag ? [line.dealTag] : [])],
     }),
@@ -1279,7 +1701,7 @@ function packList(lines: readonly OrderEmailLine[], ctx: OrderEmailContext): Blo
       const options = lineTags(line).join(' · ');
       const price = gift
         ? (line.giftName ?? 'Free gift')
-        : `${formatEgp(line.lineEgp)}${line.dealTag ? ` (${line.dealTag})` : ''}`;
+        : `${linePrice(line)}${line.dealTag ? ` (${line.dealTag})` : ''}`;
       return `- ×${line.quantity} ${lineTitle(line)}${options ? ` (${options})` : ''}: ${price}`;
     })
     .join('\n');
@@ -1365,13 +1787,15 @@ function countryName(code: string): string {
   }
 }
 
-function itemsText(lines: readonly OrderEmailLine[], prices = true): string {
+function itemsText(order: OrderEmailOrder, lines: readonly OrderEmailLine[], prices = true): string {
   return lines
     .map((line) => {
+      const price = prices ? shopperAmount(order, line.shopperAmount) : null;
+      if (!price && line.giftName === null) return `- ${lineTitle(line)} (${lineDetails(line)})`;
       if (!prices) return `- ${lineTitle(line)} (${lineDetails(line)})`;
       return line.giftName !== null
         ? `  + ${line.giftName}: ${lineTitle(line)} (${lineDetails(line)}): Free`
-        : `- ${lineTitle(line)} (${lineDetails(line)}): ${formatEgp(line.lineEgp)}${line.dealTag ? ` (${line.dealTag})` : ''}`;
+        : `- ${lineTitle(line)} (${lineDetails(line)}): ${price}${line.dealTag ? ` (${line.dealTag})` : ''}`;
     })
     .join('\n');
 }

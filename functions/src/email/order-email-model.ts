@@ -4,10 +4,13 @@
  *
  * Every amount comes from the saved order in whole Egyptian pounds:
  * `pricing.subtotalEgp`, `pricing.shipping.priceEgp`, `pricing.totalEgp`.
- * Orders show EGP, except a Bank Transfer order's amount to send (`pricing.payIn`), which is in
- * the shopper's own currency.
+ * Shopper emails show `shopper` (ATS-309): EGP for an Egypt order, and only the shopper's own
+ * currency (`pricing.payIn`) for an order shipped abroad, never EGP or the Egypt price. The staff
+ * alert shows EGP for an Egypt order; for one shipped abroad it leads with the shopper's currency,
+ * then what it comes to in pounds (`staffRate`), then the Egypt price (ATS-320).
  */
 import { dealTag } from '../offers/engine/buy-x-get-y.js';
+import { shopperMoney, type ShopperMoney, type ShopperMoneyLine } from '../offers/engine/shopper-money.js';
 import { isDeliveryFeeToBeAgreed, readPayIn, type PayIn } from '../store/order-messages.js';
 
 export type OrderEmailPaymentMethod = 'paymob' | 'cash-on-delivery' | 'instapay' | 'bank-transfer';
@@ -24,6 +27,19 @@ export interface OrderEmailLine {
   readonly giftName: string | null;
   /** Buy X Get Y discount on the line ("Free", "1 free", "−50%"); `lineEgp` is after it. */
   readonly dealTag: string | null;
+  /** The line in the order's `shopper` currency (`lineEgp` for an Egypt order); null = no price shown. */
+  readonly shopperAmount: number | null;
+}
+
+/**
+ * Staff-only: the abroad markup and the plain rate behind `pricing.payIn.factor`
+ * (`orderStaffNotes/{orderId}.payInRate`, ATS-304), so the staff alert can say what an amount in the
+ * shopper's currency comes to in pounds. Never on the order doc (its owner can read that).
+ */
+export interface OrderEmailStaffRate {
+  readonly markupPercent: number;
+  /** Shopper currency per 1 EGP, before the markup. */
+  readonly rate: number;
 }
 
 export interface OrderEmailAddress {
@@ -53,11 +69,15 @@ export interface OrderEmailOrder {
   /** Paid (Paymob) while an item had already sold out (see paymobWebhook). */
   readonly needsReview: boolean;
   /**
-   * Large Egypt order whose delivery fee staff haven't set yet. `shippingEgp` is then 0 and
+   * Delivery fee staff haven't set yet: a large Egypt order, or an order abroad whose delivery is
+   * still to be confirmed (`international-agreed`, ATS-314). `shippingEgp` is then 0 and
    * `totalEgp` is the items only; emails say the fee is to be agreed instead of showing them.
    */
   readonly feeToBeAgreed: boolean;
-  /** Large Egypt order whose delivery fee staff have saved (`domestic-agreed` + `feeAgreed`). */
+  /**
+   * Delivery fee staff have saved after agreeing it on WhatsApp (`domestic-agreed` or
+   * `international-agreed`, with `feeAgreed`).
+   */
   readonly deliveryFeeAgreed: boolean;
   /** When staff last saved the delivery fee (`deliveryFeeSetAt`, epoch ms), or null. */
   readonly deliveryFeeSetAtMs: number | null;
@@ -65,16 +85,45 @@ export interface OrderEmailOrder {
   readonly shippedAtMs: number | null;
   /** When staff marked the order Delivered (`deliveredAt`, epoch ms), or null. */
   readonly deliveredAtMs: number | null;
+  /** When staff last reopened the order after a cancel (`reopenedAt`, epoch ms), or null. */
+  readonly reopenedAtMs: number | null;
   /** A guest order's secret view key (its links carry `?key=`); null for signed-in orders. */
   readonly viewKey: string | null;
   /** Bank Transfer: the amount to send in the shopper's currency (`pricing.payIn`), or null. */
   readonly payIn: PayIn | null;
+  /**
+   * Card (Paymob) order shipped abroad: the whole pounds Paymob charges (`pricing.chargeEgp`,
+   * ATS-311), which differs from the Egypt price `totalEgp`. Null when not saved (Egypt orders).
+   */
+  readonly chargeEgp: number | null;
   /** When the order was placed (`createdAt`, epoch ms), or null. */
   readonly createdAtMs: number | null;
   /** True when the order has no account (`customerId` empty): a guest checkout. */
   readonly guestCheckout: boolean;
   /** The shipping box the server picked (`pricing.shipping.boxId`, e.g. `box1`), or null. */
   readonly boxId: string | null;
+  /**
+   * What shopper emails show (ATS-309): the EGP amounts for an Egypt order, the amounts in the
+   * shopper's currency from `pricing.payIn` for an order shipped abroad (null = not shown).
+   */
+  readonly shopper: ShopperMoney;
+  /**
+   * The shipping fee in `payIn` was converted at the plain rate with no markup (`payIn.shippingFactor`,
+   * orders from ATS-311 on), so in pounds it is its Egypt price.
+   */
+  readonly shippingAtPlainRate: boolean;
+  /** Staff alert only: `orderStaffNotes.payInRate` (filled by the trigger), or null when not read or saved. */
+  readonly staffRate: OrderEmailStaffRate | null;
+}
+
+/** `orderStaffNotes.payInRate` as the staff alert needs it, or null when missing or unreadable. */
+export function readStaffRate(raw: unknown): OrderEmailStaffRate | null {
+  if (!isRecord(raw)) return null;
+  const markupPercent = raw['markupPercent'];
+  const rate = raw['rate'];
+  if (typeof markupPercent !== 'number' || !Number.isFinite(markupPercent) || markupPercent < 0) return null;
+  if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) return null;
+  return { markupPercent, rate };
 }
 
 /**
@@ -142,24 +191,36 @@ export function readOrderForEmail(
   const pricing = isRecord(data['pricing']) ? data['pricing'] : null;
   if (!pricing) return null;
   const rawLines = Array.isArray(pricing['lines']) ? pricing['lines'] : [];
-  const lines: OrderEmailLine[] = [];
-  for (const raw of rawLines) {
-    if (!isRecord(raw)) continue;
+  const lines: Omit<OrderEmailLine, 'shopperAmount'>[] = [];
+  // Index-matched to the saved lines (and so to `pricing.payIn.lines`), skipped ones included.
+  const moneyLines: ShopperMoneyLine[] = [];
+  const kept: number[] = [];
+  for (const [index, raw] of rawLines.entries()) {
+    if (!isRecord(raw)) {
+      moneyLines.push({ lineEgp: 0, wasEgp: null });
+      continue;
+    }
     const productId = text(raw['productId']);
     const quantity = wholeNumber(raw['quantity']);
-    if (!productId || quantity < 1) continue;
+    if (!productId || quantity < 1) {
+      moneyLines.push({ lineEgp: 0, wasEgp: null });
+      continue;
+    }
     const unitEgp = wholeNumber(raw['unitEgp']);
     const discountEgp = wholeNumber(raw['discountEgp']);
     // Pieces in a Buy X Get Y group pay the price before per-item offers: `fullEgp` is the line
     // before the discount. Older orders and other lines don't have it.
     const fullEgp = typeof raw['fullEgp'] === 'number' ? wholeNumber(raw['fullEgp']) : unitEgp * quantity;
+    const lineEgp = Math.max(0, fullEgp - discountEgp);
+    moneyLines.push({ lineEgp, wasEgp: discountEgp > 0 ? fullEgp : null });
+    kept.push(index);
     lines.push({
       productId,
       name: text(raw['name']),
       optionLabels: readOptionLabels(raw['optionLabels']),
       imagePath: text(raw['imagePath']) || null,
       quantity,
-      lineEgp: Math.max(0, fullEgp - discountEgp),
+      lineEgp,
       giftName: readGiftName(raw['gift']),
       dealTag: readDealTag(raw['deals'], quantity),
     });
@@ -175,6 +236,28 @@ export function readOrderForEmail(
       ? wholeNumber(storedTotal)
       : subtotalEgp + shippingEgp;
 
+  const shippingCountry = text(isRecord(data['shipping']) ? data['shipping']['country'] : undefined);
+  // Same test as the order page (`orderShopperMoney`): shipped outside Egypt.
+  const isInternational =
+    pricing['isInternational'] === true || (shippingCountry !== '' && shippingCountry !== 'EG');
+  const payIn = isRecord(pricing['payIn']) ? pricing['payIn'] : null;
+  const shopper = shopperMoney({
+    abroad: isInternational,
+    lines: moneyLines,
+    subtotalEgp,
+    shippingEgp,
+    totalEgp,
+    payIn: payIn
+      ? {
+          currency: text(payIn['currency']),
+          amount: finiteNumber(payIn['amount']),
+          lines: Array.isArray(payIn['lines']) ? payIn['lines'].map(finiteNumber) : undefined,
+          shipping: typeof payIn['shipping'] === 'number' ? finiteNumber(payIn['shipping']) : undefined,
+          factor: typeof payIn['factor'] === 'number' ? finiteNumber(payIn['factor']) : undefined,
+        }
+      : null,
+  });
+
   const shippingAddress = isRecord(data['shipping']) ? data['shipping'] : {};
   const email = text(data['customerEmail']);
 
@@ -184,7 +267,7 @@ export function readOrderForEmail(
     status,
     paymentMethod,
     customerEmail: email.includes('@') ? email : null,
-    isInternational: pricing['isInternational'] === true,
+    isInternational,
     address: {
       fullName: text(shippingAddress['fullName']),
       line1: text(shippingAddress['line1']),
@@ -195,21 +278,34 @@ export function readOrderForEmail(
       country: text(shippingAddress['country']),
       phone: text(shippingAddress['phone']),
     },
-    lines,
+    lines: lines.map((line, at) => ({ ...line, shopperAmount: shopper.lines[kept[at]!] ?? null })),
     subtotalEgp,
     shippingEgp,
     totalEgp,
     needsReview: data['needsReview'] === true,
     feeToBeAgreed: isDeliveryFeeToBeAgreed(shipping),
-    deliveryFeeAgreed: shipping?.['kind'] === 'domestic-agreed' && shipping['feeAgreed'] === true,
+    deliveryFeeAgreed:
+      (shipping?.['kind'] === 'domestic-agreed' || shipping?.['kind'] === 'international-agreed') &&
+      shipping['feeAgreed'] === true,
     deliveryFeeSetAtMs: timestampMs(data['deliveryFeeSetAt']),
     shippedAtMs: timestampMs(data['shippedAt']),
     deliveredAtMs: timestampMs(data['deliveredAt']),
+    reopenedAtMs: timestampMs(data['reopenedAt']),
     viewKey: text(data['viewKey']) || null,
     payIn: readPayIn(pricing['payIn']),
+    chargeEgp:
+      typeof pricing['chargeEgp'] === 'number' &&
+      Number.isFinite(pricing['chargeEgp']) &&
+      pricing['chargeEgp'] > 0
+        ? wholeNumber(pricing['chargeEgp'])
+        : null,
     createdAtMs: timestampMs(data['createdAt']),
     guestCheckout: !text(data['customerId']),
     boxId: (shipping && text(shipping['boxId'])) || null,
+    shopper,
+    shippingAtPlainRate:
+      payIn !== null && typeof payIn['shippingFactor'] === 'number' && payIn['shippingFactor'] > 0,
+    staffRate: null,
   };
 }
 
@@ -238,6 +334,11 @@ function readOptionLabels(raw: unknown): { label: string; value: string }[] {
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+/** A finite number, or NaN (which the shopper amounts treat as unreadable). */
+function finiteNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : Number.NaN;
 }
 
 function wholeNumber(value: unknown): number {

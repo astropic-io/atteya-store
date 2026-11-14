@@ -1,10 +1,29 @@
 // GENERATED — edit functions/src/offers/engine
 export interface CurrencyEntry {
   readonly code: string;
+  /** Shopper currency per 1 EGP for items, with the abroad markup in. */
   readonly factor: number;
+  /**
+   * Shopper currency per 1 EGP for the shipping fee: the plain rate, no markup (ATS-311: shipping
+   * prices abroad are set on their own in Settings → Shipping). Missing on a `settings/currency`
+   * written before ATS-311: `shippingEntry()` then falls back to `factor`.
+   */
+  readonly shippingFactor?: number;
 }
 
 export const EGP_ENTRY: CurrencyEntry = { code: 'EGP', factor: 1 };
+
+/**
+ * The entry the shipping fee is converted with (ATS-311): the plain rate, never the abroad markup.
+ * Checkout, `payInFor()` and the admin order page all use it, so they agree on the shipping amount.
+ */
+export function shippingEntry(entry: CurrencyEntry): CurrencyEntry {
+  if (entry.code === 'EGP') return entry;
+  const plain = entry.shippingFactor;
+  return typeof plain === 'number' && Number.isFinite(plain) && plain > 0
+    ? { code: entry.code, factor: plain }
+    : { code: entry.code, factor: entry.factor };
+}
 
 /** Official rates for these codes are too unreliable to show. Detection uses USD instead. */
 export const UNRELIABLE_CURRENCIES = ['LBP', 'SYP', 'YER', 'SDG', 'VES', 'ZWL', 'IRR'] as const;

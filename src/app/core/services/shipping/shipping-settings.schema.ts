@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { MAX_GOVERNORATE_EXTRA_FEE_EGP } from '@core/services/offers/engine';
+import { MAX_GOVERNORATE_EXTRA_FEE_EGP, parseDeliveryCountries } from '@core/services/offers/engine';
 import { timestampSchema } from '@shared/schemas';
 
 const fee = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(1_000_000));
@@ -140,6 +140,18 @@ export const ShippingSettingsSchema = v.object({
       }),
     ),
     {},
+  ),
+  /**
+   * Countries abroad with a set shipping price (ATS-314, Settings → Shipping → Abroad → Delivery
+   * Countries): ISO codes, cleaned by `parseDeliveryCountries()` (never Egypt, no unknown codes).
+   * Missing = not saved yet: `DEFAULT_DELIVERY_COUNTRIES` applies.
+   */
+  // Anything that isn't a list reads as not saved (the default list), as on the server.
+  deliveryCountries: v.optional(
+    v.pipe(
+      v.unknown(),
+      v.transform((raw) => parseDeliveryCountries(raw) ?? undefined),
+    ),
   ),
   /**
    * Legacy zone/flat fields — accepted so old Firestore docs still parse.

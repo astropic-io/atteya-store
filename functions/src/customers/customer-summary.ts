@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { receivedEgp, type ReceivedEgpPricing } from '../offers/engine/received-egp.js';
 import { orderSearchTokens } from '../store/order-search.js';
 
 /**
@@ -28,13 +29,15 @@ export const CUSTOMER_ORDER_FIELDS = [
   'customerEmail',
   'createdAt',
   'pricing.totalEgp',
+  'pricing.chargeEgp',
+  'pricing.payIn',
   'shipping.fullName',
   'shipping.phone',
   'shipping.city',
   'shipping.country',
 ] as const;
 
-/** Statuses whose `totalEgp` counts toward `spentEgp`. */
+/** Statuses whose pounds received (`receivedEgp()`) count toward `spentEgp`. */
 const COMPLETED_STATUSES: ReadonlySet<string> = new Set(['confirmed', 'shipped', 'delivered']);
 
 /** Trimmed, lower-cased email (the same rule as `emailSignups`). */
@@ -124,11 +127,12 @@ export function customerOrderFrom(
 ): CustomerOrderInput {
   const shipping = (data['shipping'] ?? {}) as Record<string, unknown>;
   const pricing = (data['pricing'] ?? {}) as Record<string, unknown>;
-  const total = pricing['totalEgp'];
   return {
     id,
     status: text(data['status']),
-    totalEgp: typeof total === 'number' && Number.isFinite(total) && total > 0 ? total : 0,
+    // What the store received (ATS-316): the Egypt total, or for an order abroad the pounds Card
+    // charged / the Bank Transfer amount at the plain rate.
+    totalEgp: receivedEgp(pricing as ReceivedEgpPricing),
     createdAtMs,
     fullName: text(shipping['fullName']),
     phone: text(shipping['phone']),

@@ -3,7 +3,7 @@ import type { OrderDoc, OrderStaffNotes } from '@core/services/orders/order.sche
 import { formatMoney } from '@shared/utils/money';
 
 /**
- * A Bank Transfer order shipped abroad and paid in another currency (ATS-304): what the customer
+ * A Bank Transfer or Card order shipped abroad and paid in another currency (ATS-304, ATS-311): what the customer
  * pays in their currency, what that comes to in pounds, and the same order's price in Egypt.
  * Everything comes from the order's own `pricing.payIn` and, for the rate, its staff-only
  * `orderStaffNotes.payInRate`; nothing about currencies is fixed here.
@@ -21,6 +21,11 @@ export interface AbroadPrices {
    */
   readonly lines: readonly number[] | null;
   readonly shipping: number | null;
+  /**
+   * The shipping fee was converted at the plain rate with no markup (orders from ATS-311 on), so in
+   * pounds it is its Egypt price. False on older orders, whose shipping had the markup.
+   */
+  readonly shippingAtPlainRate: boolean;
   /** The factor `amount` was worked out with, for struck-out prices; null when not saved. */
   readonly entry: CurrencyEntry | null;
   /** Pounds per 1 unit of the customer's currency on the day (1 ÷ the saved rate); null when not saved. */
@@ -35,7 +40,8 @@ export function abroadPrices(
 ): AbroadPrices | null {
   const pricing = order.pricing;
   const payIn = pricing.payIn;
-  if (order.paymentMethod !== 'bank-transfer' || !payIn || payIn.currency === 'EGP') return null;
+  const method = order.paymentMethod;
+  if ((method !== 'bank-transfer' && method !== 'paymob') || !payIn || payIn.currency === 'EGP') return null;
   const decimals = displayDecimals(payIn.currency);
   const linesSaved =
     payIn.lines !== undefined &&
@@ -50,6 +56,7 @@ export function abroadPrices(
     egyptTotal: pricing.totalEgp ?? pricing.totalDisplay,
     lines: linesSaved ? (payIn.lines ?? null) : null,
     shipping: linesSaved ? (payIn.shipping ?? null) : null,
+    shippingAtPlainRate: payIn.shippingFactor !== undefined,
     entry: payIn.factor ? { code: payIn.currency, factor: payIn.factor } : null,
     egpPerUnit: payInRate ? 1 / payInRate.rate : null,
     markupPercent: payInRate?.markupPercent ?? null,

@@ -1,4 +1,9 @@
-import { orderStage, paymentDue, type OrderStage } from '@core/config/order-messages';
+import {
+  isDeliveryFeeToBeAgreed,
+  orderStage,
+  paymentDue,
+  type OrderStage,
+} from '@core/config/order-messages';
 import { dealTag, displayDecimals } from '@core/services/offers/engine';
 import { orderMessageInput } from '@core/services/orders/order-message-input';
 import type { OrderDoc, OrderStaffNotes } from '@core/services/orders/order.schema';
@@ -55,9 +60,17 @@ function shippingLabel(order: OrderDoc): string | null {
   if (line.kind === 'domestic-agreed') {
     return line.feeAgreed ? 'Large order · fee agreed' : 'Large order · fee to be agreed';
   }
+  if (line.kind === 'international-agreed') {
+    return line.feeAgreed ? 'Abroad · fee agreed' : deliveryToConfirm(order);
+  }
   const box = line.boxId ? `Box ${line.boxId.replace(/\D/g, '') || line.boxId}` : null;
   if (line.kind === 'international-box') return box ? `${box} (abroad)` : 'Abroad';
   return box;
+}
+
+/** "Delivery to be confirmed · Brazil": an order abroad whose delivery is agreed on WhatsApp (ATS-314). */
+export function deliveryToConfirm(order: OrderDoc): string {
+  return `Delivery to be confirmed · ${countryName(order.shipping.country)}`;
 }
 
 /** What staff should do next, from the order's stage. Null when nothing is waiting on them. */
@@ -66,7 +79,9 @@ function nextStep(stage: OrderStage, order: OrderDoc, money: (egp: number) => st
   const amount = due?.amountEgp != null ? money(due.amountEgp) : 'the amount';
   switch (stage) {
     case 'fee-to-be-agreed':
-      return 'Agree the delivery fee with the customer on WhatsApp, then use Set Delivery Fee.';
+      return order.shipping.country !== 'EG'
+        ? `Check that we can deliver to ${countryName(order.shipping.country)}, agree the shipping fee with the customer on WhatsApp, then use Set Delivery Fee.`
+        : 'Agree the delivery fee with the customer on WhatsApp, then use Set Delivery Fee.';
     case 'instapay-total-due':
       return `Check that ${amount} arrived in your bank app, then change the status to Confirmed.`;
     case 'instapay-fee-due':
@@ -113,6 +128,16 @@ function abroadCells(prices: AbroadPrices, customer: number, egypt: number, free
   };
 }
 
+/**
+ * The shipping row of an order from abroad. Shipping abroad has no markup (ATS-311): in pounds it is
+ * its Egypt price, with no "+N abroad". Older orders, whose shipping had the markup, keep the old look.
+ */
+function abroadShippingCells(prices: AbroadPrices, customer: number, egypt: number): AbroadPriceCells {
+  const cells = abroadCells(prices, customer, egypt, egypt === 0);
+  if (!prices.shippingAtPlainRate || egypt === 0 || cells.pounds === null) return cells;
+  return { ...cells, pounds: egpMoney(egypt), extra: null };
+}
+
 /** Subtotal, Shipping and Total of an order from abroad in three columns, and the grey note under them. */
 function abroadView(order: OrderDoc, prices: AbroadPrices): AbroadOrderView | null {
   const lines = prices.lines;
@@ -124,18 +149,34 @@ function abroadView(order: OrderDoc, prices: AbroadPrices): AbroadOrderView | nu
   const totals: AbroadTotalRow[] = [
     { label: 'Subtotal', ...abroadCells(prices, subtotal, pricing.subtotalDisplay, false) },
   ];
-  if (pricing.shipping) {
+  if (pricing.shipping && isDeliveryFeeToBeAgreed(pricing.shipping)) {
+    // Delivery to be confirmed abroad (ATS-314): no fee yet in any column.
+    const later = 'To be agreed';
     totals.push({
       label: shippingLabelText ? `Shipping · ${shippingLabelText}` : 'Shipping',
-      ...abroadCells(prices, shippingAmount, pricing.shipping.priceEgp, pricing.shipping.priceEgp === 0),
+      customer: later,
+      pounds: prices.egpPerUnit === null ? null : later,
+      egypt: later,
+      extra: null,
+    });
+  } else if (pricing.shipping) {
+    totals.push({
+      label: shippingLabelText ? `Shipping · ${shippingLabelText}` : 'Shipping',
+      ...abroadShippingCells(prices, shippingAmount, pricing.shipping.priceEgp),
     });
   }
+  // Card abroad (ATS-311): in pounds the total is exactly what Paymob charges.
+  const cardEgp = 'paymob' in order && order.paymob ? order.paymob.amountCents / 100 : null;
+  const totalCells = abroadCells(prices, prices.amount, prices.egyptTotal, false);
   totals.push({
     label: 'Total',
     strong: true,
-    ...abroadCells(prices, prices.amount, prices.egyptTotal, false),
+    ...(cardEgp === null || totalCells.pounds === null
+      ? totalCells
+      : { ...totalCells, pounds: egpMoney(cardEgp), extra: abroadExtra(cardEgp, prices.egyptTotal) }),
   });
-  const poundsTotal = inPounds(prices, prices.amount);
+  const poundsTotal =
+    cardEgp !== null && prices.egpPerUnit !== null ? cardEgp : inPounds(prices, prices.amount);
   return {
     showPounds: prices.egpPerUnit !== null,
     totals,
@@ -252,6 +293,13 @@ function paymentRows(
       });
     }
     rows.push({ label: 'Received', value: 'Not yet' });
+  } else if (stage === 'fee-to-be-agreed' && order.paymentMethod === 'bank-transfer') {
+    // Nothing is due or sent until the delivery fee is agreed (ATS-319): the saved amount is items only.
+    rows.push({ label: 'To receive by bank transfer', value: 'After the fee is agreed', strong: true });
+    if (abroad?.lines) {
+      rows.push({ label: 'Same order in Egypt', value: egpMoney(abroad.egyptTotal), muted: true });
+    }
+    rows.push({ label: 'Received', value: 'Not yet' });
   } else if (pricing.payIn && order.paymentMethod === 'bank-transfer') {
     rows.push({
       label: 'Customer sent',
@@ -277,6 +325,12 @@ function paymentRows(
 
   if ('paymob' in order && order.paymob) {
     const paid = shortOrderDate(order.paymob.paidAt);
+    if (abroad) {
+      // Card abroad (ATS-311): Paymob charges pounds, the customer's total at the plain rate.
+      const label = order.paymob.paidAt ? 'Charged by card' : 'To charge by card';
+      rows.push({ label, value: egp(order.paymob.amountCents / 100), strong: true });
+      rows.push({ label: 'Same order in Egypt', value: egpMoney(abroad.egyptTotal), muted: true });
+    }
     rows.push({ label: 'Card payment', value: paid ? `Paid ${paid}` : 'Not paid yet' });
     if (order.paymob.transactionId != null) {
       rows.push({ label: 'Card transaction number', value: String(order.paymob.transactionId) });
@@ -301,7 +355,7 @@ export function orderDetails(
   const egp = (amount: number) => formatMoney(amount, 'EGP', 0);
   const stage = orderStage(orderMessageInput(order));
   const shipping = order.shipping;
-  const feeToBeAgreed = pricing.shipping?.kind === 'domestic-agreed' && pricing.shipping.feeAgreed !== true;
+  const feeToBeAgreed = isDeliveryFeeToBeAgreed(pricing.shipping);
 
   const cityLine = [shipping.city, shipping.region].filter(Boolean).join(', ');
   const addressLines = [
@@ -347,6 +401,8 @@ export function orderDetails(
       copyText: [shipping.fullName, ...addressLines, shipping.phone].join('\n'),
     },
     shippingBox: shippingLabel(order),
+    deliveryToConfirm:
+      pricing.shipping?.kind === 'international-agreed' && feeToBeAgreed ? deliveryToConfirm(order) : null,
     payment: {
       method: paymentLabel(order),
       rows: paymentRows(order, stage, egp, prices),

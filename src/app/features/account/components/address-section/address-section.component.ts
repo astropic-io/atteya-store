@@ -2,7 +2,14 @@ import { Component, computed, effect, inject, input, linkedSignal, signal, untra
 import { form, submit, validate } from '@angular/forms/signals';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { isEgyptMobile } from '@core/config/order-messages';
+import {
+  ABROAD_PHONE_MESSAGE,
+  DELIVERY_FIELD_MESSAGES,
+  EGYPT_PHONE_MESSAGE,
+  isEgyptMobile,
+  shopperWhatsappNumber,
+} from '@core/config/order-messages';
+import { CurrencyService } from '@core/services/currency/currency.service';
 import { governorateById, governorateOfAddress } from '@core/services/offers/engine';
 import { ShippingSettingsService } from '@core/services/shipping/shipping-settings.service';
 import { SnackbarService } from '@core/services/snack-bar/snack-bar.service';
@@ -61,6 +68,8 @@ function textRule(label: string, max: number, required: boolean) {
 /**
  * Account → Delivery Address: the one saved address (`users/{uid}.address`), with the same
  * fields checkout asks for in that country. Checkout fills it in when the countries match.
+ * Saving it moves browsing prices to its country (ATS-317); a signed-in shopper's first order
+ * saves its delivery address here when none is saved yet.
  */
 @Component({
   selector: 'app-address-section',
@@ -79,6 +88,7 @@ function textRule(label: string, max: number, required: boolean) {
 export class AddressSectionComponent {
   readonly #profiles = inject(UserProfileService);
   readonly #snackbar = inject(SnackbarService);
+  readonly #currency = inject(CurrencyService);
   /** Governorates we deliver to, for the Egypt Governorate field. */
   readonly governorates = inject(ShippingSettingsService).governorates;
   /** Shows "Choose your governorate." after a save with none picked. */
@@ -134,18 +144,18 @@ export class AddressSectionComponent {
       valueOf(path.country) === 'EG' ? undefined : textRule('region', 80, false)(value()),
     );
     validate(path.postalCode, ({ value, valueOf }) =>
-      valueOf(path.country) === 'EG' ? undefined : textRule('postal code', 20, true)(value()),
+      valueOf(path.country) === 'EG' ? undefined : textRule('postal code', 20, false)(value()),
     );
     validate(path.phone, ({ value, valueOf }) => {
       const phone = value().trim();
-      if (!phone) return { kind: 'required', message: 'Enter a phone number we can reach you on.' };
-      if (valueOf(path.country) === 'EG') {
-        return isEgyptMobile(phone)
-          ? undefined
-          : { kind: 'phone', message: 'Enter an Egyptian mobile number, e.g. 010 1234 5678.' };
+      if (!phone) return { kind: 'required', message: DELIVERY_FIELD_MESSAGES.phone };
+      const country = valueOf(path.country);
+      if (country === 'EG') {
+        return isEgyptMobile(phone) ? undefined : { kind: 'phone', message: EGYPT_PHONE_MESSAGE };
       }
-      if (phone.length < 6 || phone.length > 20) {
-        return { kind: 'phone', message: 'Enter your number with its country code, e.g. +971 50 123 4567.' };
+      // Same rule as checkout: abroad we reach the shopper on WhatsApp, so it needs its country code.
+      if (phone.length > 20 || shopperWhatsappNumber(phone, country) === null) {
+        return { kind: 'phone', message: ABROAD_PHONE_MESSAGE };
       }
       return undefined;
     });
@@ -181,6 +191,8 @@ export class AddressSectionComponent {
           phone: draft.phone,
           governorateId: governorate?.id ?? null,
         });
+        // ATS-317: prices across the store follow the newly saved country.
+        this.#currency.rememberSavedAddressCountry(this.uid(), draft.country);
         this.#snackbar.success("Your address is saved. We'll fill it in at checkout.");
       } catch {
         this.#snackbar.error("We couldn't save your address. Please try again in a moment.");

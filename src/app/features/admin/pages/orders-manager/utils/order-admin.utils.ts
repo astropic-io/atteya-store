@@ -7,8 +7,10 @@ import {
 } from '@core/config/order-messages';
 import {
   allowedStatusMoves,
+  canReopenOrder,
   orderStatusLabel,
   orderStockTaken,
+  statusBeforeCancel,
   type StaffOrderStatus,
 } from '@core/config/order-status';
 import { whatsappChatUrl } from '@core/config/store-info';
@@ -24,6 +26,7 @@ import type {
   OrderDetails,
   OrderHistoryEntry,
   OrderLineAdminRow,
+  OrderReopen,
   OrderStatusMove,
   OrderLineStockStatus,
   ProductStockLookup,
@@ -55,7 +58,10 @@ export function formatPlacedAt(order: OrderDoc): string {
 
 export function formatOrderTotal(order: OrderDoc, abroad = abroadPrices(order)): string {
   // Bank Transfer from abroad in another currency: what the customer pays (ATS-304).
-  if (abroad) return customerMoney(abroad, abroad.amount);
+  if (abroad) {
+    const amount = customerMoney(abroad, abroad.amount);
+    return isDeliveryFeeToBeAgreed(order.pricing.shipping) ? `${amount} + shipping` : amount;
+  }
   const total = formatMoney(
     order.pricing.totalDisplay,
     order.pricing.currency,
@@ -128,6 +134,7 @@ export function orderActions(
   | 'whatsappUrl'
   | 'confirmAction'
   | 'statusMoves'
+  | 'reopen'
   | 'stockTaken'
   | 'history'
   | 'cancelReason'
@@ -141,10 +148,14 @@ export function orderActions(
   const text = staffWhatsappText(stage, input, order.shipping.fullName);
   const due = paymentDue(stage, input);
   const open = order.status === 'pending';
-  // Only Egypt orders (Cash on Delivery, InstaPay) can have a delivery fee agreed later.
+  // A delivery fee agreed later: Egypt large orders (Cash on Delivery, InstaPay) and Bank Transfer
+  // orders abroad whose delivery is confirmed on WhatsApp (ATS-314).
   const manual = order.paymentMethod === 'cash-on-delivery' || order.paymentMethod === 'instapay';
   const shipping = order.pricing.shipping;
-  const agreedLine = manual && open && shipping?.kind === 'domestic-agreed';
+  const agreedLine =
+    open &&
+    ((manual && shipping?.kind === 'domestic-agreed') ||
+      (order.paymentMethod === 'bank-transfer' && shipping?.kind === 'international-agreed'));
   // Confirm waits until the delivery fee of a large order is saved.
   const canConfirm = open && stage !== 'fee-to-be-agreed';
   return {
@@ -156,7 +167,8 @@ export function orderActions(
         : canConfirm && (order.paymentMethod === 'instapay' || order.paymentMethod === 'bank-transfer')
           ? 'confirm-payment'
           : null,
-    statusMoves: statusMoves(order, stage === 'fee-to-be-agreed'),
+    statusMoves: statusMoves(order, stage === 'fee-to-be-agreed', notes),
+    reopen: reopenFor(order, notes),
     stockTaken: stockTaken(order),
     history: statusHistory(notes),
     cancelReason: notes?.cancelReason?.trim() || null,
@@ -182,9 +194,15 @@ function amountDueLabel(due: ReturnType<typeof paymentDue>): string | null {
 /**
  * The status dropdown's choices: the shared move table (`@core/config/order-status`, the same
  * one `setOrderStatus` checks), minus Confirmed while a large order's delivery fee is still to be
- * agreed. A step back reads "Back to …".
+ * agreed. A step back reads "Back to …". `emailsShopper`: Confirmed, Shipped and Delivered email
+ * the shopper only the first time (the history shows whether the order got there before).
  */
-export function statusMoves(order: OrderDoc, feeToBeAgreed: boolean): OrderStatusMove[] {
+export function statusMoves(
+  order: OrderDoc,
+  feeToBeAgreed: boolean,
+  notes: OrderStaffNotes | null = null,
+): OrderStatusMove[] {
+  const reached = new Set(notes?.statusHistory.map((entry) => entry.status) ?? []);
   return allowedStatusMoves({
     status: order.status,
     paymentMethod: order.paymentMethod,
@@ -196,7 +214,34 @@ export function statusMoves(order: OrderDoc, feeToBeAgreed: boolean): OrderStatu
       label: isStepBack(order.status, status)
         ? `Back to ${orderStatusLabel(status)}`
         : orderStatusLabel(status),
+      emailsShopper:
+        (status === 'confirmed' || status === 'shipped' || status === 'delivered') && !reached.has(status),
     }));
+}
+
+/**
+ * Reopen Order (ATS-325): a cancelled Cash on Delivery, InstaPay or Bank Transfer order, within 7
+ * days of the cancel, whose status before the cancel is in its history. The server checks the
+ * same rules again (`reopenOrder`).
+ */
+export function reopenFor(
+  order: OrderDoc,
+  notes: OrderStaffNotes | null,
+  nowMs: number = Date.now(),
+): OrderReopen | null {
+  const cancelledAt = 'cancelledAt' in order ? orderDate(order.cancelledAt) : null;
+  const allowed = canReopenOrder(
+    {
+      status: order.status,
+      paymentMethod: order.paymentMethod,
+      cancelledAtMs: cancelledAt?.getTime() ?? null,
+    },
+    nowMs,
+  );
+  if (!allowed || !notes) return null;
+  const status = statusBeforeCancel(notes.statusHistory);
+  if (!status) return null;
+  return { status, takesStock: status === 'confirmed' && !stockTaken(order) };
 }
 
 const STEP_ORDER: readonly OrderDoc['status'][] = ['pending', 'confirmed', 'shipped', 'delivered'];

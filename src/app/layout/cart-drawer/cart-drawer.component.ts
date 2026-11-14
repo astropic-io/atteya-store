@@ -32,6 +32,7 @@ import {
   offerShopQuery,
   type OfferLink,
   shortItemWord,
+  offerTextFor,
 } from '@core/services/offers/offer-shop';
 import { CatalogService } from '@core/services/products/catalog.service';
 import { isBankTransferLive, isCardOrWalletLive } from '@core/config/store-info';
@@ -434,8 +435,12 @@ export class CartDrawerComponent {
   readonly subtotal = computed(() => {
     const entry = this.#currency.entry();
     const bag = this.#pricedBag();
+    const lines = this.lines();
+    // A line still waiting for its product to load: show nothing instead of "EGP 0" (ATS-324).
+    // Once loading ends, a product that is gone or failed to read is left out as before.
+    if (this.productsResource.isLoading() && lines.some((_, index) => !bag.lines[index])) return '';
     let amount = 0;
-    this.lines().forEach((line, index) => {
+    lines.forEach((line, index) => {
       const priced = bag.lines[index];
       if (priced) amount += this.#lineDisplay(priced, line.quantity);
     });
@@ -504,7 +509,7 @@ export class CartDrawerComponent {
     const offers = new Map(this.#offers.all().map((offer) => [offer.id, offer]));
     const map = new Map<number, CartBundleBox[]>();
     for (const bundle of this.#pricedBag().bundles) {
-      const strip = bundleStripTitle(bundle, money);
+      const strip = bundleStripTitle({ ...bundle, title: offerTextFor(bundle.title, entry.code) }, money);
       const nudge = bundleNudgeText(bundle, money);
       if (!strip && !nudge) continue;
       const offer = offers.get(bundle.offerId);
@@ -530,7 +535,7 @@ export class CartDrawerComponent {
     const map = new Map<number, CartSetBox[]>();
     for (const set of this.#pricedBag().sets) {
       const offer = offers.get(set.offerId);
-      const strip = bundleSetStripTitle(set);
+      const strip = bundleSetStripTitle({ ...set, title: offerTextFor(set.title, entry.code) });
       const nudge =
         offer?.reward.kind === 'bundleSet' ? bundleSetNudgeText(set, offer.reward.setReward, money) : null;
       if (!strip && !nudge) continue;
@@ -575,8 +580,9 @@ export class CartDrawerComponent {
     const decimals = displayDecimals(entry.code);
     const money = (amount: number): string => formatMoney(amount, entry.code, decimals);
     const offers = this.#offers.all();
+    // A title naming pounds is left out for a visitor paying in another currency (ATS-309).
     const titleOf = (offerId: string): string =>
-      offers.find((offer) => offer.id === offerId)?.title || 'Offer applied';
+      offerTextFor(offers.find((offer) => offer.id === offerId)?.title ?? '', entry.code) || 'Offer applied';
     const products = this.#products();
     const bag = this.#pricedBag();
     return this.lines().map((line, index) => {

@@ -2,6 +2,9 @@ import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { adminCallableOptions } from '../auth/callable-options.js';
 import { requireRole } from '../auth/require-role.js';
+import { isAgreedShippingKind, type OrderPayIn } from './order-pricing.server.js';
+import { payInWithAgreedShipping } from './pay-in.js';
+import { orderStaffNotesRef } from './order-staff-notes.js';
 
 export interface SetDeliveryFeeResponse {
   readonly orderId: string;
@@ -14,8 +17,11 @@ const MAX_FEE_EGP = 100_000;
 
 /**
  * Admin: save the delivery fee agreed with the shopper on WhatsApp for a large Egypt order
- * (`pricing.shipping.kind === 'domestic-agreed'`, InstaPay or Cash on Delivery). Sets the shipping
- * line and the order total, so the confirmation page and `paymentDue()` ask for the right amount.
+ * (`pricing.shipping.kind === 'domestic-agreed'`, InstaPay or Cash on Delivery), or for a Bank
+ * Transfer order abroad whose delivery was to be confirmed (`international-agreed`, ATS-314). Sets
+ * the shipping line and the order total, so the confirmation page and `paymentDue()` ask for the
+ * right amount. Abroad, the fee (typed in EGP) is also converted to the shopper's currency at the
+ * plain rate with no markup and added to `pricing.payIn` (`shipping`, `amount`).
  * Can be changed again while the order is still open. The first save emails the shopper
  * (`delivery-fee-set`); each later change emails the new fee (`delivery-fee-changed`). Stock is
  * not touched: that still happens on confirm.
@@ -35,10 +41,22 @@ export const setDeliveryFee = onCall(
       }
       const order = snap.data() ?? {};
       const method = order['paymentMethod'];
-      if (method !== 'cash-on-delivery' && method !== 'instapay') {
+      const pricing = isRecord(order['pricing']) ? order['pricing'] : null;
+      const shipping = pricing && isRecord(pricing['shipping']) ? pricing['shipping'] : null;
+      const kind = shipping?.['kind'];
+      const abroad = kind === 'international-agreed';
+      if (!pricing || !shipping || !isAgreedShippingKind(kind)) {
+        throw new HttpsError('failed-precondition', 'This order already has its delivery fee from checkout.');
+      }
+      const methodFits = abroad
+        ? method === 'bank-transfer'
+        : method === 'cash-on-delivery' || method === 'instapay';
+      if (!methodFits) {
         throw new HttpsError(
           'failed-precondition',
-          'The delivery fee can only be set on InstaPay or Cash on Delivery orders.',
+          abroad
+            ? 'The delivery fee for an order abroad can only be set on Bank Transfer orders.'
+            : 'The delivery fee can only be set on InstaPay or Cash on Delivery orders.',
         );
       }
       if (order['status'] !== 'pending') {
@@ -47,14 +65,25 @@ export const setDeliveryFee = onCall(
           'The delivery fee can only be set while the order is still open.',
         );
       }
-      const pricing = isRecord(order['pricing']) ? order['pricing'] : null;
-      const shipping = pricing && isRecord(pricing['shipping']) ? pricing['shipping'] : null;
-      if (!pricing || !shipping || shipping['kind'] !== 'domestic-agreed') {
-        throw new HttpsError('failed-precondition', 'This order already has its delivery fee from checkout.');
-      }
       const subtotalEgp = pricing['subtotalEgp'];
       if (typeof subtotalEgp !== 'number' || !Number.isInteger(subtotalEgp) || subtotalEgp < 0) {
         throw new HttpsError('failed-precondition', "This order's amounts can't be read.");
+      }
+
+      // Abroad: the fee in the shopper's currency at the plain rate (ATS-311), added to `payIn`.
+      let payIn: OrderPayIn | null = null;
+      if (abroad) {
+        const notes = await tx.get(orderStaffNotesRef(db, orderId));
+        const payInRate = notes.exists ? notes.data()?.['payInRate'] : null;
+        const fallbackRate =
+          isRecord(payInRate) && typeof payInRate['rate'] === 'number' ? payInRate['rate'] : null;
+        payIn = payInWithAgreedShipping(pricing['payIn'], feeEgp, fallbackRate);
+        if (payIn === null) {
+          throw new HttpsError(
+            'failed-precondition',
+            "We couldn't work out this fee in the customer's currency. Please try again later.",
+          );
+        }
       }
 
       const totalEgp = subtotalEgp + feeEgp;
@@ -65,6 +94,7 @@ export const setDeliveryFee = onCall(
         'pricing.shipping.feeAgreed': true,
         'pricing.totalEgp': totalEgp,
         'pricing.totalDisplay': totalEgp,
+        ...(payIn ? { 'pricing.payIn': payIn } : {}),
         deliveryFeeSetAt: now,
         deliveryFeeSetBy: actor.uid,
         updatedAt: now,

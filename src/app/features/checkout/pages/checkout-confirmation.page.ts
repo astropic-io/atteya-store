@@ -23,6 +23,7 @@ import {
   cashOnDeliveryEgp,
   hasBankTransferDetails,
   hasInstapayDetails,
+  isDeliveryFeeToBeAgreed,
   orderStage,
   paymentDue,
   shopperWhatsappText,
@@ -33,6 +34,7 @@ import { formatIban, STORE_INFO, whatsappChatUrl } from '@core/config/store-info
 import { FALLBACK_GIFT_NAME } from '@core/services/cart/cart-gifts';
 import type { CreateManualOrderResult } from '@core/services/orders/checkout-order.service';
 import { orderMessageInput } from '@core/services/orders/order-message-input';
+import { formatShopperAmount, orderShopperMoney } from '@core/services/orders/order-shopper-money';
 import { shortOrderRef } from '@core/services/orders/order-ref';
 import { orderStatusName } from '@core/services/orders/order-status-name';
 import { orderDate } from '@core/services/orders/shopper-orders.service';
@@ -220,6 +222,15 @@ export class CheckoutConfirmationPageComponent implements OnInit {
   /** What is owed now (InstaPay or Bank Transfer), formatted, or null. */
   readonly #payNow = computed(() => this.payBox()?.amount ?? this.bankBox()?.amount ?? null);
 
+  /**
+   * The order's amounts as the shopper sees them (ATS-309): EGP for an Egypt order, only the
+   * currency they pay in for an order shipped abroad (never EGP or the Egypt price).
+   */
+  readonly #money = computed(() => {
+    const pricing = this.order()?.pricing;
+    return pricing ? orderShopperMoney(pricing) : null;
+  });
+
   /** A Bank Transfer order's total in the shopper's currency ("$205"), or null for every other order. */
   readonly #payInTotal = computed(() => {
     const order = this.order();
@@ -227,8 +238,12 @@ export class CheckoutConfirmationPageComponent implements OnInit {
     return payIn ? formatMoney(payIn.amount, payIn.currency, displayDecimals(payIn.currency)) : null;
   });
 
-  /** The "You send by bank" row under the order total: a Bank Transfer in a currency other than EGP. */
+  /**
+   * The "You send by bank" row under the order total: a Bank Transfer in a currency other than EGP.
+   * Hidden until the delivery fee is agreed: the saved amount is the items only, and nothing is due yet.
+   */
   readonly bankSendTotal = computed(() => {
+    if (this.stage() === 'fee-to-be-agreed') return null;
     const payIn = this.order()?.pricing.payIn;
     return payIn && payIn.currency !== 'EGP' ? this.#payInTotal() : null;
   });
@@ -287,7 +302,9 @@ export class CheckoutConfirmationPageComponent implements OnInit {
   readonly bandLine = computed(() => {
     switch (this.stage()) {
       case 'fee-to-be-agreed':
-        return "We'll message you on WhatsApp to agree the delivery fee.";
+        return this.#agreeDeliveryAbroad()
+          ? "Nothing to pay yet. We'll contact you on WhatsApp."
+          : "We'll message you on WhatsApp to agree the delivery fee.";
       case 'instapay-total-due':
         return 'One step left: send your payment.';
       case 'instapay-fee-due':
@@ -319,6 +336,17 @@ export class CheckoutConfirmationPageComponent implements OnInit {
     }
   });
 
+  /**
+   * A Bank Transfer order abroad whose delivery and shipping fee are still agreed on WhatsApp
+   * (ATS-314): nothing to pay yet.
+   */
+  readonly #agreeDeliveryAbroad = computed(
+    () =>
+      this.stage() === 'fee-to-be-agreed' &&
+      this.order()?.paymentMethod === 'bank-transfer' &&
+      this.order()?.shipping.country !== 'EG',
+  );
+
   /** "Order #A1B2C3 · 9 Nov 2026" in the band. */
   readonly #placed = computed(() => orderDate(this.order()?.createdAt));
 
@@ -334,7 +362,9 @@ export class CheckoutConfirmationPageComponent implements OnInit {
   readonly moneyBoxes = computed(() => {
     const pricing = this.order()?.pricing;
     const stage = this.stage();
-    if (!pricing || !stage) return [];
+    const money = this.#money();
+    // An order shipped abroad with no amount in the shopper's currency shows no money box.
+    if (!pricing || !stage || !money || money.total === null) return [];
     // A Bank Transfer order is paid in the shopper's own currency.
     const total = this.#payInTotal() ?? this.displayTotal();
     const box = (label: string, value: string, now = false) => ({ label, value, now });
@@ -363,6 +393,11 @@ export class CheckoutConfirmationPageComponent implements OnInit {
           ? [box('Order total', total), box('At your door', cash)]
           : [box('At your door', cash ?? total)];
       case 'fee-to-be-agreed':
+        // Abroad (ATS-314) the items are in the shopper's currency, never EGP.
+        if (this.#agreeDeliveryAbroad()) {
+          const items = formatShopperAmount(money, money.subtotal);
+          return [...(items ? [box('Items', items)] : []), box('Shipping fee', 'To be agreed')];
+        }
         return [
           box(
             'Items',
@@ -387,6 +422,7 @@ export class CheckoutConfirmationPageComponent implements OnInit {
       cash: this.#cash(),
       paymentMethod: this.paymentLabel(),
       cashOnDelivery: order?.paymentMethod === 'cash-on-delivery',
+      ...(this.#agreeDeliveryAbroad() ? { agreeDeliveryTo: countryName(order?.shipping.country ?? '') } : {}),
       shippedAt: order && 'shippedAt' in order ? stepTime(orderDate(order.shippedAt)) : '',
       deliveredAt: order && 'deliveredAt' in order ? stepTime(orderDate(order.deliveredAt)) : '',
     });
@@ -411,11 +447,13 @@ export class CheckoutConfirmationPageComponent implements OnInit {
     if (!pricing || !input) return [];
     const fee =
       input.shippingEgp !== null && input.shippingEgp > 0 ? formatMoney(input.shippingEgp, 'EGP', 0) : null;
+    const money = this.#money();
+    if (!money) return [];
     return buildPaymentParts(this.stage(), {
       method: this.paymentMethod(),
-      total: formatMoney(pricing.totalDisplay, pricing.currency, displayDecimals(pricing.currency)),
+      total: formatShopperAmount(money, money.total) ?? '',
       payIn: this.#payInTotal(),
-      items: formatMoney(pricing.subtotalDisplay, pricing.currency, displayDecimals(pricing.currency)),
+      items: formatShopperAmount(money, money.subtotal) ?? '',
       fee,
       cash: this.#cash(),
     });
@@ -431,8 +469,8 @@ export class CheckoutConfirmationPageComponent implements OnInit {
    */
   readonly items = computed<ConfirmationItem[]>(() => {
     const pricing = this.order()?.pricing;
-    if (!pricing) return [];
-    const decimals = displayDecimals(pricing.currency);
+    const money = this.#money();
+    if (!pricing || !money) return [];
     const isSize = (label: string) => label.trim().toLowerCase() === 'size';
     const items: ConfirmationItem[] = [];
     const byLine = new Map<number, ConfirmationItem>();
@@ -462,13 +500,11 @@ export class CheckoutConfirmationPageComponent implements OnInit {
         quantity: line.quantity,
         imagePath,
         imageSrc: imagePath ? normalizeImageKitPath(imagePath) : '',
-        price: formatMoney(line.lineDisplay, pricing.currency, decimals),
+        // An older order shipped abroad saved only its total: its items show no price.
+        price: formatShopperAmount(money, money.lines[index] ?? null) ?? '',
         // Buy X Get Y: "Free" / "−50%" and the price before it.
         deal: line.deals?.length ? dealTag(line.deals, line.quantity) : '',
-        was:
-          (line.discountEgp ?? 0) > 0
-            ? formatMoney(line.fullEgp ?? line.unitDisplay * line.quantity, pricing.currency, decimals)
-            : '',
+        was: formatShopperAmount(money, money.was[index] ?? null) ?? '',
         gifts: [],
       };
       items.push(item);
@@ -505,19 +541,22 @@ export class CheckoutConfirmationPageComponent implements OnInit {
     return `${count} ${count === 1 ? 'item' : 'items'}`;
   });
 
+  /** Null: no Subtotal row (an order shipped abroad that saved only its total). */
   readonly subtotal = computed(() => {
-    const pricing = this.order()?.pricing;
-    return pricing
-      ? formatMoney(pricing.subtotalDisplay, pricing.currency, displayDecimals(pricing.currency))
-      : '—';
+    const money = this.#money();
+    return money ? formatShopperAmount(money, money.subtotal) : null;
   });
 
+  /** Null: no Shipping row (an order shipped abroad that saved only its total). */
   readonly shippingLabel = computed(() => {
     const pricing = this.order()?.pricing;
-    if (!pricing?.shipping) return '—';
-    if (this.stage() === 'fee-to-be-agreed') return 'To be agreed';
-    if (pricing.shipping.priceDisplay === 0) return 'Free';
-    return formatMoney(pricing.shipping.priceDisplay, pricing.currency, displayDecimals(pricing.currency));
+    const money = this.#money();
+    if (!pricing?.shipping || !money) return null;
+    // The fee was never set (also once such an order is cancelled): never "Free".
+    if (isDeliveryFeeToBeAgreed(pricing.shipping)) return 'To be agreed';
+    if (money.shipping === null) return null;
+    if (money.shipping === 0) return 'Free';
+    return formatShopperAmount(money, money.shipping);
   });
 
   /** Name, address lines and phone as saved on the order. */
@@ -536,10 +575,10 @@ export class CheckoutConfirmationPageComponent implements OnInit {
   });
 
   readonly displayTotal = computed(() => {
-    const pricing = this.order()?.pricing;
-    if (!pricing) return '—';
-    const total = formatMoney(pricing.totalDisplay, pricing.currency, displayDecimals(pricing.currency));
-    return this.stage() === 'fee-to-be-agreed' ? `${total} + shipping` : total;
+    const money = this.#money();
+    const total = money ? formatShopperAmount(money, money.total) : null;
+    if (!total) return '—';
+    return isDeliveryFeeToBeAgreed(this.order()?.pricing?.shipping) ? `${total} + shipping` : total;
   });
 
   constructor() {

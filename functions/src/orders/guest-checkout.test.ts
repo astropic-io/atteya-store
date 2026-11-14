@@ -173,6 +173,15 @@ describe('order view', () => {
       assert.ok(!(hidden in view), hidden);
     }
   });
+
+  it('copies the shopper amounts of an order abroad, but nothing else saved in payIn (ATS-309)', () => {
+    const payIn = { currency: 'QAR', amount: 78, lines: [35], shipping: 43, factor: 0.096 };
+    const view = orderViewFields('o1', {
+      pricing: { isInternational: true, payIn: { ...payIn, markupPercent: 40, rate: 0.0686 } },
+    });
+    assert.deepEqual(view['pricing'], { isInternational: true, payIn });
+    assert.doesNotMatch(JSON.stringify(view), /markupPercent|"rate"/);
+  });
 });
 
 describe('claiming a guest order', () => {

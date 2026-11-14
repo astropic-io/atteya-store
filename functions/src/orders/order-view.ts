@@ -38,7 +38,7 @@ export function orderViewFields(
     id: orderId,
     status: data['status'] ?? null,
     paymentMethod: data['paymentMethod'] ?? null,
-    pricing: data['pricing'] ?? null,
+    pricing: viewPricing(data['pricing']),
     shipping: data['shipping'] ?? null,
     paymob: paymob
       ? {
@@ -58,6 +58,23 @@ export function orderViewFields(
     // Return and exchange requests (id, ref, status, items): the order page shows their status.
     returns: Array.isArray(data['returns']) ? data['returns'] : [],
   };
+}
+
+/**
+ * The order's pricing for the guest view. `payIn` keeps only what the shopper's order page shows
+ * (ATS-309: the currency, the total, each line and the shipping in it, and the public factor for
+ * a struck-out price), never anything else saved there later (the markup and rate behind the
+ * factor live in the staff-only `orderStaffNotes`).
+ */
+function viewPricing(raw: unknown): unknown {
+  if (!isRecord(raw)) return raw ?? null;
+  const payIn = raw['payIn'];
+  if (!isRecord(payIn)) return raw;
+  const kept: Record<string, unknown> = { currency: payIn['currency'], amount: payIn['amount'] };
+  for (const key of ['lines', 'shipping', 'factor'] as const) {
+    if (payIn[key] !== undefined) kept[key] = payIn[key];
+  }
+  return { ...raw, payIn: kept };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

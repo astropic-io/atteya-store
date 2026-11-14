@@ -56,6 +56,11 @@ interface CheckoutLineInput {
 export interface ShownOrderTotals {
   readonly shippingEgp: number | null;
   readonly totalEgp: number | null;
+  /**
+   * Shipped abroad (ATS-311): the total shown in the shopper's currency. The server refuses rather
+   * than charge more in it (`details.payInChanged`). Null for Egypt.
+   */
+  readonly payIn: { readonly currency: string; readonly amount: number } | null;
 }
 
 function toCheckoutLine(line: CartLineDraft, shown: ShownLinePrice | undefined): CheckoutLineInput {
@@ -135,6 +140,7 @@ export class CheckoutOrderService {
         dealOfferIds: readonly string[];
         shownShippingEgp: number | null;
         shownTotalEgp: number | null;
+        shownPayIn: { readonly currency: string; readonly amount: number } | null;
         guest?: GuestCheckoutInput;
       },
       CreatePaymobOrderResult
@@ -147,6 +153,7 @@ export class CheckoutOrderService {
       dealOfferIds: args.dealOfferIds,
       shownShippingEgp: args.shownTotals.shippingEgp,
       shownTotalEgp: args.shownTotals.totalEgp,
+      shownPayIn: args.shownTotals.payIn,
       ...(args.guest ? { guest: { email: args.guest.email } } : {}),
     });
     return response.data;
@@ -155,11 +162,6 @@ export class CheckoutOrderService {
   /** Orders confirmed by staff: Cash on Delivery or InstaPay (Egypt), Bank Transfer (abroad). */
   async placeManualOrder<M extends ManualCheckoutPaymentMethod>(args: {
     readonly method: M;
-    /**
-     * Bank Transfer: the currency checkout showed prices in. The server checks it and works out
-     * the amount to send itself (`pricing.payIn`). Ignored for the other methods.
-     */
-    readonly payInCurrency?: string | null;
     readonly lines: readonly CartLineDraft[];
     readonly shipping: CheckoutShippingInput;
     readonly endedOfferIds: readonly string[];
@@ -181,7 +183,7 @@ export class CheckoutOrderService {
         dealOfferIds: readonly string[];
         shownShippingEgp: number | null;
         shownTotalEgp: number | null;
-        payInCurrency?: string;
+        shownPayIn: { readonly currency: string; readonly amount: number } | null;
         guest?: GuestCheckoutInput;
       },
       CreateManualOrderResult<M>
@@ -194,7 +196,7 @@ export class CheckoutOrderService {
       dealOfferIds: args.dealOfferIds,
       shownShippingEgp: args.shownTotals.shippingEgp,
       shownTotalEgp: args.shownTotals.totalEgp,
-      ...(args.method === 'bank-transfer' && args.payInCurrency ? { payInCurrency: args.payInCurrency } : {}),
+      shownPayIn: args.shownTotals.payIn,
       ...(args.guest ? { guest: { email: args.guest.email } } : {}),
     });
     return response.data;

@@ -1,4 +1,4 @@
-import { isPlatformBrowser, NgOptimizedImage, NgTemplateOutlet } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser, NgOptimizedImage, NgTemplateOutlet } from '@angular/common';
 import {
   Component,
   computed,
@@ -37,7 +37,6 @@ import { CartService } from '@core/services/cart/cart.service';
 import { CurrencyService } from '@core/services/currency/currency.service';
 import { MetaPixelService, metaPixelContents } from '@core/services/analytics/meta-pixel.service';
 import { injectFirestore } from '@core/firebase';
-import { isEgyptMobile } from '@core/config/order-messages';
 import { isBankTransferLive, isCardOrWalletLive, STORE_INFO, whatsappChatUrl } from '@core/config/store-info';
 import { toPricedProduct } from '@core/services/offers/offer.model';
 import { OffersService } from '@core/services/offers/offers.service';
@@ -45,11 +44,14 @@ import {
   checkGovernorate,
   type CurrencyEntry,
   dealTag,
+  EGP_ENTRY,
   governorateById,
   governorateOfAddress,
   displayDecimals,
+  hasSetShippingPrice,
   parcelWeight,
   planDelivery,
+  shippingEntry,
   shippingQuote,
   type ParcelLine,
   toDisplayAmount,
@@ -60,6 +62,8 @@ import {
 import {
   isFailedPrecondition,
   offerToLeaveOut,
+  payInChangedFrom,
+  payInFrom,
   priceChangedFrom,
   serverClockFrom,
   serverTotalsToShow,
@@ -78,11 +82,13 @@ import { ShippingSettingsService } from '@core/services/shipping/shipping-settin
 import { SnackbarService } from '@core/services/snack-bar/snack-bar.service';
 import { UserProfileService, type SavedAddress } from '@core/services/user-profile';
 import { AppImageFallbackDirective } from '@shared/directives/image-fallback';
+import { FieldErrorDirective } from '@shared/directives/field-error';
 import { callableMessage } from '@shared/utils/firebase/firebase-errors';
 import { createValibotConverter } from '@shared/utils/firebase/firestore-converter';
 import { normalizeImageKitPath } from '@shared/utils/image';
 import { formatMoney } from '@shared/utils/money';
 import {
+  agreedBankTransferSteps,
   bankTransferSteps,
   cashOnDeliverySteps,
   currencyPluralName,
@@ -97,6 +103,14 @@ import {
   type CheckoutCountryCode,
 } from '../utils/checkout-countries';
 import { selectionLabel } from '../utils/checkout-line';
+import {
+  CHECKOUT_FIELD_ORDER,
+  checkoutFieldErrors,
+  checkoutFieldId,
+  FIELDS_ABOVE_GOVERNORATE,
+  type CheckoutField,
+  type CheckoutFieldErrors,
+} from '../utils/checkout-fields';
 import { guestEmail } from '../utils/guest-email';
 import { rememberGuestOrder } from '../utils/guest-order-storage';
 import { SharedIconModule } from '@shared/ui/mat-icon';
@@ -107,7 +121,6 @@ import {
 } from '@shared/ui/forms/governorate-input/governorate-input.component';
 import { BagOfferNotesComponent } from '@shared/components/bag-offer-notes/bag-offer-notes.component';
 
-const TOO_HEAVY_MESSAGE = 'This order is too heavy to send abroad. Remove an item or message us.';
 const ABROAD_COMING_SOON_MESSAGE =
   "Ordering from outside Egypt is coming soon. Message us on WhatsApp and we'll help you order.";
 const DELIVERY_UNAVAILABLE_MESSAGE = 'We could not work out delivery for this order. Please try again later.';
@@ -208,13 +221,14 @@ type CheckoutSummary =
   | { readonly state: 'need-governorate'; readonly subtotal: string }
   | { readonly state: 'loading' }
   | { readonly state: 'missing-item' }
-  | { readonly state: 'too-heavy' }
   | { readonly state: 'unavailable' }
   | {
       readonly state: 'ready';
       /**
-       * Egypt order heavier than the biggest box: we message the shopper on WhatsApp to agree
-       * the delivery fee. Card is hidden; `shipping` reads "We'll contact you".
+       * Staff agree the delivery fee with the shopper on WhatsApp after Place Order. Card is
+       * hidden. Egypt: an order heavier than the biggest box, `shipping` reads "We'll contact
+       * you". Abroad (ATS-314): a country with no set shipping price or an order heavier than the
+       * biggest abroad box, `shipping` reads "To be agreed" and only Bank Transfer is offered.
        */
       readonly feeToBeAgreed: boolean;
       readonly subtotal: string;
@@ -244,6 +258,7 @@ type CheckoutSummary =
     NgOptimizedImage,
     NgTemplateOutlet,
     AppImageFallbackDirective,
+    FieldErrorDirective,
     MatAutocompleteModule,
     MatButtonModule,
     MatFormFieldModule,
@@ -277,6 +292,11 @@ export class CheckoutPageComponent implements OnInit {
   readonly governorates = inject(ShippingSettingsService).governorates;
   /** Shows "Choose your governorate." on the field after Place Order with none picked. */
   readonly governorateError = signal(false);
+  /** The message under each required field Place Order found empty or wrong (ATS-318). */
+  readonly fieldErrors = signal<CheckoutFieldErrors>({});
+  /** The `id` of each field's input, so Place Order can put the cursor on the first error. */
+  readonly fieldId = checkoutFieldId;
+  readonly #document = inject(DOCUMENT);
   /** Phone only: the order summary folds into a bar above the form until tapped. */
   readonly summaryOpen = signal(false);
   /** The signed-in shopper's email; empty for a guest. */
@@ -303,6 +323,8 @@ export class CheckoutPageComponent implements OnInit {
    */
   readonly paymentMethod = computed<CheckoutPaymentMethod | null>(() => {
     if (!this.isEgypt()) {
+      // Delivery and the fee agreed on WhatsApp first (ATS-314): Bank Transfer only.
+      if (this.feeToBeAgreed()) return this.bankTransferLive ? 'bank-transfer' : null;
       if (this.cardOrWalletLive && (this.#chosenMethod() === 'paymob' || !this.bankTransferLive))
         return 'paymob';
       return this.bankTransferLive ? 'bank-transfer' : null;
@@ -354,13 +376,52 @@ export class CheckoutPageComponent implements OnInit {
   readonly lines = this.#cart.lines;
   readonly isEmpty = this.#cart.isEmpty;
   readonly isEgypt = computed(() => this.shipping().country === 'EG');
+  /** Only the country, so effects on it skip every keystroke in the other fields. */
+  readonly #deliveryCountry = computed(() => this.shipping().country);
+
+  /**
+   * The factors for a delivery country outside Egypt (ATS-309). Idle for Egypt and before a
+   * country is chosen.
+   */
+  readonly #deliveryEntry = resource({
+    params: () => {
+      const country = this.shipping().country;
+      return isCheckoutCountry(country) && country !== 'EG' ? country : undefined;
+    },
+    loader: ({ params: country }) => this.#currency.entryForDeliveryCountry(country),
+  });
+
+  /**
+   * The currency checkout shows and prices in (ATS-309): the delivery country decides. Egypt is
+   * EGP; abroad it is the delivery country's currency, whatever the visitor browsed in, so a
+   * shopper abroad never sees EGP or the Egypt price. Before a country is chosen, the visitor's
+   * own currency. Null while an abroad currency loads; undefined when it can't be read (no
+   * amounts are shown and the order can't be placed: the server would refuse it too).
+   */
+  readonly #entry = computed<CurrencyEntry | null | undefined>(() => {
+    const country = this.shipping().country;
+    if (!isCheckoutCountry(country)) return this.#currency.entry();
+    if (country === 'EG') return EGP_ENTRY;
+    if (this.#deliveryEntry.error()) return undefined;
+    if (!this.#deliveryEntry.hasValue()) return null;
+    return this.#deliveryEntry.value() ?? undefined;
+  });
+
+  /** The currency code checkout shows prices in, for the offer notes above the summary. */
+  readonly checkoutCurrency = computed(() => this.#entry()?.code ?? null);
   /** InstaPay and cash on delivery are Egypt-only. */
   readonly localMethodsAvailable = computed(() => this.isEgypt());
-  /** A country outside Egypt is chosen while neither Card nor Bank Transfer can be used: order on WhatsApp. */
+  /**
+   * A country outside Egypt is chosen while no way to pay can be used (neither Card nor Bank
+   * Transfer, or only Card while delivery is agreed first): order on WhatsApp.
+   */
   readonly abroadOrderingClosed = computed(() => {
     const country = this.shipping().country;
-    return !this.cardOrWalletLive && !this.bankTransferLive && isCheckoutCountry(country) && country !== 'EG';
+    if (!isCheckoutCountry(country) || country === 'EG' || this.bankTransferLive) return false;
+    return !this.cardOrWalletLive || this.feeToBeAgreed();
   });
+  /** The delivery country's name ("Brazil"), for the notes about agreeing delivery abroad. */
+  readonly deliveryCountryName = computed(() => countryLabel(this.shipping().country));
 
   readonly productsResource = resource({
     params: () => this.lines(),
@@ -441,7 +502,10 @@ export class CheckoutPageComponent implements OnInit {
    * `orderSummary`. Display-only: place-order prices again on the server.
    */
   readonly #pricedBag = computed((): PricedBag => {
-    if (!this.#currency.ready() || !this.#offers.ready()) return { state: 'loading' };
+    const entry = this.#entry();
+    // Abroad with no factors to price in (never the Egypt price instead): delivery can't be worked out.
+    if (entry === undefined) return { state: 'unavailable' };
+    if (!this.#currency.ready() || !this.#offers.ready() || !entry) return { state: 'loading' };
     if (this.productsResource.error()) return { state: 'unavailable' };
     const products = this.productsResource.value();
     if (!products) return { state: 'loading' };
@@ -460,7 +524,6 @@ export class CheckoutPageComponent implements OnInit {
       signedIn: this.#auth.offerSignedIn(),
       codes: [],
     };
-    const entry = this.#currency.entry();
     // Per-item offers on each piece, then Buy X Get Y over the whole bag, like the server.
     const bag = priceBag(lines, products, offers, ctx);
     // Which picked gifts can be given right now, with the same checks as the order callables.
@@ -525,7 +588,7 @@ export class CheckoutPageComponent implements OnInit {
   readonly summaryItems = computed((): readonly CheckoutSummaryItem[] => {
     const products = this.productsResource.hasValue() ? this.productsResource.value() : undefined;
     const bag = this.#pricedBag();
-    const entry = this.#currency.entry();
+    const entry = this.#entry() ?? EGP_ENTRY;
     const decimals = displayDecimals(entry.code);
     const offers = this.#offers.all();
     const giftNotes = new Map(this.#notes.giftNotes().map((note) => [note.key, note]));
@@ -615,12 +678,15 @@ export class CheckoutPageComponent implements OnInit {
     if (!settings) return { state: 'loading' };
 
     const { offers, ctx, pricedLines, parcelLines, subtotalEgp, subtotalDisplay } = bag;
-    const entry = this.#currency.entry();
+    const entry = this.#entry();
+    if (!entry) return { state: 'loading' };
 
     const region = this.isEgypt() ? 'egypt' : 'international';
     const boxes = this.isEgypt() ? settings.egyptBoxes : settings.internationalBoxes;
-    const plan = planDelivery(boxes, region, parcelWeight(parcelLines));
-    if (plan.kind === 'too-heavy') return { state: 'too-heavy' };
+    // Abroad, only the Delivery Countries list has a set shipping price (ATS-314); any other
+    // country, or a parcel over every abroad box, is placed with the fee agreed on WhatsApp.
+    const setPrice = hasSetShippingPrice(settings, this.shipping().country);
+    const plan = planDelivery(boxes, region, parcelWeight(parcelLines), setPrice);
     if (plan.kind === 'unavailable') return { state: 'unavailable' };
 
     const decimals = displayDecimals(entry.code);
@@ -630,11 +696,17 @@ export class CheckoutPageComponent implements OnInit {
       // than save the order for more, or charge a box fee this summary never showed.
       if (server && server.forShippingEgp === null && server.forTotalEgp === subtotalEgp) {
         // Refused twice in a row with the same figures (see `placeOrder`): show the server's.
-        if (server.shippingEgp > 0) return serverTotalsSummary(server, entry, null);
-        const serverItemsDisplay = toDisplayAmount(server.totalEgp, entry);
-        return feeToBeAgreedSummary(server.totalEgp, serverItemsDisplay, entry);
+        if (server.shippingEgp > 0) return serverTotalsSummary(server, entry, null, bag, this.#serverPayIn());
+        const itemsDisplay = serverItemsDisplay(
+          { shippingEgp: null, totalEgp: server.totalEgp },
+          0,
+          entry,
+          bag,
+          this.#serverPayIn(),
+        );
+        return feeToBeAgreedSummary(server.totalEgp, itemsDisplay, entry, region);
       }
-      return feeToBeAgreedSummary(subtotalEgp, subtotalDisplay, entry);
+      return feeToBeAgreedSummary(subtotalEgp, subtotalDisplay, entry, region);
     }
 
     // Egypt: the delivery fee depends on the governorate (box fee + its extra).
@@ -675,10 +747,10 @@ export class CheckoutPageComponent implements OnInit {
     // The server refused this same shipping fee and total twice in a row with its own figures:
     // show those, so the shopper sees what the order costs (see `placeOrder`).
     if (server && server.forShippingEgp === feeEgp && server.forTotalEgp === subtotalEgp + feeEgp) {
-      return serverTotalsSummary(server, entry, freeShippingOfferId);
+      return serverTotalsSummary(server, entry, freeShippingOfferId, bag, this.#serverPayIn());
     }
 
-    const shippingDisplay = toDisplayAmount(feeEgp, entry);
+    const shippingDisplay = toDisplayAmount(feeEgp, shippingEntry(entry));
     return {
       state: 'ready',
       feeToBeAgreed: false,
@@ -689,7 +761,11 @@ export class CheckoutPageComponent implements OnInit {
       codShippingEgp: feeEgp,
       codShipping: formatMoney(feeEgp, 'EGP', 0),
       codCash: formatMoney(subtotalEgp, 'EGP', 0),
-      shown: { shippingEgp: feeEgp, totalEgp: subtotalEgp + feeEgp },
+      shown: {
+        shippingEgp: feeEgp,
+        totalEgp: subtotalEgp + feeEgp,
+        payIn: shownPayIn(entry, subtotalDisplay + shippingDisplay),
+      },
       freeShippingOfferId,
     };
   });
@@ -722,11 +798,15 @@ export class CheckoutPageComponent implements OnInit {
     if (summary.state === 'ready') return summary.total;
     const bag = this.#pricedBag();
     if (bag.state !== 'ready') return '';
-    const entry = this.#currency.entry();
+    const entry = this.#entry();
+    if (!entry) return '';
     return formatMoney(bag.subtotalDisplay, entry.code, displayDecimals(entry.code));
   });
 
-  /** Large Egypt order: the delivery fee is agreed on WhatsApp after the order is placed. */
+  /**
+   * The delivery fee is agreed on WhatsApp after the order is placed: a large Egypt order, or an
+   * order abroad to a country with no set shipping price or over every abroad box (ATS-314).
+   */
   readonly feeToBeAgreed = computed(() => {
     const summary = this.orderSummary();
     return summary.state === 'ready' && summary.feeToBeAgreed;
@@ -756,10 +836,11 @@ export class CheckoutPageComponent implements OnInit {
   readonly bankTransfer = computed(() => {
     const ready = this.readySummary();
     if (!ready) return null;
-    return { total: ready.total, currencyName: currencyPluralName(this.#currency.entry().code) };
+    return { total: ready.total, currencyName: currencyPluralName(this.#entry()?.code ?? 'USD') };
   });
 
   readonly bankTransferSteps = computed(() => {
+    if (this.feeToBeAgreed()) return agreedBankTransferSteps();
     const amounts = this.bankTransfer();
     return amounts ? bankTransferSteps(amounts) : [];
   });
@@ -799,7 +880,7 @@ export class CheckoutPageComponent implements OnInit {
     // Prefill from AS-21 visitor geo when the code is on the checkout list.
     // Localhost has no CDN headers and a private IP, so /api/visitor-location
     // returns null — fall back to EG (store home market) once currency has settled.
-    // Africa/Cairo timezone is not wired into visitorCountry (deprecated currency path).
+    // The time-zone fallback (ATS-313) also sets visitorCountry, when the zone maps to a country.
     effect(() => {
       if (this.#countryTouched()) return;
       const geo = this.#currency.visitorCountry();
@@ -818,6 +899,14 @@ export class CheckoutPageComponent implements OnInit {
         }
       });
     });
+    // ATS-317: the country the shopper picks here is the one browsing prices follow afterwards
+    // (Shop, product pages, the bag), until they pick or save another one.
+    effect(() => {
+      if (!this.#countryTouched()) return;
+      const country = this.#deliveryCountry();
+      if (!isCheckoutCountry(country)) return;
+      untracked(() => this.#currency.rememberCheckoutCountry(country));
+    });
     // Fill in the saved address once, when it is for the delivery country and the shopper
     // hasn't started typing an address.
     effect(() => {
@@ -829,6 +918,8 @@ export class CheckoutPageComponent implements OnInit {
         this.#savedAddressFilled = true;
         if (hasTypedAddress(this.shipping())) return;
         this.shipping.update((current) => fillFromSavedAddress(current, saved));
+        // The saved address filled the fields: messages from an earlier Place Order no longer apply.
+        this.fieldErrors.set({});
       });
     });
   }
@@ -850,6 +941,15 @@ export class CheckoutPageComponent implements OnInit {
   }
 
   patchShipping<K extends keyof CheckoutShippingInput>(key: K, value: CheckoutShippingInput[K]): void {
+    if (key === 'country') {
+      // A new country changes what is required (city, phone format): those messages start over.
+      if (value !== this.shipping().country) {
+        this.clearFieldError('city');
+        this.clearFieldError('phone');
+      }
+    } else {
+      this.clearFieldError(key);
+    }
     this.shipping.update((current) => {
       const next = { ...current, [key]: value };
       if (key === 'country' && typeof value === 'string' && isCheckoutCountry(value)) {
@@ -862,6 +962,29 @@ export class CheckoutPageComponent implements OnInit {
       }
       return next;
     });
+  }
+
+  /** Typing in a field clears its message; Place Order checks it again. */
+  clearFieldError(field: CheckoutField | keyof CheckoutShippingInput): void {
+    if (!(field in this.fieldErrors())) return;
+    this.fieldErrors.update((errors) => {
+      const next = { ...errors };
+      delete next[field as CheckoutField];
+      return next;
+    });
+  }
+
+  onGuestEmailInput(value: string): void {
+    this.guestEmailInput.set(value);
+    this.clearFieldError('email');
+  }
+
+  /** Scrolls to the first field with an error and puts the cursor in it. */
+  #focusElement(selector: string): void {
+    const element = this.#document.querySelector<HTMLElement>(selector);
+    if (!element) return;
+    element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    element.focus({ preventScroll: true });
   }
 
   /** The Governorate field picked (or cleared) a governorate: its English name is the city. */
@@ -1005,6 +1128,32 @@ export class CheckoutPageComponent implements OnInit {
     this.summaryOpen.update((open) => !open);
   }
 
+  /**
+   * ATS-317: a signed-in shopper with no saved address gets this order's delivery address saved,
+   * with no extra step. Never replaces a saved address; a failed save changes nothing for the order.
+   */
+  async #saveFirstAddress(shipping: CheckoutShippingInput): Promise<void> {
+    const uid = this.#auth.user()?.uid;
+    // Already known to have a saved address: nothing to read or write.
+    if (!uid || (this.#savedAddress.hasValue() && this.#savedAddress.value() !== null)) return;
+    try {
+      const saved = await this.#profiles.saveAddressIfNone(uid, {
+        fullName: shipping.fullName,
+        line1: shipping.line1,
+        line2: shipping.line2 ?? null,
+        city: shipping.city,
+        region: shipping.region ?? null,
+        postalCode: shipping.postalCode,
+        country: shipping.country,
+        phone: shipping.phone,
+        governorateId: shipping.governorateId ?? null,
+      });
+      if (saved) this.#currency.rememberSavedAddressCountry(uid, shipping.country);
+    } catch {
+      // The order is placed; the shopper can still save an address in Account.
+    }
+  }
+
   /** The offer of the last "Prices in your bag changed" refusal on this visit (see `placeOrder`). */
   #lastChangedOfferId: string | null = null;
   /** The server totals of the last shipping or total refusal on this visit (see `placeOrder`). */
@@ -1016,6 +1165,12 @@ export class CheckoutPageComponent implements OnInit {
   readonly #serverTotals = signal<
     (ServerTotals & { readonly forShippingEgp: number | null; readonly forTotalEgp: number }) | null
   >(null);
+  /**
+   * The amount in the shopper's currency the server sent with a `payInChanged` refusal while the
+   * summary showed the server's totals (`for…`, the totals sent then). The server adds each line up
+   * on its own (`payInFor()`), which checkout can't do for lines it priced differently.
+   */
+  readonly #serverPayIn = signal<ServerPayIn | null>(null);
 
   async placeOrder(): Promise<void> {
     if (this.isSubmitting() || this.isEmpty()) return;
@@ -1025,38 +1180,30 @@ export class CheckoutPageComponent implements OnInit {
     }
     // A guest orders with an email (the order emails and the order link go there).
     const guest = this.isGuest() ? guestEmail(this.guestEmailInput()) : null;
-    if (this.isGuest() && !guest) {
-      this.#snackbar.error(
-        this.guestEmailInput().trim() ? 'Check your email address.' : 'Enter your email to place your order.',
-      );
-      return;
-    }
     const draft = this.shipping();
-    const settings = this.#shippingSettings.settings();
-    if (draft.country === 'EG' && !checkGovernorate(settings ?? {}, draft.governorateId).ok) {
-      this.governorateError.set(true);
-      this.#snackbar.error(CHOOSE_GOVERNORATE_MESSAGE);
-      return;
-    }
-    if (!draft.fullName.trim() || !draft.line1.trim() || !draft.city.trim()) {
-      this.#snackbar.error('Fill in your delivery address to continue.');
-      return;
-    }
-    if (draft.country !== 'EG' && !draft.postalCode.trim()) {
-      this.#snackbar.error('Enter your postal code to continue.');
-      return;
-    }
     if (!isCheckoutCountry(draft.country)) {
-      this.#snackbar.error('Choose a delivery country from the list.');
+      this.fieldErrors.set({});
+      this.#snackbar.error('Choose a delivery country.');
       return;
     }
-    if (!draft.phone.trim()) {
-      this.#snackbar.error('Add a phone number we can reach you on.');
-      return;
-    }
-    // We reach Egypt shoppers on WhatsApp (InstaPay screenshot, cash-on-delivery fee).
-    if (draft.country === 'EG' && !isEgyptMobile(draft.phone)) {
-      this.#snackbar.error('Enter an Egyptian mobile number, e.g. 010 1234 5678.');
+    const settings = this.#shippingSettings.settings();
+    const governorateMissing =
+      draft.country === 'EG' && !checkGovernorate(settings ?? {}, draft.governorateId).ok;
+    if (governorateMissing) this.governorateError.set(true);
+    // Every required field that is empty or wrong gets its message under it (ATS-318); the first
+    // one gets the cursor and the snackbar repeats its message.
+    const errors = checkoutFieldErrors(draft, this.isGuest() ? this.guestEmailInput() : null, !!guest);
+    this.fieldErrors.set(errors);
+    const firstField = CHECKOUT_FIELD_ORDER.find((field) => errors[field]);
+    if (firstField || governorateMissing) {
+      // The governorate sits between the name and the address: report what comes first on the page.
+      if (governorateMissing && (!firstField || !FIELDS_ABOVE_GOVERNORATE.has(firstField))) {
+        this.#focusElement('app-governorate-input input');
+        this.#snackbar.error(CHOOSE_GOVERNORATE_MESSAGE);
+      } else if (firstField) {
+        this.#focusElement(`#${checkoutFieldId(firstField)}`);
+        this.#snackbar.error(errors[firstField] ?? '');
+      }
       return;
     }
     const unavailable = this.unavailableMessage();
@@ -1065,10 +1212,6 @@ export class CheckoutPageComponent implements OnInit {
       return;
     }
     const summary = this.orderSummary();
-    if (summary.state === 'too-heavy') {
-      this.#snackbar.error(TOO_HEAVY_MESSAGE);
-      return;
-    }
     if (summary.state === 'missing-item') {
       this.#snackbar.error('One item in your bag is no longer available.');
       return;
@@ -1117,6 +1260,8 @@ export class CheckoutPageComponent implements OnInit {
         phone: draft.phone.trim(),
         governorateId: draft.country === 'EG' ? draft.governorateId : null,
       };
+      // ATS-317: browsing prices follow the country this order ships to.
+      this.#currency.rememberCheckoutCountry(shipping.country);
 
       if (method === 'paymob') {
         const result = await this.#checkout.placePaymobOrder({
@@ -1129,8 +1274,12 @@ export class CheckoutPageComponent implements OnInit {
           guest: guest ? { email: guest } : null,
         });
         if (guest) rememberGuestOrder(result.orderId, { key: result.viewKey ?? null, email: guest });
-        // Wait for the account bag to save before the full-page redirect to Paymob.
-        await this.#cart.clear();
+        // Wait for the account bag to save before the full-page redirect to Paymob, and give a first
+        // saved address a moment (never more than 1.5 s: paying matters more).
+        await Promise.all([
+          this.#cart.clear(),
+          Promise.race([this.#saveFirstAddress(shipping), new Promise((done) => setTimeout(done, 1500))]),
+        ]);
         if (isPlatformBrowser(this.#platformId)) {
           window.location.assign(result.checkoutUrl);
           return;
@@ -1141,8 +1290,6 @@ export class CheckoutPageComponent implements OnInit {
 
       const result = await this.#checkout.placeManualOrder({
         method,
-        // Bank Transfer: the server works out the amount to send in this currency itself.
-        payInCurrency: this.#currency.entry().code,
         lines: this.lines(),
         shipping,
         endedOfferIds: this.#offers.endedIds(),
@@ -1157,6 +1304,7 @@ export class CheckoutPageComponent implements OnInit {
       // Card counts on the order page once Paymob confirms the payment.
       this.#pixel.trackOrderPurchase(result.orderId, result.pricing);
       void this.#cart.clear();
+      void this.#saveFirstAddress(shipping);
       // A guest's order page reads the order by its key (`?key=`); the page keeps it and hides it.
       await this.#router.navigate(['/checkout', 'confirmation', result.orderId], {
         state: { checkoutResult: result },
@@ -1176,6 +1324,19 @@ export class CheckoutPageComponent implements OnInit {
       // Read the products again after any refusal about the bag (a price went up, or a free gift
       // sold out), so the summary and its notes show what changed.
       if (priceChangedFrom(error) || isFailedPrecondition(error)) this.productsResource.reload();
+      // The prices in the shopper's currency changed since checkout read them (ATS-311): read the
+      // factors again, so the summary shows the new total before they place the order again.
+      if (payInChangedFrom(error)) this.#deliveryEntry.reload();
+      // Showing the server's totals: show the server's amount for them too, so Place Order never
+      // fails forever on a total checkout can't add up line by line.
+      const serverPayIn = payInFrom(error);
+      if (serverPayIn && this.#serverTotals() !== null && shownTotals.totalEgp !== null) {
+        this.#serverPayIn.set({
+          ...serverPayIn,
+          forShippingEgp: shownTotals.shippingEgp,
+          forTotalEgp: shownTotals.totalEgp,
+        });
+      }
       // The shipping fee or total came out higher than this summary showed (a lower price dropped
       // the bag under free shipping, a Buy X Get Y discount shrank): price offers on the server's
       // clock from now on and read the products again (above). When the same server totals come
@@ -1208,26 +1369,73 @@ export class CheckoutPageComponent implements OnInit {
 type ReadySummary = Extract<CheckoutSummary, { readonly state: 'ready' }>;
 
 /**
- * A large Egypt order whose delivery fee is agreed on WhatsApp: the items total (whole EGP and in
- * the display currency) "+ shipping". The items total is sent as the shown total with no shipping
- * fee, so the server refuses rather than save more or add a box fee this summary never showed.
+ * An order whose delivery fee is agreed on WhatsApp (a large Egypt order, or abroad with no set
+ * shipping price, ATS-314): the items total (whole EGP and in the display currency) "+ shipping".
+ * The items total is sent as the shown total with no shipping fee, so the server refuses rather
+ * than save more or add a box fee this summary never showed.
  */
-function feeToBeAgreedSummary(itemsEgp: number, itemsDisplay: number, entry: CurrencyEntry): ReadySummary {
+function feeToBeAgreedSummary(
+  itemsEgp: number,
+  itemsDisplay: number,
+  entry: CurrencyEntry,
+  region: 'egypt' | 'international',
+): ReadySummary {
   const decimals = displayDecimals(entry.code);
   const items = formatMoney(itemsDisplay, entry.code, decimals);
   return {
     state: 'ready',
     feeToBeAgreed: true,
     subtotal: items,
-    shipping: "We'll contact you",
+    shipping: region === 'egypt' ? "We'll contact you" : 'To be agreed',
     total: `${items} + shipping`,
     instapayTotal: formatMoney(itemsEgp, 'EGP', 0),
     codShippingEgp: 0,
     codShipping: '',
     codCash: formatMoney(itemsEgp, 'EGP', 0),
-    shown: { shippingEgp: null, totalEgp: itemsEgp },
+    shown: { shippingEgp: null, totalEgp: itemsEgp, payIn: shownPayIn(entry, itemsDisplay) },
     freeShippingOfferId: null,
   };
+}
+
+/** The total shown in the shopper's currency for an order shipped abroad; null in EGP (ATS-311). */
+function shownPayIn(entry: CurrencyEntry, amount: number): ShownOrderTotals['payIn'] {
+  if (entry.code === 'EGP') return null;
+  return { currency: entry.code, amount: Number(amount.toFixed(displayDecimals(entry.code))) };
+}
+
+/** The server's amount in the shopper's currency for the totals checkout sent (`for…`). */
+interface ServerPayIn {
+  readonly currency: string;
+  readonly amount: number;
+  readonly forShippingEgp: number | null;
+  readonly forTotalEgp: number;
+}
+
+/**
+ * The items total in the shopper's currency for the server's totals, added up the way the server
+ * adds it up (`payInFor()`: each line on its own, then shipping), never the items converted as one
+ * amount, which often comes out lower: the server's own amount for these totals when it sent one,
+ * else the bag's line by line when the server's items come to the same pounds, else the items
+ * converted as one amount (the server then refuses with its amount, which is shown next).
+ */
+function serverItemsDisplay(
+  shown: { readonly shippingEgp: number | null; readonly totalEgp: number },
+  shippingDisplay: number,
+  entry: CurrencyEntry,
+  bag: { readonly subtotalEgp: number; readonly subtotalDisplay: number },
+  serverPayIn: ServerPayIn | null,
+): number {
+  const itemsEgp = shown.totalEgp - (shown.shippingEgp ?? 0);
+  if (
+    serverPayIn &&
+    serverPayIn.currency === entry.code &&
+    serverPayIn.forShippingEgp === shown.shippingEgp &&
+    serverPayIn.forTotalEgp === shown.totalEgp
+  ) {
+    return Math.max(0, Number((serverPayIn.amount - shippingDisplay).toFixed(displayDecimals(entry.code))));
+  }
+  if (itemsEgp === bag.subtotalEgp) return bag.subtotalDisplay;
+  return toDisplayAmount(itemsEgp, entry);
 }
 
 /** The server's shipping fee and total, after it refused the same ones twice in a row. */
@@ -1235,11 +1443,19 @@ function serverTotalsSummary(
   server: ServerTotals,
   entry: CurrencyEntry,
   freeShippingOfferId: string | null,
+  bag: { readonly subtotalEgp: number; readonly subtotalDisplay: number },
+  serverPayIn: ServerPayIn | null,
 ): ReadySummary {
   const decimals = displayDecimals(entry.code);
   const subtotalEgp = server.totalEgp - server.shippingEgp;
-  const subtotalDisplay = toDisplayAmount(subtotalEgp, entry);
-  const shippingDisplay = toDisplayAmount(server.shippingEgp, entry);
+  const shippingDisplay = toDisplayAmount(server.shippingEgp, shippingEntry(entry));
+  const subtotalDisplay = serverItemsDisplay(
+    { shippingEgp: server.shippingEgp, totalEgp: server.totalEgp },
+    shippingDisplay,
+    entry,
+    bag,
+    serverPayIn,
+  );
   return {
     state: 'ready',
     feeToBeAgreed: false,
@@ -1250,7 +1466,11 @@ function serverTotalsSummary(
     codShippingEgp: server.shippingEgp,
     codShipping: formatMoney(server.shippingEgp, 'EGP', 0),
     codCash: formatMoney(subtotalEgp, 'EGP', 0),
-    shown: { shippingEgp: server.shippingEgp, totalEgp: server.totalEgp },
+    shown: {
+      shippingEgp: server.shippingEgp,
+      totalEgp: server.totalEgp,
+      payIn: shownPayIn(entry, subtotalDisplay + shippingDisplay),
+    },
     freeShippingOfferId,
   };
 }

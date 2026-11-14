@@ -1,3 +1,4 @@
+import { BrowsingAccountService } from '@core/services/currency/browsing-account.service';
 import { isPlatformBrowser } from '@angular/common';
 import {
   afterNextRender,
@@ -103,6 +104,8 @@ export class MainLayoutComponent {
   constructor() {
     // Eager: applies a pending favorite after guest heart → sign-in.
     inject(FavoritesGateService);
+    // Browsing prices follow the signed-in shopper's saved address (ATS-317). Store pages only.
+    inject(BrowsingAccountService);
 
     effect(() => {
       if (this.chromeReady()) {

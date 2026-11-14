@@ -364,6 +364,68 @@ export async function readOfferGiveBack(
   };
 }
 
+/**
+ * Undo of `readOfferGiveBack` when a cancelled order is reopened (ATS-325): counts the order's
+ * offer uses again inside the reopen transaction, even when the offer has ended or its limit is
+ * reached (the shopper keeps the prices they were charged). Reads first (call before any write in
+ * `tx`) and returns the writer. Each `offerUsage/{offerId}` and `offerUsage/{offerId}_{key}` goes
+ * up by 1; a missing count doc is left alone, as the give-back left it. An offer whose total uses
+ * are all gone after this is switched off (`active: false`, `updatedBy: OFFER_LIMIT_ACTOR`), the
+ * same as the last use at Place Order (`readOfferUses`); one with uses left is not touched.
+ */
+export async function readOfferRetake(
+  tx: Transaction,
+  db: Firestore,
+  saved: SavedOfferUses,
+): Promise<() => void> {
+  const entries = saved.offerIds.map((offerId) => ({
+    total: db.collection('offerUsage').doc(offerId),
+    customers: saved.customerKeys.map((key) => db.collection('offerUsage').doc(`${offerId}_${key}`)),
+    offer: db.collection('offers').doc(offerId),
+  }));
+  const read = await Promise.all(
+    entries.map(async (entry) => {
+      const [totalSnap, offerSnap, ...customerSnaps] = await Promise.all([
+        tx.get(entry.total),
+        tx.get(entry.offer),
+        ...entry.customers.map((ref) => tx.get(ref)),
+      ]);
+      return { entry, totalSnap, offerSnap, customerSnaps };
+    }),
+  );
+  return () => {
+    const now = FieldValue.serverTimestamp();
+    for (const { entry, totalSnap, offerSnap, customerSnaps } of read) {
+      const nextTotal = readCount(totalSnap.data()?.['count']) + 1;
+      if (totalSnap.exists) {
+        tx.set(entry.total, { count: nextTotal, updatedAt: now }, { merge: true });
+      }
+      customerSnaps.forEach((snap, k) => {
+        if (!snap.exists) return;
+        tx.set(
+          entry.customers[k]!,
+          { count: readCount(snap.data()?.['count']) + 1, updatedAt: now },
+          { merge: true },
+        );
+      });
+      const offer = offerSnap.data();
+      const totalUses = readLimit(isPlainRecord(offer?.['limits']) ? offer['limits']['totalUses'] : null);
+      if (!offerSnap.exists || offer?.['active'] !== true || totalUses === null) continue;
+      if (totalSnap.exists && nextTotal >= totalUses) {
+        tx.update(entry.offer, { active: false, updatedAt: now, updatedBy: OFFER_LIMIT_ACTOR });
+      }
+    }
+  };
+}
+
+function readLimit(raw: unknown): number | null {
+  return typeof raw === 'number' && Number.isFinite(raw) ? Math.round(raw) : null;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function readCount(raw: unknown): number {
   return typeof raw === 'number' && Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
 }

@@ -32,8 +32,9 @@ export interface OrderMessageInput {
   /** Paid, but an item ran short when the payment cleared. */
   readonly needsReview: boolean;
   /**
-   * Egypt order heavier than the biggest box whose delivery fee staff haven't set yet
-   * (`pricing.shipping.kind === 'domestic-agreed'` and `feeAgreed !== true`). Missing = false.
+   * Delivery fee staff haven't set yet (`isDeliveryFeeToBeAgreed()`): an Egypt order heavier than
+   * the biggest box (`domestic-agreed`), or a Bank Transfer order abroad whose delivery is still to
+   * be confirmed (`international-agreed`, ATS-314). Missing = false.
    * While true, `shippingEgp` and `totalEgp` should be null: neither amount is known.
    */
   readonly feeToBeAgreed?: boolean;
@@ -51,7 +52,10 @@ export interface PayIn {
 }
 
 export type OrderStage =
-  /** InstaPay or cash on delivery, large order: staff agree the delivery fee on WhatsApp first. */
+  /**
+   * Staff agree the delivery fee on WhatsApp first: InstaPay or cash on delivery large order, or a
+   * Bank Transfer order abroad whose delivery is still to be confirmed (ATS-314).
+   */
   | 'fee-to-be-agreed'
   /** InstaPay order waiting for the full transfer. */
   | 'instapay-total-due'
@@ -96,12 +100,15 @@ export interface PaymentDue {
 
 /**
  * True for a saved `pricing.shipping` line whose delivery fee staff haven't set yet: an Egypt
- * order heavier than the biggest box (`kind: 'domestic-agreed'`, `feeAgreed` not true).
+ * order heavier than the biggest box (`kind: 'domestic-agreed'`), or an order abroad whose
+ * delivery and fee are agreed on WhatsApp (`kind: 'international-agreed'`, ATS-314), with
+ * `feeAgreed` not true.
  */
 export function isDeliveryFeeToBeAgreed(shipping: unknown): boolean {
   if (!shipping || typeof shipping !== 'object') return false;
   const line = shipping as Record<string, unknown>;
-  return line['kind'] === 'domestic-agreed' && line['feeAgreed'] !== true;
+  const agreed = line['kind'] === 'domestic-agreed' || line['kind'] === 'international-agreed';
+  return agreed && line['feeAgreed'] !== true;
 }
 
 export function orderStage(order: OrderMessageInput): OrderStage {
@@ -122,6 +129,15 @@ export function orderStage(order: OrderMessageInput): OrderStage {
 
   // Nothing can be paid until the delivery fee is agreed, so no InstaPay box yet.
   if (manual && pending && order.country === 'EG' && order.feeToBeAgreed === true) {
+    return 'fee-to-be-agreed';
+  }
+  // Abroad (ATS-314): nothing to send until staff confirm delivery and agree the fee.
+  if (
+    paymentMethod === 'bank-transfer' &&
+    pending &&
+    order.country !== 'EG' &&
+    order.feeToBeAgreed === true
+  ) {
     return 'fee-to-be-agreed';
   }
 
@@ -275,7 +291,9 @@ export function staffWhatsappText(
   switch (stage) {
     case 'fee-to-be-agreed':
       // Staff add the fee they quote, then save it in the dashboard (Set delivery fee).
-      return `${greeting}\nطلبك وصلنا، ولأنه طلب كبير هنتفق معاك على مصاريف الشحن قبل ما نشحنه.`;
+      return order.country !== 'EG'
+        ? `${greeting}\nطلبك وصلنا. هنتأكد إننا نقدر نوصّله لبلدك ونتفق معاك على مصاريف الشحن، وبعدها تدفع.`
+        : `${greeting}\nطلبك وصلنا، ولأنه طلب كبير هنتفق معاك على مصاريف الشحن قبل ما نشحنه.`;
     case 'bank-transfer-due': {
       const payIn = readPayIn(order.payIn);
       const amount = payIn ? formatPayInPlain(payIn) : 'إجمالي الطلب';
@@ -325,8 +343,9 @@ export function staffWhatsappText(
 /**
  * Phone number from checkout → international digits for `wa.me`, or null when it can't be done
  * safely (then the admin copies the number instead of opening a chat with a stranger).
- * Egypt: must be a mobile (010/011/012/015). Abroad without `+`/`00`: only a leading trunk `0`
- * is replaced by the country's dialling code; anything else is ambiguous.
+ * Egypt: must be a mobile (010/011/012/015). Abroad the number needs `+` or `00` and its country
+ * code (ATS-322): a leading `0` is never guessed into the country's code, because an Egyptian
+ * number typed before the country changed would become a number nobody can reach.
  */
 export function shopperWhatsappNumber(phone: string, country: string): string | null {
   const trimmed = phone.trim();
@@ -344,14 +363,31 @@ export function shopperWhatsappNumber(phone: string, country: string): string | 
     else if (digits.length === 10 && digits.startsWith('1')) intl = `20${digits}`;
     else intl = null;
   } else {
-    const code = DIALLING_CODES[country];
-    intl = code && digits.startsWith('0') && !digits.startsWith('00') ? `${code}${digits.slice(1)}` : null;
+    intl = null;
   }
 
   if (!intl) return null;
   if (intl.startsWith('20')) return EGYPT_MOBILE.test(intl) ? intl : null;
   return intl.length >= 8 && intl.length <= 15 ? intl : null;
 }
+
+/**
+ * What checkout (under the field) and the order callables say when a required delivery field is
+ * empty (ATS-318). Required: full name, address (line 1), city (abroad; the governorate in Egypt),
+ * country and phone. Postal code, address line 2 and region are optional everywhere.
+ */
+export const DELIVERY_FIELD_MESSAGES = {
+  fullName: 'Enter the recipient name.',
+  line1: 'Enter your address.',
+  city: 'Enter your city.',
+  phone: 'Enter a phone number we can reach you on.',
+} as const;
+
+/** Checkout and the order callables refuse an Egypt phone that `isEgyptMobile()` rejects. */
+export const EGYPT_PHONE_MESSAGE = 'Enter an Egyptian mobile number, e.g. 010 1234 5678.';
+
+/** Checkout and the order callables refuse a phone abroad that `shopperWhatsappNumber()` can't read. */
+export const ABROAD_PHONE_MESSAGE = 'Enter your number with its country code, e.g. +971 50 123 4567.';
 
 /** True when a phone typed at checkout is an Egyptian mobile WhatsApp can reach. */
 export function isEgyptMobile(phone: string): boolean {
@@ -361,27 +397,6 @@ export function isEgyptMobile(phone: string): boolean {
 
 /** `+20 …` international mobile: 20 + 1[0125] + 8 digits. */
 const EGYPT_MOBILE = /^201[0125]\d{8}$/;
-
-/** Dialling codes for the checkout countries (`checkout-countries.ts`). */
-const DIALLING_CODES: Readonly<Record<string, string>> = {
-  EG: '20',
-  AE: '971',
-  AU: '61',
-  BH: '973',
-  CA: '1',
-  DE: '49',
-  ES: '34',
-  FR: '33',
-  GB: '44',
-  IT: '39',
-  JO: '962',
-  KW: '965',
-  NL: '31',
-  OM: '968',
-  QA: '974',
-  SA: '966',
-  US: '1',
-};
 
 /** Account name, IBAN, SWIFT and bank, one per line, or null when no IBAN is set. */
 function bankWhere(bank: BankTransferInfo): string | null {

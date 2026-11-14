@@ -22,9 +22,12 @@
         />
       }
       @if (bundleTag(); as tag) {
-        <span class="product-card__bundle-tag" [class.product-card__bundle-tag--money]="tag.money">{{
-          tag.text
-        }}</span>
+        <span
+          class="product-card__bundle-tag"
+          [class.product-card__bundle-tag--money]="tag.money"
+          [attr.data-cur-live]="liveMark"
+          >{{ tag.text }}</span
+        >
       }
     </div>
   </a>

@@ -14,6 +14,26 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Atteya" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <!--
+      Currency first paint (ATS-323), the only home of these rules: the script below sets
+      data-cur-pending before the first frame, and the full stylesheet loads after it.
+      data-cur-moved (CurrencyService): prices differ from the server HTML, so a price a waiting
+      @defer block still shows from the server stays hidden until that block hydrates.
+    -->
+    <style>
+      html[data-cur-pending] app-product-price,
+      html[data-cur-pending] .product-card__bundle-tag--money,
+      html[data-cur-pending] .cart-drawer__money,
+      html[data-cur-moved] app-product-price:not([data-cur-live]),
+      html[data-cur-moved] .product-card__bundle-tag--money:not([data-cur-live]) {
+        visibility: hidden;
+      }
+      html[data-cur-pending] app-announcement-bar[data-shipping-only],
+      html[data-cur-pending] .announcement-bar__slide--shipping,
+      html[data-cur-pending] .pdp-shipping-line {
+        display: none;
+      }
+    </style>
     <script>
       try {
         var r = document.documentElement;
@@ -28,6 +48,43 @@
           } else if (c || country) {
             r.setAttribute('data-cur-pending', '');
           } else {
+            r.setAttribute('data-cur-pending', '');
+          }
+          // Country unknown on the server (ATS-313): it rendered the Egypt price, which is right
+          // for a browser in Egypt, so show it now; elsewhere the app picks by time zone.
+          if (!c && r.hasAttribute('data-cur-by-zone')) {
+            var tz = '';
+            try {
+              tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+            } catch (e) {}
+            if (tz === 'Africa/Cairo') r.removeAttribute('data-cur-pending');
+          }
+        }
+        // The country the shopper told us (ATS-317, currency-detect.ts): the remembered checkout or
+        // Account country, else a signed-in shopper's saved address. When its prices differ from
+        // the ones rendered, hide them until the app shows the right ones.
+        var cq = '';
+        try {
+          cq = new URLSearchParams(location.search).get('cur') || '';
+        } catch (e) {}
+        if (!cq) {
+          var pref = '';
+          try {
+            var signedIn = localStorage.getItem('atteya-signed-in') === '1';
+            var sc = signedIn ? JSON.parse(localStorage.getItem('atteya.savedCountry.v1') || 'null') : null;
+            var uid = sc && typeof sc.uid === 'string' ? sc.uid : '';
+            var rc = JSON.parse(localStorage.getItem('atteya.browseCountry.v1') || 'null');
+            var age = rc ? Date.now() - rc.savedAt : -1;
+            if (rc && typeof rc.country === 'string' && age >= 0 && age <= 2592000000) {
+              if (!uid || !rc.uid || rc.uid === uid) pref = rc.country;
+            }
+            if (!pref && sc && typeof sc.country === 'string') pref = sc.country;
+            if (!/^[A-Z]{2}$/.test(pref)) pref = '';
+          } catch (e) {}
+          var shown = r.hasAttribute('data-cur-by-zone') ? '' : r.getAttribute('data-visitor-country') || '';
+          if (pref === 'EG' && (shown === 'EG' || r.hasAttribute('data-cur-by-zone'))) {
+            r.removeAttribute('data-cur-pending');
+          } else if (pref && pref !== shown) {
             r.setAttribute('data-cur-pending', '');
           }
         }
