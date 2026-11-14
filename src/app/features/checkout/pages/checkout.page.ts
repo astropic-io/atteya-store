@@ -908,6 +908,8 @@ export class CheckoutPageComponent implements OnInit {
         this.#savedAddressFilled = true;
         if (hasTypedAddress(this.shipping())) return;
         this.shipping.update((current) => fillFromSavedAddress(current, saved));
+        // The saved address filled the fields: messages from an earlier Place Order no longer apply.
+        this.fieldErrors.set({});
       });
     });
   }
@@ -929,9 +931,15 @@ export class CheckoutPageComponent implements OnInit {
   }
 
   patchShipping<K extends keyof CheckoutShippingInput>(key: K, value: CheckoutShippingInput[K]): void {
-    // A new country changes what is required (city, phone format): its messages start over.
-    if (key === 'country') this.fieldErrors.set({});
-    else this.clearFieldError(key);
+    if (key === 'country') {
+      // A new country changes what is required (city, phone format): those messages start over.
+      if (value !== this.shipping().country) {
+        this.clearFieldError('city');
+        this.clearFieldError('phone');
+      }
+    } else {
+      this.clearFieldError(key);
+    }
     this.shipping.update((current) => {
       const next = { ...current, [key]: value };
       if (key === 'country' && typeof value === 'string' && isCheckoutCountry(value)) {
@@ -1138,6 +1146,7 @@ export class CheckoutPageComponent implements OnInit {
     const guest = this.isGuest() ? guestEmail(this.guestEmailInput()) : null;
     const draft = this.shipping();
     if (!isCheckoutCountry(draft.country)) {
+      this.fieldErrors.set({});
       this.#snackbar.error('Choose a delivery country.');
       return;
     }

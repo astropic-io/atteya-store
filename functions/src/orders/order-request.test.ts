@@ -56,6 +56,13 @@ describe('order request: only what we need is required (ATS-318)', () => {
     assert.equal(request.shipping.postalCode, 'SW1A 1AA');
   });
 
+  it('refuses a postal code that is too long instead of dropping it', () => {
+    assert.match(
+      refusal(() => parseCreateStoreOrderRequest(abroad({ postalCode: 'X'.repeat(21) }))),
+      /Postal codes are 20 characters or fewer/,
+    );
+  });
+
   it('refuses an order abroad without a city', () => {
     assert.equal(
       refusal(() => parseCreateStoreOrderRequest(abroad({ city: '  ' }))),

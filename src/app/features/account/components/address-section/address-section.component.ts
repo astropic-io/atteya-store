@@ -2,7 +2,13 @@ import { Component, computed, effect, inject, input, linkedSignal, signal, untra
 import { form, submit, validate } from '@angular/forms/signals';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { isEgyptMobile } from '@core/config/order-messages';
+import {
+  ABROAD_PHONE_MESSAGE,
+  DELIVERY_FIELD_MESSAGES,
+  EGYPT_PHONE_MESSAGE,
+  isEgyptMobile,
+  shopperWhatsappNumber,
+} from '@core/config/order-messages';
 import { governorateById, governorateOfAddress } from '@core/services/offers/engine';
 import { ShippingSettingsService } from '@core/services/shipping/shipping-settings.service';
 import { SnackbarService } from '@core/services/snack-bar/snack-bar.service';
@@ -138,14 +144,14 @@ export class AddressSectionComponent {
     );
     validate(path.phone, ({ value, valueOf }) => {
       const phone = value().trim();
-      if (!phone) return { kind: 'required', message: 'Enter a phone number we can reach you on.' };
-      if (valueOf(path.country) === 'EG') {
-        return isEgyptMobile(phone)
-          ? undefined
-          : { kind: 'phone', message: 'Enter an Egyptian mobile number, e.g. 010 1234 5678.' };
+      if (!phone) return { kind: 'required', message: DELIVERY_FIELD_MESSAGES.phone };
+      const country = valueOf(path.country);
+      if (country === 'EG') {
+        return isEgyptMobile(phone) ? undefined : { kind: 'phone', message: EGYPT_PHONE_MESSAGE };
       }
-      if (phone.length < 6 || phone.length > 20) {
-        return { kind: 'phone', message: 'Enter your number with its country code, e.g. +971 50 123 4567.' };
+      // Same rule as checkout: abroad we reach the shopper on WhatsApp, so it needs its country code.
+      if (phone.length > 20 || shopperWhatsappNumber(phone, country) === null) {
+        return { kind: 'phone', message: ABROAD_PHONE_MESSAGE };
       }
       return undefined;
     });

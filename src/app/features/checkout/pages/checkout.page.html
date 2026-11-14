@@ -272,7 +272,7 @@
                 matInput
                 type="email"
                 inputmode="email"
-                required
+                maxlength="254"
                 [id]="fieldId('email')"
                 [appFieldError]="fieldErrors().email"
                 [value]="guestEmailInput()"
@@ -288,6 +288,7 @@
             <mat-label>Full name</mat-label>
             <input
               matInput
+              maxlength="120"
               [id]="fieldId('fullName')"
               [appFieldError]="fieldErrors().fullName"
               [value]="shipping().fullName"
@@ -311,6 +312,7 @@
               <mat-label>Address</mat-label>
               <input
                 matInput
+                maxlength="200"
                 [id]="fieldId('line1')"
                 [appFieldError]="fieldErrors().line1"
                 [value]="shipping().line1"
@@ -328,6 +330,7 @@
               <mat-label>Address line 1</mat-label>
               <input
                 matInput
+                maxlength="200"
                 [id]="fieldId('line1')"
                 [appFieldError]="fieldErrors().line1"
                 [value]="shipping().line1"
@@ -343,6 +346,7 @@
               <mat-label>Address line 2 (optional)</mat-label>
               <input
                 matInput
+                maxlength="200"
                 [value]="shipping().line2 ?? ''"
                 (input)="patchShipping('line2', $any($event.target).value || null)"
                 autocomplete="address-line2"
@@ -354,6 +358,7 @@
                 <mat-label>City</mat-label>
                 <input
                   matInput
+                  maxlength="80"
                   [id]="fieldId('city')"
                   [appFieldError]="fieldErrors().city"
                   [value]="shipping().city"
@@ -369,6 +374,7 @@
                 <mat-label>Region (optional)</mat-label>
                 <input
                   matInput
+                  maxlength="80"
                   [value]="shipping().region ?? ''"
                   (input)="patchShipping('region', $any($event.target).value || null)"
                   autocomplete="address-level1"
@@ -380,6 +386,7 @@
               <mat-label>Postal code (optional)</mat-label>
               <input
                 matInput
+                maxlength="20"
                 [value]="shipping().postalCode"
                 (input)="patchShipping('postalCode', $any($event.target).value)"
                 autocomplete="postal-code"
@@ -392,6 +399,7 @@
             <mat-label>Phone</mat-label>
             <input
               matInput
+              maxlength="20"
               [id]="fieldId('phone')"
               [appFieldError]="fieldErrors().phone"
               [value]="shipping().phone"

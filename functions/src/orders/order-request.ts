@@ -360,7 +360,7 @@ function parseShipping(raw: unknown): OrderShippingInput {
   const city = governorate ? governorate.name : readText(raw['city'], MAX_CITY, DELIVERY_FIELD_MESSAGES.city);
   const region = governorate ? null : readOptionalText(raw['region'], MAX_CITY);
   // Optional for every country (ATS-318): many countries have no postal codes. Egypt never keeps one.
-  const postalCode = country === 'EG' ? '' : (readOptionalText(raw['postalCode'], MAX_POSTAL) ?? '');
+  const postalCode = country === 'EG' ? '' : readPostalCode(raw['postalCode']);
   const phone = readText(raw['phone'], MAX_PHONE, DELIVERY_FIELD_MESSAGES.phone);
   return {
     fullName,
@@ -411,6 +411,16 @@ function readText(raw: unknown, max: number, message: string): string {
   const trimmed = raw.trim();
   if (trimmed.length === 0 || trimmed.length > max) {
     throw new HttpsError('invalid-argument', message);
+  }
+  return trimmed;
+}
+
+/** Optional postal code abroad: empty or missing is fine, too long is refused (never dropped). */
+function readPostalCode(raw: unknown): string {
+  if (raw === null || raw === undefined || typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  if (trimmed.length > MAX_POSTAL) {
+    throw new HttpsError('invalid-argument', `Postal codes are ${MAX_POSTAL} characters or fewer.`);
   }
   return trimmed;
 }
