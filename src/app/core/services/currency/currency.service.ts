@@ -354,7 +354,9 @@ function entryFor(code: string, map: PublicCurrencyMap): CurrencyEntry {
 function factorsEntry(code: string, map: PublicCurrencyMap): CurrencyEntry | null {
   const factors = map[code];
   if (!factors) return null;
-  return { code, factor: factors.factor };
+  return factors.shippingFactor === undefined
+    ? { code, factor: factors.factor }
+    : { code, factor: factors.factor, shippingFactor: factors.shippingFactor };
 }
 
 interface RouteNode {

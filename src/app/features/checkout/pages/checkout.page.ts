@@ -51,6 +51,7 @@ import {
   displayDecimals,
   parcelWeight,
   planDelivery,
+  shippingEntry,
   shippingQuote,
   type ParcelLine,
   toDisplayAmount,
@@ -713,7 +714,7 @@ export class CheckoutPageComponent implements OnInit {
       return serverTotalsSummary(server, entry, freeShippingOfferId);
     }
 
-    const shippingDisplay = toDisplayAmount(feeEgp, entry);
+    const shippingDisplay = toDisplayAmount(feeEgp, shippingEntry(entry));
     return {
       state: 'ready',
       feeToBeAgreed: false,
@@ -1273,7 +1274,7 @@ function serverTotalsSummary(
   const decimals = displayDecimals(entry.code);
   const subtotalEgp = server.totalEgp - server.shippingEgp;
   const subtotalDisplay = toDisplayAmount(subtotalEgp, entry);
-  const shippingDisplay = toDisplayAmount(server.shippingEgp, entry);
+  const shippingDisplay = toDisplayAmount(server.shippingEgp, shippingEntry(entry));
   return {
     state: 'ready',
     feeToBeAgreed: false,

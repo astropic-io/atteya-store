@@ -15,6 +15,11 @@ describe('buildPublicCurrencyDoc', () => {
     assert.ok(Math.abs(doc.currencies['EUR']!.factor - 0.0259) < 1e-12);
   });
 
+  it('keeps the plain rate for the shipping fee, with no markup (ATS-311)', () => {
+    const doc = buildPublicCurrencyDoc(40, { USD: 0.02 }, AT);
+    assert.equal(doc.currencies['USD']!.shippingFactor, 0.02);
+  });
+
   it('leaves out EGP, bad codes and rates that are not above 0', () => {
     const doc = buildPublicCurrencyDoc(
       0,

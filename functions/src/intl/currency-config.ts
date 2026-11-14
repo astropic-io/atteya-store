@@ -7,7 +7,10 @@ export const MARKUP_MAX = 200;
 const CURRENCY_CODE = /^[A-Z]{3}$/;
 
 export interface PublicCurrencyEntry {
+  /** Items: the rate with the abroad markup in. */
   readonly factor: number;
+  /** Shipping fee: the plain rate, no markup (ATS-311). */
+  readonly shippingFactor: number;
 }
 
 export interface PublicCurrencyBody {
@@ -34,7 +37,9 @@ export function parseMarkup(value: unknown): number | null {
 
 /**
  * Combined display factor per currency. The markup is folded into `factor`
- * and is not stored under its own name. EGP is omitted so Egypt prices stay exact.
+ * and is not stored under its own name. `shippingFactor` is the plain rate the shipping fee is
+ * converted with (ATS-311: shipping abroad gets no markup); someone reading both can work out the
+ * markup, which is acceptable. EGP is omitted so Egypt prices stay exact.
  */
 export function buildPublicCurrencyDoc(
   markupPercent: number,
@@ -46,7 +51,7 @@ export function buildPublicCurrencyDoc(
   for (const [code, rate] of Object.entries(rates)) {
     if (!isForeignCurrencyCode(code)) continue;
     if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) continue;
-    currencies[code] = { factor: multiplier * rate };
+    currencies[code] = { factor: multiplier * rate, shippingFactor: rate };
   }
   return { base: 'EGP', currencies, ratesUpdatedAt };
 }

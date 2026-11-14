@@ -27,6 +27,9 @@ import {
   releaseOrderRateLimits,
 } from './order-rate-limit-docs.js';
 import { newOrderViewKey } from './order-view.js';
+import { currencyFromCountry } from '../intl/currency-from-country.js';
+import { withPayIn } from './pay-in-order.js';
+import { orderStaffNotesRef } from './order-staff-notes.js';
 
 export interface CreatePaymobOrderResponse {
   readonly orderId: string;
@@ -66,7 +69,14 @@ export const createPaymobOrder = onCall(
 
     const db = getFirestore();
     const priced = await priceStoreOrder(db, input, customer.signedIn, customer.offerKeys);
-    if (priced.pricing.totalEgp < 1) {
+    // Shipped abroad: the same amount as Bank Transfer in the shopper's currency, charged in pounds
+    // at the plain rate (`chargeEgp`, ATS-311). Egypt: the Egypt price, as before.
+    const { pricing, payInRate } =
+      input.shipping.country === 'EG'
+        ? { pricing: priced.pricing, payInRate: null }
+        : await withPayIn(db, priced.pricing, currencyFromCountry(input.shipping.country), 'paymob');
+    const chargeEgp = pricing.chargeEgp ?? pricing.totalEgp;
+    if (chargeEgp < 1) {
       throw new HttpsError('failed-precondition', 'Your order total is too low to pay online.');
     }
 
@@ -85,7 +95,7 @@ export const createPaymobOrder = onCall(
 
     const orderRef = db.collection('orders').doc();
     const orderId = orderRef.id;
-    const amountCents = priced.pricing.totalEgp * 100;
+    const amountCents = chargeEgp * 100;
     const name = splitPersonName(input.shipping.fullName);
     const viewKey = customer.kind === 'guest' ? newOrderViewKey() : null;
     const email = customer.email && customer.email.includes('@') ? customer.email : 'support@atteyastore.com';
@@ -162,7 +172,7 @@ export const createPaymobOrder = onCall(
             ...input.shipping,
             boxId: priced.pricing.shipping?.boxId ?? null,
           },
-          pricing: priced.pricing,
+          pricing,
           paymob: {
             intentionId: intention.id,
             intentionOrderId: intention.intentionOrderId,
@@ -176,6 +186,10 @@ export const createPaymobOrder = onCall(
           createdAt: now,
           updatedAt: now,
         });
+        // Staff-only: the markup and rate behind payIn (ATS-304), as Bank Transfer saves them.
+        if (payInRate) {
+          tx.set(orderStaffNotesRef(db, orderId), { payInRate, updatedAt: now }, { merge: true });
+        }
       });
     } catch (error: unknown) {
       console.error('Paymob order write error after Intention', error);
@@ -198,7 +212,7 @@ export const createPaymobOrder = onCall(
       orderId,
       status: 'pending',
       paymentMethod: 'paymob',
-      pricing: priced.pricing,
+      pricing,
       checkoutUrl,
       viewKey,
     };
