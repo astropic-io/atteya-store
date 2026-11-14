@@ -71,8 +71,6 @@ export const ReturnRequestSchema = v.object({
   stockNotReturned: v.optional(v.nullable(whole), null),
   /** What Reject moves after Approve (saved at Approve since ATS-298); only its presence is read. */
   rejectStock: v.optional(v.nullable(v.unknown()), null),
-  /** Payment Received (ATS-303): when staff confirmed the courier fee arrived by InstaPay. */
-  paymentReceivedAt: v.optional(v.nullable(timestampSchema), null),
   createdAt: v.optional(v.nullable(timestampSchema), null),
   updatedAt: v.optional(v.nullable(timestampSchema), null),
 });

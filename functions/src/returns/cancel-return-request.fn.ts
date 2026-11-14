@@ -1,10 +1,16 @@
-import { FieldValue, getFirestore, type DocumentData } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore, Timestamp, type DocumentData } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { adminCallableOptions, requireAppCheck } from '../auth/callable-options.js';
 import { isReturnStatus, nextReturnStatuses, withReturnStatus } from '../store/returns.js';
 import { isOrderShopper, RETURN_REQUESTS_COLLECTION } from './return-access.js';
-import { applyStockMoves, productIdsOf, rejectStockFor, type StepProduct } from './return-staff-step.js';
-import { productRef, stepProduct } from './return-staff-transaction.js';
+import {
+  applyStockMoves,
+  productIdsOf,
+  rejectKeptItems,
+  rejectStockFor,
+  type StepProduct,
+} from './return-staff-step.js';
+import { productRef, RETURN_STAFF_NOTES_COLLECTION, stepProduct } from './return-staff-transaction.js';
 
 export interface CancelReturnRequestResponse {
   readonly requestId: string;
@@ -64,6 +70,14 @@ export const cancelReturnRequest = onCall(
 
       // Approve already took the new pieces (Waiting for Payment): put them back like Reject.
       const undo = rejectStockFor(saved);
+      // A Wrong Item Sent correction must stay (Reject keeps it as `keptItems`). Such a request has
+      // no fee to pay first today, so this never happens; refuse rather than move stock twice.
+      if (undo && rejectKeptItems(saved).length > 0) {
+        throw new HttpsError(
+          'failed-precondition',
+          'This request is already being handled, so it can no longer be cancelled. Please message us on WhatsApp.',
+        );
+      }
       const products = new Map<string, StepProduct | null>();
       if (undo) {
         const ids = productIdsOf(undo);
@@ -82,8 +96,6 @@ export const cancelReturnRequest = onCall(
         cancelledBy: 'shopper',
         updatedAt: now,
       };
-      // A request Waiting for Payment has no Wrong Item Sent item (the store pays those, so there
-      // is no fee to pay first), so nothing is kept the way Reject keeps `keptItems`.
       if (undo) {
         const moved = applyStockMoves(products, undo, { short: 'floor' });
         for (const [productId, next] of moved.next) {
@@ -103,6 +115,23 @@ export const cancelReturnRequest = onCall(
         }
       }
       tx.update(requestRef, patch);
+      // Staff see a cancel after Approve in the history: the shopper may already have paid the fee.
+      if (status !== 'requested') {
+        tx.set(
+          db.collection(RETURN_STAFF_NOTES_COLLECTION).doc(requestId),
+          {
+            history: FieldValue.arrayUnion({
+              status: 'cancelled',
+              from: status,
+              at: Timestamp.now(),
+              by: 'shopper',
+              byEmail: 'the customer',
+            }),
+            updatedAt: now,
+          },
+          { merge: true },
+        );
+      }
       tx.update(orderRef, { returns: withReturnStatus(order['returns'], requestId, 'cancelled') });
       return true;
     });

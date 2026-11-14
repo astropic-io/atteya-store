@@ -356,11 +356,14 @@ function returnApproved(request: ReturnEmailRequest, ctx: OrderEmailContext): Re
 function returnApprovedPay(request: ReturnEmailRequest, ctx: OrderEmailContext): RenderedEmail {
   const fee = formatEgp(request.feeEgp);
   const waNumber = ctx.whatsappNumber.trim();
-  const waUrl = whatsappChatUrl(
-    waNumber,
-    returnPaymentWhatsappText(request.ref, request.orderRef, request.feeEgp),
-  );
-  const button: EmailButton | null = waUrl ? { label: 'Send Screenshot on WhatsApp', url: waUrl } : null;
+  const hasDetails = hasInstapayDetails(ctx.instapay);
+  // Without InstaPay details there is nothing to pay to yet: ask for them, never "I paid".
+  const waUrl = hasDetails
+    ? whatsappChatUrl(waNumber, returnPaymentWhatsappText(request.ref, request.orderRef, request.feeEgp))
+    : whatsappChatUrl(waNumber);
+  const button: EmailButton | null = waUrl
+    ? { label: hasDetails ? 'Send Screenshot on WhatsApp' : 'Message Us on WhatsApp', url: waUrl }
+    : null;
   const screenshotTitle = waUrl
     ? 'Send the screenshot on WhatsApp'
     : ctx.canReply
@@ -370,7 +373,7 @@ function returnApprovedPay(request: ReturnEmailRequest, ctx: OrderEmailContext):
   const payStep: EmailStep = { state: 'current', title: `Send ${fee} by InstaPay`, amount: fee };
   let payText = `1. Send ${fee} by InstaPay`;
   let withDetails: EmailStep = payStep;
-  if (hasInstapayDetails(ctx.instapay)) {
+  if (hasDetails) {
     const rows: [string, string][] = [];
     const address = ctx.instapay.address.trim();
     const number = ctx.instapay.number.trim();
@@ -609,7 +612,9 @@ function storeReturnRequest(request: ReturnEmailRequest, ctx: OrderEmailContext)
   const exchange = request.items.some((item) => !item.autoGift && !item.refund && item.kind !== 'return');
   const stepNote = joinWith(
     [
-      'Message the customer to arrange the courier.',
+      paysFirst(request)
+        ? 'Message the customer about the request.'
+        : 'Message the customer to arrange the courier.',
       exchange ? 'Approving takes the new pieces from stock.' : null,
       paysFirst(request)
         ? `After you approve, the customer pays the ${formatEgp(request.feeEgp)} courier fee by InstaPay. Send the courier once it arrives.`

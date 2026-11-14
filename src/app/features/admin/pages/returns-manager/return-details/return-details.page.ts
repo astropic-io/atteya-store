@@ -169,11 +169,7 @@ export class ReturnDetailsPageComponent implements OnInit {
   readonly canApprove = computed(() => this.request()?.status === 'requested');
   readonly canConfirmPayment = computed(() => {
     const request = this.request();
-    return (
-      request?.status === 'waiting-for-payment' &&
-      returnPaysFirst(request.feePaid, request.feeEgp) &&
-      this.#moves().includes('approved')
-    );
+    return request?.status === 'waiting-for-payment' && returnPaysFirst(request.feePaid, request.feeEgp);
   });
   readonly canReject = computed(() => this.#moves().includes('rejected'));
   readonly canReceive = computed(() => this.#moves().includes('received'));

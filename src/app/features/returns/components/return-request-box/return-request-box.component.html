@@ -106,11 +106,13 @@
 
     @if (photosUrl() || pay()?.whatsappUrl || canCancel()) {
       <div class="grid gap-3">
-        @if (pay()?.whatsappUrl; as url) {
-          <a matButton="filled" theme="success" [href]="url" target="_blank" rel="noopener">
-            <mat-icon name="chat_bubble" />
-            <span>Send Screenshot on WhatsApp</span>
-          </a>
+        @if (pay(); as p) {
+          @if (p.whatsappUrl; as url) {
+            <a matButton="filled" theme="success" [href]="url" target="_blank" rel="noopener">
+              <mat-icon name="chat_bubble" />
+              <span>{{ p.buttonLabel }}</span>
+            </a>
+          }
         }
         @if (photosUrl(); as url) {
           <a matButton="filled" [href]="url" target="_blank" rel="noopener">

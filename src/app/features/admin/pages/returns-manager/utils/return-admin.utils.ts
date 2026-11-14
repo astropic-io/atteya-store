@@ -85,10 +85,16 @@ export function returnListRow(request: ReturnRequestDoc): ReturnListRow {
   };
 }
 
-/** "Refund EGP 950", "Exchange · EGP 70 cash at the door", "Exchange · free visit". */
+/**
+ * "Refund EGP 950", "Exchange · EGP 70 courier fee by InstaPay", "Exchange · EGP 70 cash at the
+ * door" (saved before ATS-303), "Exchange · free visit".
+ */
 export function moneyLine(request: ReturnRequestDoc): string {
   if (request.hasRefund) return `Refund ${egp(request.refundEgp)}`;
   if (request.cashAtDoorEgp > 0) return `Exchange · ${egp(request.cashAtDoorEgp)} cash at the door`;
+  if (returnPaysFirst(request.feePaid, request.feeEgp)) {
+    return `Exchange · ${egp(request.feeEgp)} courier fee by InstaPay`;
+  }
   return 'Exchange · free visit';
 }
 

@@ -122,12 +122,17 @@ export class ReturnRequestBoxComponent {
     const amount = formatMoney(fee, 'EGP', 0);
     const info = STORE_INFO.payments.instapay;
     const to = [info.address.trim(), info.number.trim()].filter(Boolean);
-    const whatsappUrl = whatsappChatUrl(
-      STORE_INFO.contact.whatsapp,
-      returnPaymentWhatsappText(request.ref, shortOrderRef(this.orderId()), fee),
-    );
+    const hasDetails = to.length > 0;
+    // Without InstaPay details there is nothing to pay to yet: ask for them, never "I paid".
+    const whatsappUrl = hasDetails
+      ? whatsappChatUrl(
+          STORE_INFO.contact.whatsapp,
+          returnPaymentWhatsappText(request.ref, shortOrderRef(this.orderId()), fee),
+        )
+      : whatsappChatUrl(STORE_INFO.contact.whatsapp);
     return {
       whatsappUrl,
+      buttonLabel: hasDetails ? 'Send Screenshot on WhatsApp' : 'Message Us on WhatsApp',
       steps: [
         {
           title: `Send ${amount} by InstaPay`,
@@ -139,7 +144,11 @@ export class ReturnRequestBoxComponent {
                 : "We'll send you the InstaPay details.",
           amount,
         },
-        { title: 'Send the screenshot on WhatsApp', note: 'With your request number', amount: null },
+        {
+          title: whatsappUrl ? 'Send the screenshot on WhatsApp' : 'Send us the screenshot',
+          note: 'With your request number',
+          amount: null,
+        },
         {
           title: 'We send the courier',
           note: 'To your delivery address, once your payment arrives.',
@@ -222,7 +231,9 @@ export class ReturnRequestBoxComponent {
         data: {
           title: 'Cancel this request?',
           message:
-            'We will stop your return or exchange. You can send a new request while the 14 days are open.',
+            this.request().status === 'waiting-for-payment'
+              ? 'We will stop your return or exchange. If you already sent the courier fee, message us on WhatsApp. You can send a new request while the 14 days are open.'
+              : 'We will stop your return or exchange. You can send a new request while the 14 days are open.',
           confirmText: 'Cancel Request',
           cancelText: 'Keep Request',
         },
