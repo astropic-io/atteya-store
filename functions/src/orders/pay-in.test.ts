@@ -6,10 +6,12 @@ import {
   abroadPricing,
   cardChargeEgp,
   payInEntry,
+  payInAboveShown,
   payInFor,
   payInRateFor,
   plainRateFor,
 } from '../../lib/orders/pay-in.js';
+import { parseShownPayIn } from '../../lib/orders/order-request.js';
 
 const USD = { code: 'USD', factor: 0.0285 };
 
@@ -220,5 +222,39 @@ describe('Card abroad costs the same as Bank Transfer (ATS-311)', () => {
     const pricing = pricingOf(bag, 0);
     assert.equal(abroadPricing(pricing, entry, 'paymob', null), null);
     assert.ok(abroadPricing(pricing, entry, 'bank-transfer', null));
+  });
+});
+
+describe('never more than checkout showed in the shopper currency (ATS-311)', () => {
+  it('refuses only a higher amount in the same currency', () => {
+    assert.equal(payInAboveShown({ currency: 'QAR', amount: 79 }, { currency: 'QAR', amount: 78 }), true);
+    assert.equal(payInAboveShown({ currency: 'QAR', amount: 78 }, { currency: 'QAR', amount: 78 }), false);
+    assert.equal(payInAboveShown({ currency: 'QAR', amount: 77 }, { currency: 'QAR', amount: 78 }), false);
+    assert.equal(payInAboveShown({ currency: 'QAR', amount: 90 }, { currency: 'USD', amount: 20 }), false);
+    assert.equal(payInAboveShown({ currency: 'QAR', amount: 90 }, null), false);
+  });
+
+  it('compares 3-decimal currencies to the last decimal', () => {
+    assert.equal(
+      payInAboveShown({ currency: 'KWD', amount: 6.251 }, { currency: 'KWD', amount: 6.25 }),
+      true,
+    );
+    assert.equal(
+      payInAboveShown({ currency: 'KWD', amount: 6.25 }, { currency: 'KWD', amount: 6.2500001 }),
+      false,
+    );
+  });
+
+  it('reads the shown amount from checkout, or nothing when it is unreadable', () => {
+    assert.deepEqual(parseShownPayIn({ currency: 'QAR', amount: 78 }), { currency: 'QAR', amount: 78 });
+    for (const raw of [
+      null,
+      'x',
+      { currency: 'qar', amount: 78 },
+      { currency: 'QAR', amount: -1 },
+      { currency: 'QAR' },
+    ]) {
+      assert.equal(parseShownPayIn(raw), null, JSON.stringify(raw));
+    }
   });
 });

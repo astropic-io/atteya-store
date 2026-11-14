@@ -62,6 +62,7 @@ import {
 import {
   isFailedPrecondition,
   offerToLeaveOut,
+  payInChangedFrom,
   priceChangedFrom,
   serverClockFrom,
   serverTotalsToShow,
@@ -725,7 +726,11 @@ export class CheckoutPageComponent implements OnInit {
       codShippingEgp: feeEgp,
       codShipping: formatMoney(feeEgp, 'EGP', 0),
       codCash: formatMoney(subtotalEgp, 'EGP', 0),
-      shown: { shippingEgp: feeEgp, totalEgp: subtotalEgp + feeEgp },
+      shown: {
+        shippingEgp: feeEgp,
+        totalEgp: subtotalEgp + feeEgp,
+        payIn: shownPayIn(entry, subtotalDisplay + shippingDisplay),
+      },
       freeShippingOfferId,
     };
   });
@@ -1211,6 +1216,9 @@ export class CheckoutPageComponent implements OnInit {
       // Read the products again after any refusal about the bag (a price went up, or a free gift
       // sold out), so the summary and its notes show what changed.
       if (priceChangedFrom(error) || isFailedPrecondition(error)) this.productsResource.reload();
+      // The prices in the shopper's currency changed since checkout read them (ATS-311): read the
+      // factors again, so the summary shows the new total before they place the order again.
+      if (payInChangedFrom(error)) this.#deliveryEntry.reload();
       // The shipping fee or total came out higher than this summary showed (a lower price dropped
       // the bag under free shipping, a Buy X Get Y discount shrank): price offers on the server's
       // clock from now on and read the products again (above). When the same server totals come
@@ -1260,9 +1268,15 @@ function feeToBeAgreedSummary(itemsEgp: number, itemsDisplay: number, entry: Cur
     codShippingEgp: 0,
     codShipping: '',
     codCash: formatMoney(itemsEgp, 'EGP', 0),
-    shown: { shippingEgp: null, totalEgp: itemsEgp },
+    shown: { shippingEgp: null, totalEgp: itemsEgp, payIn: shownPayIn(entry, itemsDisplay) },
     freeShippingOfferId: null,
   };
+}
+
+/** The total shown in the shopper's currency for an order shipped abroad; null in EGP (ATS-311). */
+function shownPayIn(entry: CurrencyEntry, amount: number): ShownOrderTotals['payIn'] {
+  if (entry.code === 'EGP') return null;
+  return { currency: entry.code, amount: Number(amount.toFixed(displayDecimals(entry.code))) };
 }
 
 /** The server's shipping fee and total, after it refused the same ones twice in a row. */
@@ -1285,7 +1299,11 @@ function serverTotalsSummary(
     codShippingEgp: server.shippingEgp,
     codShipping: formatMoney(server.shippingEgp, 'EGP', 0),
     codCash: formatMoney(subtotalEgp, 'EGP', 0),
-    shown: { shippingEgp: server.shippingEgp, totalEgp: server.totalEgp },
+    shown: {
+      shippingEgp: server.shippingEgp,
+      totalEgp: server.totalEgp,
+      payIn: shownPayIn(entry, subtotalDisplay + shippingDisplay),
+    },
     freeShippingOfferId,
   };
 }

@@ -74,7 +74,13 @@ export const createPaymobOrder = onCall(
     const { pricing, payInRate } =
       input.shipping.country === 'EG'
         ? { pricing: priced.pricing, payInRate: null }
-        : await withPayIn(db, priced.pricing, currencyFromCountry(input.shipping.country), 'paymob');
+        : await withPayIn(
+            db,
+            priced.pricing,
+            currencyFromCountry(input.shipping.country),
+            'paymob',
+            input.shownPayIn,
+          );
     const chargeEgp = pricing.chargeEgp ?? pricing.totalEgp;
     if (chargeEgp < 1) {
       throw new HttpsError('failed-precondition', 'Your order total is too low to pay online.');

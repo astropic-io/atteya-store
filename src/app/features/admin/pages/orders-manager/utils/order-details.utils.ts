@@ -140,12 +140,18 @@ function abroadView(order: OrderDoc, prices: AbroadPrices): AbroadOrderView | nu
       ...abroadShippingCells(prices, shippingAmount, pricing.shipping.priceEgp),
     });
   }
+  // Card abroad (ATS-311): in pounds the total is exactly what Paymob charges.
+  const cardEgp = 'paymob' in order && order.paymob ? order.paymob.amountCents / 100 : null;
+  const totalCells = abroadCells(prices, prices.amount, prices.egyptTotal, false);
   totals.push({
     label: 'Total',
     strong: true,
-    ...abroadCells(prices, prices.amount, prices.egyptTotal, false),
+    ...(cardEgp === null || totalCells.pounds === null
+      ? totalCells
+      : { ...totalCells, pounds: egpMoney(cardEgp), extra: abroadExtra(cardEgp, prices.egyptTotal) }),
   });
-  const poundsTotal = inPounds(prices, prices.amount);
+  const poundsTotal =
+    cardEgp !== null && prices.egpPerUnit !== null ? cardEgp : inPounds(prices, prices.amount);
   return {
     showPounds: prices.egpPerUnit !== null,
     totals,
@@ -289,7 +295,8 @@ function paymentRows(
     const paid = shortOrderDate(order.paymob.paidAt);
     if (abroad) {
       // Card abroad (ATS-311): Paymob charges pounds, the customer's total at the plain rate.
-      rows.push({ label: 'Charged by card', value: egp(order.paymob.amountCents / 100), strong: true });
+      const label = order.paymob.paidAt ? 'Charged by card' : 'To charge by card';
+      rows.push({ label, value: egp(order.paymob.amountCents / 100), strong: true });
       rows.push({ label: 'Same order in Egypt', value: egpMoney(abroad.egyptTotal), muted: true });
     }
     rows.push({ label: 'Card payment', value: paid ? `Paid ${paid}` : 'Not paid yet' });

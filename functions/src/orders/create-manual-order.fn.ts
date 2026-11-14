@@ -99,7 +99,13 @@ async function createManualOrder<M extends ManualPaymentMethod>(
   const priced = await priceStoreOrder(db, input, customer.signedIn, customer.offerKeys);
   const { pricing, payInRate } =
     method === 'bank-transfer'
-      ? await withPayIn(db, priced.pricing, currencyFromCountry(input.shipping.country), 'bank-transfer')
+      ? await withPayIn(
+          db,
+          priced.pricing,
+          currencyFromCountry(input.shipping.country),
+          'bank-transfer',
+          input.shownPayIn,
+        )
       : { pricing: priced.pricing, payInRate: null };
   const orderRef = db.collection('orders').doc();
   const viewKey = customer.kind === 'guest' ? newOrderViewKey() : null;

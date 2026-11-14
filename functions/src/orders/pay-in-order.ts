@@ -2,8 +2,10 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { markupOrDefault, readStoredRates } from '../intl/exchange-rates.js';
 import type { OrderPricingSnapshot } from './order-pricing.server.js';
+import type { ShownPayIn } from './order-request.js';
 import {
   abroadPricing,
+  payInAboveShown,
   payInEntry,
   payInRateFor,
   type AbroadPaymentMethod,
@@ -16,19 +18,25 @@ import {
  * converted with) and, for Card, the pounds Paymob charges. It also returns the markup and rate
  * the factor was built from (read in the same `getAll`), for the staff-only notes, so staff see
  * what the order comes to in pounds (ATS-304). The rate never changes the shopper's amount, and it
- * is null when it can't be read or no longer rebuilds the factor.
+ * is null when it can't be read or no longer rebuilds the factor. Refused (`details.payInChanged`)
+ * when the amount comes out higher than the total checkout showed (`shown`): checkout reads the
+ * factors again and shows the new total.
  */
 export async function withPayIn(
   db: Firestore,
   pricing: OrderPricingSnapshot,
   requested: string | null,
   method: AbroadPaymentMethod,
+  shown: ShownPayIn | null,
 ): Promise<{ pricing: OrderPricingSnapshot; payInRate: PayInRate | null }> {
-  const snap = await db.doc('settings/currency').get();
+  const [snap, configSnap, ratesSnap] = await db.getAll(
+    db.doc('settings/currency'),
+    db.doc('intlPricing/config'),
+    db.doc('intlPricing/rates'),
+  );
   const currencies = snap.get('currencies');
   const entry = payInEntry(requested, isRecord(currencies) ? currencies : {});
   if (!entry) throw cantWorkOutAmount();
-  const [configSnap, ratesSnap] = await db.getAll(db.doc('intlPricing/config'), db.doc('intlPricing/rates'));
   const payInRate = payInRateFor(
     entry,
     markupOrDefault(configSnap.data()),
@@ -36,6 +44,13 @@ export async function withPayIn(
   );
   const priced = abroadPricing(pricing, entry, method, payInRate);
   if (!priced) throw cantWorkOutAmount();
+  if (priced.payIn && payInAboveShown(priced.payIn, shown)) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Prices in your currency were just updated. Check the new total, then place your order again.',
+      { payInChanged: true },
+    );
+  }
   return { pricing: priced, payInRate };
 }
 

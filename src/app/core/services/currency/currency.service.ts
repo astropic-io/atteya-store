@@ -81,12 +81,13 @@ export class CurrencyService {
    * whatever the visitor browsed in. Egypt is EGP. Abroad it is the delivery country's currency
    * (`currencyFromCountry()`, USD for a country without a usable one), never EGP: null while the
    * factors can't be read, so checkout shows no amount rather than the Egypt price. Not saved,
-   * and it never changes `entry()`.
+   * and it never changes `entry()`. Reads the factors fresh, not the day-old cached copy (ATS-311),
+   * so checkout shows the amounts the server works out (it refuses an order that would cost more).
    */
   async entryForDeliveryCountry(country: string): Promise<CurrencyEntry | null> {
     const code = currencyFromCountry(country);
     if (code === 'EGP') return EGP_ENTRY;
-    const map = await this.#loadMap();
+    const map = (await this.#loadFreshMap()) ?? (await this.#loadMap());
     if (!map) return null;
     // Same rule as the server's `payInEntry()`: a factor above 0, else USD.
     const usable = (entry: CurrencyEntry | null) => (entry && entry.factor > 0 ? entry : null);
@@ -283,6 +284,15 @@ export class CurrencyService {
     if (!('cur' in url.queryParams)) return;
     delete url.queryParams['cur'];
     void this.#router.navigateByUrl(url, { replaceUrl: true });
+  }
+
+  /** One read of `settings/currency` past the caches (checkout only); null when it fails. */
+  async #loadFreshMap(): Promise<PublicCurrencyMap | null> {
+    if (!isPlatformBrowser(this.#platformId)) return null;
+    const loaded = await loadPublicCurrency(this.#firestore);
+    if (!loaded || Object.keys(loaded).length === 0) return null;
+    storeCachedCurrencyMap(loaded);
+    return loaded;
   }
 
   async #loadMap(): Promise<PublicCurrencyMap | null> {

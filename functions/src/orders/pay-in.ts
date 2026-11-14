@@ -71,7 +71,7 @@ export function payInFor(
     lines: lineAmounts,
     shipping: shippingAmount,
     factor: entry.factor,
-    ...(entry.shippingFactor !== undefined ? { shippingFactor: shippingEntry(entry).factor } : {}),
+    ...(isPositive(entry.shippingFactor) ? { shippingFactor: entry.shippingFactor } : {}),
   };
 }
 
@@ -140,6 +140,20 @@ export function abroadPricing(
   const plainRate = plainRateFor(entry, payInRate);
   if (plainRate === null) return null;
   return { ...pricing, payIn, chargeEgp: cardChargeEgp(payIn.amount, plainRate) };
+}
+
+/**
+ * True when the server's amount in the shopper's currency is higher than the total checkout showed
+ * in that same currency (ATS-311): the factors changed after checkout read them, so the order is
+ * refused rather than charge more. A missing shown amount, or one in another currency, never refuses.
+ */
+export function payInAboveShown(
+  payIn: Pick<OrderPayIn, 'currency' | 'amount'>,
+  shown: { readonly currency: string; readonly amount: number } | null,
+): boolean {
+  if (!shown || shown.currency !== payIn.currency) return false;
+  const halfUnit = 0.5 * 10 ** -displayDecimals(payIn.currency);
+  return payIn.amount > shown.amount + halfUnit;
 }
 
 function isPositive(value: unknown): value is number {

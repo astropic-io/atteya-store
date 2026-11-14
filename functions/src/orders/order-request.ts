@@ -95,6 +95,17 @@ export interface CreateStoreOrderRequest {
    * lowers a price.
    */
   readonly shownTotalEgp: number | null;
+  /**
+   * Orders shipped abroad (ATS-311): the total checkout showed in the shopper's currency, or null.
+   * The order is refused when the server's `payIn.amount` in the same currency is higher (the
+   * factors changed since checkout read them). Never lowers a price.
+   */
+  readonly shownPayIn: ShownPayIn | null;
+}
+
+export interface ShownPayIn {
+  readonly currency: string;
+  readonly amount: number;
 }
 
 /** Longest email address a guest can order with (RFC 5321 path limit). */
@@ -131,6 +142,7 @@ export function parseCreateStoreOrderRequest(data: unknown): CreateStoreOrderReq
   const dealOfferIds = parseOfferIds(data['dealOfferIds']);
   const shownShippingEgp = parseShownAmountEgp(data['shownShippingEgp']);
   const shownTotalEgp = parseShownAmountEgp(data['shownTotalEgp']);
+  const shownPayIn = parseShownPayIn(data['shownPayIn']);
   return {
     lines,
     shipping,
@@ -139,7 +151,20 @@ export function parseCreateStoreOrderRequest(data: unknown): CreateStoreOrderReq
     dealOfferIds,
     shownShippingEgp,
     shownTotalEgp,
+    shownPayIn,
   };
+}
+
+/** The shopper-currency total checkout showed, or null when missing or unreadable (no comparison). */
+export function parseShownPayIn(raw: unknown): ShownPayIn | null {
+  if (!isRecord(raw)) return null;
+  const currency = raw['currency'];
+  const amount = raw['amount'];
+  if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency)) return null;
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > MAX_SHOWN_AMOUNT_EGP) {
+    return null;
+  }
+  return { currency, amount };
 }
 
 /** Most whole EGP a shown shipping fee or order total can be; anything above is read as not sent. */
