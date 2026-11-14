@@ -13,7 +13,10 @@ import { Router } from '@angular/router';
 import * as v from 'valibot';
 import { injectFirestore } from '@core/firebase';
 import { environment } from '@env/environment';
-import { EGP_ENTRY, type CurrencyEntry } from '@core/services/offers/engine';
+import { EGP_ENTRY, isUnreliableCurrency, type CurrencyEntry } from '@core/services/offers/engine';
+import { SIGNED_IN_HINT_KEY } from '@core/services/auth/signed-in-hint';
+import { browsingTarget, preferredCountry, type BrowsingChoice } from './browsing-currency';
+import { COUNTRY_CURRENCY } from './country-currency';
 import {
   currencyFromCountry,
   normalizeCurrencyCode,
@@ -21,7 +24,11 @@ import {
   visitorBrowsingChoice,
   readCachedCurrencyMap,
   readFreshCurrencyMap,
+  readRememberedCountry,
+  readSavedCountryHint,
   storeCachedCurrencyMap,
+  storeRememberedCountry,
+  storeSavedCountryHint,
 } from './currency-detect';
 import { loadPublicCurrency } from './currency-loader';
 import type { PublicCurrencyMap } from './currency.schema';
@@ -39,10 +46,11 @@ const VISITOR_LOCATION_PATH = '/api/visitor-location';
 const BY_ZONE_ATTR = 'data-cur-by-zone';
 
 /**
- * Storefront display currency from visitor geo (CDN headers or IP lookup), then the
- * browser's time zone when the country can't be found, then EGP (ATS-313).
+ * Storefront display currency (ATS-317), first known of: `?cur=` (one visit, never saved); the
+ * delivery country the shopper last told us in this browser (checkout pick or Account address,
+ * 30 days); a signed-in shopper's saved address country; the guess from visitor geo (CDN headers
+ * or IP lookup), then the browser's time zone, then EGP (ATS-313).
  * Egypt stays on EGP and keeps the domestic shipping banner.
- * `?cur=` overrides for one visit and is never saved.
  */
 @Service()
 export class CurrencyService {
@@ -70,9 +78,18 @@ export class CurrencyService {
   #generation = 0;
   #settled = false;
   #timer: number | undefined;
+  /** `?cur=` of this visit (ATS-317: beats everything). */
+  #queryCode: string | null = null;
+  /** The guess from geo and time zone; null until worked out in the browser. */
+  #guess: BrowsingChoice | null = null;
+  #booted = false;
+  /** Signed-in account and its saved address country (`setAccount`); first from the stored hint. */
+  #uid: string | null = null;
+  #savedCountry: string | null = null;
 
   constructor() {
     if (isPlatformBrowser(this.#platformId)) {
+      this.#readAccountHint();
       this.#hydrateFromTransfer();
     }
     afterNextRender(() => {
@@ -97,6 +114,37 @@ export class CurrencyService {
     // Same rule as the server's `payInEntry()`: a factor above 0, else USD.
     const usable = (entry: CurrencyEntry | null) => (entry && entry.factor > 0 ? entry : null);
     return usable(factorsEntry(code, map)) ?? usable(factorsEntry('USD', map));
+  }
+
+  /**
+   * ATS-317: the signed-in account (null when signed out) and the country of its saved address
+   * (null when it has none). Browsing prices follow it when this browser remembers no later choice.
+   */
+  setAccount(uid: string | null, savedCountry: string | null): void {
+    if (!isPlatformBrowser(this.#platformId)) return;
+    const country = savedCountry?.trim().toUpperCase() || null;
+    this.#uid = uid;
+    this.#savedCountry = uid ? country : null;
+    storeSavedCountryHint(uid ? { uid, country: this.#savedCountry } : null);
+    void this.#reconcile();
+  }
+
+  /** ATS-317: the shopper picked this delivery country at checkout; browsing prices follow it. */
+  rememberCheckoutCountry(country: string): void {
+    if (!isPlatformBrowser(this.#platformId)) return;
+    storeRememberedCountry(country, this.#uid);
+    void this.#reconcile();
+  }
+
+  /** ATS-317: the shopper saved an address in this country (Account, or the first order). */
+  rememberSavedAddressCountry(uid: string, country: string): void {
+    if (!isPlatformBrowser(this.#platformId)) return;
+    storeRememberedCountry(country, uid);
+    if (uid === this.#uid) {
+      this.#savedCountry = country;
+      storeSavedCountryHint({ uid, country });
+    }
+    void this.#reconcile();
   }
 
   /** Runs during SSR before the storefront HTML is rendered. */
@@ -150,60 +198,92 @@ export class CurrencyService {
   }
 
   async #bootClient(): Promise<void> {
-    if (this.#settled) {
-      await this.#correctStaleIntlFromHydration();
-      if (this.#settled) {
-        this.#transfer.remove(CURRENCY_BOOT_KEY);
-        const fromQuery = normalizeCurrencyCode(this.#queryCur());
-        this.#stripCurParam();
-        if (fromQuery && fromQuery !== this.#selected()) {
-          this.#settled = false;
-          await this.#finishWithCode(fromQuery, this.#visitorCountry(), {
-            pendingIntl: fromQuery !== 'EGP',
-          });
-        }
-        return;
-      }
-    }
-
-    const transferred = this.#transfer.get(CURRENCY_BOOT_KEY, null);
-    if (transferred) {
-      this.#transfer.remove(CURRENCY_BOOT_KEY);
-      this.#visitorCountry.set(transferred.country);
-      if (transferred.map) this.#map = transferred.map;
-      const fromQuery = normalizeCurrencyCode(this.#queryCur());
-      this.#stripCurParam();
-      if (fromQuery) {
-        await this.#finishWithCode(fromQuery, this.#visitorCountry(), {
-          pendingIntl: fromQuery !== 'EGP',
-        });
-        return;
-      }
-      if (transferred.code === null) {
-        if (!transferred.prerendered) {
-          // The server already tried every lookup; go straight to the time zone.
-          const choice = await visitorBrowsingChoice(null, readTimeZone());
-          await this.#finishWithCode(choice.currency, choice.country, {
-            pendingIntl: choice.currency !== 'EGP',
-          });
-          return;
-        }
-      } else if (transferred.code === 'EGP') {
-        this.#apply(EGP_ENTRY);
-        this.#settled = true;
-        this.#syncDocumentHints(this.#visitorCountry(), true, false);
-        return;
-      } else if (this.#map) {
-        this.#apply(entryFor(transferred.code, this.#map));
-        this.#settled = true;
-        this.#syncDocumentHints(this.#visitorCountry(), true, false);
-        return;
-      }
-    }
-
-    const code = await this.#resolveInitialCode();
+    this.#queryCode = normalizeCurrencyCode(this.#queryCur());
     this.#stripCurParam();
-    await this.#finishWithCode(code, this.#visitorCountry(), { pendingIntl: code !== 'EGP' });
+    const transferred = this.#transfer.get(CURRENCY_BOOT_KEY, null);
+    this.#transfer.remove(CURRENCY_BOOT_KEY);
+    if (transferred?.map) this.#map ??= transferred.map;
+    this.#booted = true;
+    // `?cur=` or a country the shopper told us needs no guess: show it straight away.
+    await this.#reconcile();
+    this.#guess = await this.#resolveGuess(transferred);
+    await this.#reconcile();
+  }
+
+  /** The browsing guess (ATS-313): what the server found, else geo in the browser, else time zone. */
+  async #resolveGuess(transferred: CurrencyBootTransfer | null): Promise<BrowsingChoice> {
+    if (transferred && !transferred.prerendered) {
+      // The server already tried every lookup; go straight to the time zone.
+      if (transferred.code === null) return visitorBrowsingChoice(null, readTimeZone());
+      // A country from the server: keep what it rendered (EGP when its factors failed to load).
+      if (transferred.country !== null) return { country: transferred.country, currency: transferred.code };
+    }
+    // Prerendered, a `?cur=` render, or SSR without geo (App Hosting has no CDN country headers).
+    const geo = await this.#resolveVisitorCountryClient();
+    return visitorBrowsingChoice(geo, readTimeZone());
+  }
+
+  /** The currency browsing should show now (ATS-317); null while nothing is known yet. */
+  #target(): BrowsingChoice | null {
+    return browsingTarget(this.#queryCode, this.#preferredCountry(), this.#guess, {
+      countries: COUNTRY_CURRENCY,
+      isUnreliable: isUnreliableCurrency,
+    });
+  }
+
+  #preferredCountry(): string | null {
+    return preferredCountry({
+      remembered: readRememberedCountry(),
+      uid: this.#uid,
+      savedCountry: this.#savedCountry,
+      now: Date.now(),
+    });
+  }
+
+  /** Moves the prices to `#target()` when it differs from what is shown. */
+  async #reconcile(): Promise<void> {
+    if (!this.#booted) return;
+    const target = this.#target();
+    if (!target) return;
+    if (target.country !== null || this.#queryCode === null) this.#visitorCountry.set(target.country);
+    if (this.#settled && this.#selected() === target.currency) {
+      this.#syncDocumentHints(this.#visitorCountry(), true, false);
+      return;
+    }
+    this.#settled = false;
+    await this.#finishWithCode(target.currency, target.country, {
+      pendingIntl: target.currency !== 'EGP',
+    });
+  }
+
+  /** The signed-in account last seen in this browser, until `setAccount` brings the real one. */
+  #readAccountHint(): void {
+    try {
+      if (localStorage.getItem(SIGNED_IN_HINT_KEY) !== '1') return;
+    } catch {
+      return;
+    }
+    const hint = readSavedCountryHint();
+    this.#uid = hint?.uid ?? null;
+    this.#savedCountry = hint?.country ?? null;
+  }
+
+  /**
+   * True when the shopper told us a country whose prices differ from the server's (ATS-317): the
+   * early script in `index.html` hid the prices and they stay hidden until the right ones are ready.
+   */
+  #preferenceDiffers(serverCode: string | null): boolean {
+    if (this.#hasQueryInAddress()) return false;
+    const preferred = this.#preferredCountry();
+    return preferred !== null && currencyFromCountry(preferred) !== serverCode;
+  }
+
+  #hasQueryInAddress(): boolean {
+    try {
+      return new URLSearchParams(this.#document.location?.search ?? '').has('cur');
+    } catch {
+      return false;
+    }
   }
 
   #hydrateFromTransfer(): void {
@@ -216,16 +296,18 @@ export class CurrencyService {
       this.#apply(EGP_ENTRY);
       return;
     }
+    const differs = this.#preferenceDiffers(transferred.code);
     if (transferred.code === 'EGP') {
       this.#apply(EGP_ENTRY);
-      this.#settled = true;
-      this.#syncDocumentHints(this.#visitorCountry(), true, false);
+      this.#settled = !differs;
+      this.#syncDocumentHints(this.#visitorCountry(), !differs, differs);
       return;
     }
     if (this.#map) {
+      // Same prices as the server HTML, so hydration matches; `#bootClient` moves to the right ones.
       this.#apply(entryFor(transferred.code, this.#map));
-      this.#settled = true;
-      this.#syncDocumentHints(this.#visitorCountry(), true, false);
+      this.#settled = !differs;
+      this.#syncDocumentHints(this.#visitorCountry(), !differs, differs);
     }
   }
 
@@ -243,8 +325,10 @@ export class CurrencyService {
     country: string | null,
     options: { pendingIntl: boolean },
   ): Promise<void> {
+    this.#clearTimer();
     if (country !== null) this.#visitorCountry.set(country);
     if (code === 'EGP') {
+      this.#generation += 1;
       this.#apply(EGP_ENTRY);
       this.#settled = true;
       this.#syncDocumentHints(this.#visitorCountry(), true, false);
@@ -268,30 +352,6 @@ export class CurrencyService {
     this.#apply(entryFor(code, map));
     this.#settled = true;
     this.#syncDocumentHints(this.#visitorCountry(), true, false);
-  }
-
-  /** SSR missed geo (App Hosting has no CDN country headers); re-read like CSR routes. */
-  async #correctStaleIntlFromHydration(): Promise<void> {
-    if (this.#visitorCountry() !== null || this.#selected() === 'EGP') return;
-    const country = await this.#resolveVisitorCountryClient();
-    if (!country) return;
-    const code = currencyFromCountry(country);
-    if (code === this.#selected()) {
-      this.#visitorCountry.set(country);
-      this.#syncDocumentHints(country, this.#ready(), false);
-      return;
-    }
-    this.#settled = false;
-    await this.#finishWithCode(code, country, { pendingIntl: code !== 'EGP' });
-  }
-
-  async #resolveInitialCode(): Promise<string> {
-    const fromQuery = normalizeCurrencyCode(this.#queryCur());
-    if (fromQuery) return fromQuery;
-    const geo = await this.#resolveVisitorCountryClient();
-    const choice = await visitorBrowsingChoice(geo, readTimeZone());
-    this.#visitorCountry.set(choice.country);
-    return choice.currency;
   }
 
   async #resolveVisitorCountryClient(): Promise<string | null> {

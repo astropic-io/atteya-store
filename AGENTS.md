@@ -68,6 +68,7 @@ Adhere strictly to these core directives to ensure maximum performance, clean ar
 - **Roles (admin, staff), Settings → Team, sign-in, create account, terms, confirm your email, delete account, saving guest orders to an account, and who may read or write each collection and Storage folder**: read the `auth-and-access` skill.
 - **Guest checkout on the server, orderViews, Delete Order**: read the `checkout-and-orders` skill.
 - **Shoppers whose order ships abroad never see EGP or the Egypt price (checkout currency by delivery country, order page, emails, offer text)**: read the `checkout-and-orders` skill.
+- **Browsing prices that follow the remembered checkout country or the saved address, and saving the first order's address automatically**: read the `shipping-and-currency` skill.
 - **Orders from any country, the Delivery Countries list in Settings → Shipping → Abroad, and `international-agreed` orders whose shipping fee is agreed on WhatsApp**: read the `shipping-and-currency` skill.
 - **Returns & Exchanges (requests, the order's `returns` summary, return emails)**: read the `returns-and-exchanges` skill.
 - **Delete Product and the admin Products list (Move to Category, Live / Hidden)**: read the `catalogue` skill.
