@@ -205,6 +205,11 @@ export class ShippingTabComponent implements OnInit {
   readonly countryName = countryLabel;
   /** What is typed in Delivery Countries → Add a Country. */
   readonly countryQuery = signal('');
+  /**
+   * Countries with a fee saved in `settings/shipping.deliveryCountryFees`: from the loaded doc, then
+   * from each successful save. Save deletes the fee of any of these no longer listed (ATS-326).
+   */
+  #savedFeeCodes: readonly string[] = [];
   /** Countries that can still be added: every country but Egypt and the ones already listed. */
   readonly countryOptions = computed(() => {
     const listed = new Set(this.draft().deliveryCountries);
@@ -228,6 +233,7 @@ export class ShippingTabComponent implements OnInit {
     effect(() => {
       const data = this.settingsResource.value();
       if (!data) return;
+      this.#savedFeeCodes = Object.keys(data.deliveryCountryFees);
       untracked(() =>
         this.draft.set({
           egyptBoxes: cloneBoxes(sortedById(data.egyptBoxes)),
@@ -431,7 +437,7 @@ export class ShippingTabComponent implements OnInit {
           // merges nested maps key by key, so a removed country's saved fee is deleted by name.
           deliveryCountryFees: {
             ...Object.fromEntries(
-              Object.keys(this.settingsResource.value()?.deliveryCountryFees ?? {})
+              this.#savedFeeCodes
                 .filter((code) => !d.deliveryCountries.includes(code))
                 .map((code) => [code, deleteField()]),
             ),
@@ -446,6 +452,7 @@ export class ShippingTabComponent implements OnInit {
         },
         { merge: true },
       );
+      this.#savedFeeCodes = [...d.deliveryCountries];
       this.#snackbar.success('Shipping settings saved.');
     } catch {
       this.#snackbar.error("We couldn't save shipping settings. Please try again.");
