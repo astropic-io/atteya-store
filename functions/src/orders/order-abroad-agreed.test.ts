@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 // Runs against the compiled code (`npm test` builds first).
-import { toDisplayAmount } from '../../lib/offers/engine/index.js';
+import { countryExtraFee, toDisplayAmount } from '../../lib/offers/engine/index.js';
 import {
   CARD_AGREED_ABROAD_MESSAGE,
   isAgreedShippingKind,
@@ -31,6 +31,7 @@ function line(country: string, parcel: typeof TEE, paymentMethod: string, settin
     offers: [],
     ctx: CTX,
     governorateExtraEgp: 0,
+    countryExtraEgp: countryExtraFee(settings, country),
   }).line;
 }
 
@@ -49,6 +50,20 @@ describe('orders from any country (ATS-314)', () => {
     assert.equal(shipping.kind, 'international-box');
     assert.equal(shipping.boxId, 'box1');
     assert.equal(shipping.priceEgp, 450);
+  });
+
+  it('a listed country adds its own extra fee to the box fee (ATS-326)', () => {
+    const settings = parseCheckoutShippingConfig({ deliveryCountryFees: { AE: 200, US: 900 } }).settings;
+    assert.equal(line('AE', TEE, 'bank-transfer', settings).priceEgp, 650);
+    assert.equal(line('US', TEE, 'paymob', settings).priceEgp, 1_350);
+    // A listed country with no saved fee pays the box fee only.
+    assert.equal(line('GB', TEE, 'bank-transfer', settings).priceEgp, 450);
+    // Free-over replaces the whole fee, the country extra included.
+    const free = parseCheckoutShippingConfig({
+      deliveryCountryFees: { AE: 200 },
+      freeOver: { active: true, threshold: 100 },
+    }).settings;
+    assert.equal(line('AE', TEE, 'bank-transfer', free).priceEgp, 0);
   });
 
   it('a country not on the list is placed with delivery and the fee to be agreed', () => {

@@ -42,6 +42,7 @@ import { toPricedProduct } from '@core/services/offers/offer.model';
 import { OffersService } from '@core/services/offers/offers.service';
 import {
   checkGovernorate,
+  countryExtraFee,
   type CurrencyEntry,
   dealTag,
   EGP_ENTRY,
@@ -718,6 +719,8 @@ export class CheckoutPageComponent implements OnInit {
       }
       governorateExtraEgp = governorate.extraFeeEgp;
     }
+    // Abroad (ATS-326): the delivery country's extra fee on top of the box fee, as on the server.
+    const countryExtraEgp = region === 'egypt' ? 0 : countryExtraFee(settings, this.shipping().country);
 
     let feeEgp: number;
     let freeShippingOfferId: string | null;
@@ -731,6 +734,7 @@ export class CheckoutPageComponent implements OnInit {
           goodsSubtotal: subtotalEgp,
           lines: pricedLines,
           governorateExtraEgp,
+          countryExtraEgp,
         },
         offers,
         ctx,

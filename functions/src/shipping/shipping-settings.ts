@@ -9,6 +9,7 @@ import {
   EGYPT_GOVERNORATES,
   MAX_GOVERNORATE_EXTRA_FEE_EGP,
   parseDeliveryCountries,
+  parseDeliveryCountryFees,
   SHIPPING_BOX_IDS,
 } from '../offers/engine/index.js';
 
@@ -120,6 +121,8 @@ export function parseCheckoutShippingConfig(data: DocumentData | undefined): Che
     promo: parsePromo(data['promo']) ?? { ...base.promo },
     note: typeof data['note'] === 'string' ? data['note'] : base.note,
     egyptGovernorates: parseEgyptGovernorates(data['egyptGovernorates']),
+    // Extra delivery fee per country abroad (ATS-326); a country with none counts as 0.
+    deliveryCountryFees: parseDeliveryCountryFees(data['deliveryCountryFees']),
   };
   // Countries abroad with a set shipping price (ATS-314). Not saved yet: the default list.
   const deliveryCountries = parseDeliveryCountries(data['deliveryCountries']);

@@ -47,6 +47,11 @@ export interface ShippingSettings {
    * order: delivery and the fee are agreed on WhatsApp (`planDelivery()` → `to-be-agreed`).
    */
   readonly deliveryCountries?: readonly string[];
+  /**
+   * Extra delivery fee per country abroad (ATS-326), whole EGP, added to the abroad box fee like
+   * a governorate's extra in Egypt. A listed country with no entry counts as 0.
+   */
+  readonly deliveryCountryFees?: Readonly<Record<string, number>>;
 }
 
 export type ShippingRegion = 'egypt' | 'international';
@@ -59,7 +64,10 @@ export interface ShippingQuote {
   readonly box: ShippingBox;
   readonly reason: ShippingReason;
   readonly offerId?: string;
-  /** The governorate extra counted in the box fee candidate (0 abroad or when none was given). */
+  /**
+   * The extra counted in the box fee candidate: the governorate's in Egypt, the country's abroad
+   * (ATS-326); 0 when none was given.
+   */
   readonly extraFeeEgp: number;
 }
 
@@ -83,6 +91,12 @@ export interface ShippingQuoteInput {
    * fee, so they never add it. Ignored abroad.
    */
   readonly governorateExtraEgp?: number;
+  /**
+   * Abroad only (ATS-326): the delivery country's extra fee (`countryExtraFee()`), added to the box
+   * fee. A promotion fee and free-over replace the whole delivery fee, so they never add it.
+   * Ignored for Egypt.
+   */
+  readonly countryExtraEgp?: number;
 }
 
 export type SelectShippingBoxResult =
@@ -234,7 +248,10 @@ export function shippingQuote(
     throw new Error(`shippingQuote: cannot select box (${selected.code})`);
   }
 
-  const extraFeeEgp = input.region === 'egypt' ? Math.max(0, Math.round(input.governorateExtraEgp ?? 0)) : 0;
+  const extraFeeEgp = Math.max(
+    0,
+    Math.round((input.region === 'egypt' ? input.governorateExtraEgp : input.countryExtraEgp) ?? 0),
+  );
   const candidates: { fee: number; reason: ShippingReason; offerId?: string }[] = [
     { fee: selected.box.feeEgp + extraFeeEgp, reason: 'box' },
   ];
