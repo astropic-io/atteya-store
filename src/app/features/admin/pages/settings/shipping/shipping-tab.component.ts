@@ -427,11 +427,16 @@ export class ShippingTabComponent implements OnInit {
           ),
           // Countries abroad with a set shipping price (ATS-314); any other country agrees on WhatsApp.
           deliveryCountries: [...d.deliveryCountries].sort(),
-          // Extra delivery fee per listed country, on top of the abroad box fee (ATS-326). The whole
-          // map is replaced, so a removed country's fee goes with it.
-          deliveryCountryFees: Object.fromEntries(
-            d.deliveryCountries.map((code) => [code, countryFee(code) ?? 0]),
-          ),
+          // Extra delivery fee per listed country, on top of the abroad box fee (ATS-326). The save
+          // merges nested maps key by key, so a removed country's saved fee is deleted by name.
+          deliveryCountryFees: {
+            ...Object.fromEntries(
+              Object.keys(this.settingsResource.value()?.deliveryCountryFees ?? {})
+                .filter((code) => !d.deliveryCountries.includes(code))
+                .map((code) => [code, deleteField()]),
+            ),
+            ...Object.fromEntries(d.deliveryCountries.map((code) => [code, countryFee(code) ?? 0])),
+          },
           // Drop legacy zone / flat-fee fields on the next admin save.
           baseFee: deleteField(),
           zones: deleteField(),
