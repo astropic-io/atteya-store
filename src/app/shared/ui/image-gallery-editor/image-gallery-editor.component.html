@@ -239,14 +239,13 @@
                 />
                 <mat-hint>{{ item.alt.length }} / {{ maxAltLength }} characters</mat-hint>
               </mat-form-field>
-              <app-photo-fit-note
-                class="pt-3"
-                [spot]="photoSpot()"
-                [width]="item.width"
-                [height]="item.height"
-              />
             </div>
           </div>
+
+          <!-- Fit check: full card width, so the warning isn't squeezed beside the thumbnail -->
+          @if (fitOf(item)) {
+            <app-photo-fit-note [spot]="photoSpot()" [width]="item.width" [height]="item.height" />
+          }
         </div>
       }
     </div>
