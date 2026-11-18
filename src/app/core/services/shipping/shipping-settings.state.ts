@@ -18,6 +18,7 @@ export interface ShippingSettingsSeed {
   readonly note?: string;
   readonly egyptGovernorates?: ShippingSettingsDoc['egyptGovernorates'];
   readonly deliveryCountries?: ShippingSettingsDoc['deliveryCountries'];
+  readonly deliveryCountryFees?: ShippingSettingsDoc['deliveryCountryFees'];
 }
 
 export const SHIPPING_SETTINGS_KEY = makeStateKey<ShippingSettingsSeed | null>('shipping-settings');
@@ -53,6 +54,7 @@ export function toShippingSettingsSeed(doc: ShippingSettingsDoc): ShippingSettin
     note: doc.note,
     egyptGovernorates: doc.egyptGovernorates,
     ...(doc.deliveryCountries ? { deliveryCountries: doc.deliveryCountries } : {}),
+    deliveryCountryFees: doc.deliveryCountryFees,
   };
 }
 
@@ -73,5 +75,6 @@ export function shippingSeedToDoc(seed: ShippingSettingsSeed): ShippingSettingsD
     note: seed.note ?? '',
     egyptGovernorates: seed.egyptGovernorates ?? {},
     ...(seed.deliveryCountries ? { deliveryCountries: seed.deliveryCountries } : {}),
+    deliveryCountryFees: seed.deliveryCountryFees ?? {},
   };
 }
