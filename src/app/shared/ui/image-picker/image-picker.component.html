@@ -77,7 +77,13 @@
                   <span class="photo-phone-area" aria-hidden="true"></span>
                 }
               } @else {
-                <mat-icon name="add_photo_alternate" size="3xl" />
+                <div class="elements-center-col p-4 text-center gap-1">
+                  <mat-icon name="add_photo_alternate" size="3xl" />
+                  <span class="font-label-md font-bold! block">No image uploaded yet</span>
+                  <span class="font-label-sm opacity-70 block">
+                    Use "Upload Image" below to choose a photo
+                  </span>
+                </div>
               }
             </div>
             <span class="font-label-sm font-bold! block">Computer</span>
@@ -142,7 +148,7 @@
     }
 
     @if (spot && previewImg) {
-      <app-photo-fit-note [spot]="spot" [width]="asset()?.width" [height]="asset()?.height" />
+      <app-photo-fit-note [spot]="spot" [width]="photoWidth()" [height]="photoHeight()" />
     }
 
     <!-- Optional Web Import / Manual Path input when toggled -->

@@ -85,12 +85,22 @@ export class ImagePickerComponent {
   });
   protected readonly isHeroBanner = computed(() => this.spot() === 'heroBanner');
   protected readonly previewAspectClass = computed(() => this.photoSpot()?.aspectClass ?? this.aspectClass());
+  /**
+   * Size read at the last upload or import. Some editors keep only the path and alt text, so the
+   * size would be lost on the way back in; this keeps the fit check working for that photo.
+   */
+  readonly #lastSize = signal<{ path: string; width?: number; height?: number } | null>(null);
   /** Null until the photo's size is known; never blocks saving. */
   protected readonly photoFit = computed(() => {
     const spot = this.photoSpot();
     const current = this.asset();
-    return spot && current?.path ? checkPhotoFit(spot, current.width, current.height) : null;
+    if (!spot || !current?.path) return null;
+    const last = this.#lastSize();
+    const fromUpload = last?.path === current.path ? last : null;
+    return checkPhotoFit(spot, current.width ?? fromUpload?.width, current.height ?? fromUpload?.height);
   });
+  protected readonly photoWidth = computed(() => this.photoFit()?.size.width);
+  protected readonly photoHeight = computed(() => this.photoFit()?.size.height);
 
   protected readonly isExternalUrlInput = computed(() => {
     const raw = this.#manualUrlInput().trim();
@@ -159,6 +169,7 @@ export class ImagePickerComponent {
       const fallbackAlt = sanitizeAltFromFilename(file.name) || 'Store image';
       const nextAlt = currentAlt || fallbackAlt;
 
+      this.#lastSize.set({ path: resolved.path, width: resolved.width, height: resolved.height });
       this.asset.set({
         path: resolved.path,
         alt: nextAlt,
@@ -199,6 +210,7 @@ export class ImagePickerComponent {
       const lastSeg = resolved.path.split('/').pop() ?? '';
       const nextAlt = currentAlt || sanitizeAltFromFilename(lastSeg) || 'Store image';
 
+      this.#lastSize.set({ path: resolved.path, width: resolved.width, height: resolved.height });
       this.asset.set({
         path: resolved.path,
         alt: nextAlt,
