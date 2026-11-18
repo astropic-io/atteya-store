@@ -11,6 +11,7 @@
         </span>
       </div>
       <p class="font-body-sm opacity-70 pt-0.5">{{ subtitle() }}</p>
+      <app-photo-size-line class="pt-2" [spot]="photoSpot()" />
     </div>
 
     <div class="elements-start flex-wrap gap-2 max-sm:w-full max-sm:[&>button]:w-full">
@@ -191,8 +192,13 @@
 
           <!-- Thumbnail + Alt Text Input -->
           <div class="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center">
+            @let fit = fitOf(item);
+            @let showsCut = !!fit && !fit.fits;
             <div
-              class="relative w-full sm:w-28 aspect-square shrink-0 overflow-hidden panel-border bg-surface-container-lowest"
+              [class]="
+                'relative w-full sm:w-28 shrink-0 overflow-hidden panel-border bg-surface-container-lowest ' +
+                photoSpot().aspectClass
+              "
             >
               @if (imgPath) {
                 <img
@@ -201,8 +207,18 @@
                   [alt]="item.alt || 'Gallery image'"
                   fill
                   sizes="(min-width: 640px) 7rem, 100vw"
-                  class="object-cover object-center"
+                  class="object-center"
+                  [class.object-cover]="!showsCut"
+                  [class.object-contain]="showsCut"
                 />
+                @if (showsCut) {
+                  <span
+                    class="photo-fit-frame"
+                    [style.width.%]="fit?.framePercent"
+                    [style.height.%]="fit?.framePercent"
+                    aria-hidden="true"
+                  ></span>
+                }
               }
             </div>
 
@@ -223,6 +239,12 @@
                 />
                 <mat-hint>{{ item.alt.length }} / {{ maxAltLength }} characters</mat-hint>
               </mat-form-field>
+              <app-photo-fit-note
+                class="pt-3"
+                [spot]="photoSpot()"
+                [width]="item.width"
+                [height]="item.height"
+              />
             </div>
           </div>
         </div>

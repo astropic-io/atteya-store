@@ -1,0 +1,32 @@
+@layer components {
+  /* Admin photo pickers (ATS-328): the size to use, and whether an uploaded photo fits its store frame. */
+  .photo-size-line {
+    @apply flex flex-wrap items-center gap-x-2 gap-y-1 font-body-sm;
+  }
+
+  .photo-size-chip {
+    @apply px-2 py-0.5 border-shape border border-outline-variant bg-surface-container-high font-label-md font-bold! whitespace-nowrap;
+  }
+
+  .photo-fit-warning {
+    @apply elements-start items-start! gap-1.5 px-2.5 py-1.5 border-shape bg-on-warning text-warning font-body-sm;
+  }
+
+  .photo-fit-ok {
+    @apply elements-start gap-1.5 font-body-sm text-success;
+  }
+
+  /* The store frame drawn over a preview that shows the whole photo. Everything outside is dimmed. */
+  .photo-fit-frame {
+    @apply absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none border-2 border-dashed;
+    border-color: #fff;
+    box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.45);
+  }
+
+  /* Hero banner: the middle part a phone shows, drawn on the computer preview. */
+  .photo-phone-area {
+    @apply absolute inset-y-0 left-1/2 -translate-x-1/2 pointer-events-none border-x-2 border-dashed;
+    border-color: #fff;
+    width: calc(100% * 81 / 256);
+  }
+}

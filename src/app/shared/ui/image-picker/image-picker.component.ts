@@ -11,8 +11,13 @@ import { AppImageFallbackDirective } from '@shared/directives/image-fallback';
 import { ImageInputError, ImageSourceService } from '@core/services/storage';
 import { SnackbarService } from '@core/services/snack-bar/snack-bar.service';
 import { ImageAsset } from '@shared/schemas';
+import { PhotoFitNoteComponent, PhotoSizeLineComponent } from '@shared/ui/photo-fit';
 import {
+  checkPhotoFit,
   IMAGE_LIMITS,
+  PHOTO_SPOTS,
+  PhotoSpot,
+  PhotoSpotId,
   ImageFolderPath,
   isExternalUrl,
   looksLikeDomainUrl,
@@ -35,6 +40,8 @@ let nextPickerId = 0;
     MatTooltipModule,
     MatProgressSpinnerModule,
     SharedIconModule,
+    PhotoSizeLineComponent,
+    PhotoFitNoteComponent,
   ],
 })
 export class ImagePickerComponent {
@@ -46,7 +53,10 @@ export class ImagePickerComponent {
   readonly label = input<string>('Image');
   readonly subtitle = input<string>('Upload a photo or import from a web link.');
   readonly altPlaceholder = input<string>('e.g. Athlete training in performance sportswear');
+  /** Preview shape when no `spot` is set. A spot sets the shape itself. */
   readonly aspectClass = input<string>('aspect-video');
+  /** Where the photo shows on the store: sets the size line, preview shape and fit check (ATS-328). */
+  readonly spot = input<PhotoSpotId | null>(null);
   readonly allowRemove = input<boolean>(false);
   /** Decorative photos can skip a description. Shop cards keep this off. */
   readonly altOptional = input<boolean>(false);
@@ -68,6 +78,19 @@ export class ImagePickerComponent {
   protected readonly isResolvingUrl = this.#isResolvingUrl.asReadonly();
   protected readonly showManualUrlInput = this.#showManualUrlInput.asReadonly();
   protected readonly manualUrlInput = this.#manualUrlInput.asReadonly();
+
+  protected readonly photoSpot = computed<PhotoSpot | null>(() => {
+    const id = this.spot();
+    return id ? PHOTO_SPOTS[id] : null;
+  });
+  protected readonly isHeroBanner = computed(() => this.spot() === 'heroBanner');
+  protected readonly previewAspectClass = computed(() => this.photoSpot()?.aspectClass ?? this.aspectClass());
+  /** Null until the photo's size is known; never blocks saving. */
+  protected readonly photoFit = computed(() => {
+    const spot = this.photoSpot();
+    const current = this.asset();
+    return spot && current?.path ? checkPhotoFit(spot, current.width, current.height) : null;
+  });
 
   protected readonly isExternalUrlInput = computed(() => {
     const raw = this.#manualUrlInput().trim();

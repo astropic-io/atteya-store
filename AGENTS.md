@@ -96,6 +96,7 @@ Adhere strictly to these core directives to ensure maximum performance, clean ar
 - **Image storage, the ImageKit proxy, dev and prod image hosts, uploads, galleries and image import**: read the `image-delivery` skill.
 - **Strictly use `NgOptimizedImage` (`[ngSrc]`) paired with `AppImageFallbackDirective` (`[appImageFallback]`)** for all storefront and preview media. Raw `<img [src]>` for media assets is banned.
 - Never build Storage or ImageKit URLs by hand; always use `normalizeImageKitPath()`, `buildImageKitUrl()`, and `buildStorageUrl()` from `@shared/utils/image`.
+- **Photo sizes per store spot (`PHOTO_SPOTS`, the size line and fit check in admin pickers)**: read the `image-delivery` skill.
 - **Skeleton Placeholders vs Blocking Spinners**:
   - Use `<app-skeleton>` (`@shared/ui/skeleton`) or `.skeleton` for layout/content placeholders (`@defer` placeholders, `resource.isLoading()` cards/lists/text) to prevent Cumulative Layout Shift (CLS).
   - Reserve `<mat-progress-spinner>` and `<app-loader>` for active button actions or blocking overlays.

@@ -36,32 +36,114 @@
       </div>
     </div>
 
-    <!-- Visual Image Preview / Upload Placeholder Box -->
-    <div
-      [class]="
-        'relative w-full overflow-hidden panel-border bg-surface-container-lowest elements-center mb-6 ' +
-        aspectClass()
-      "
-    >
-      @let previewImg = validPreviewPath();
-      @if (previewImg) {
-        <img
-          [ngSrc]="previewImg"
-          [appImageFallback]="previewImg"
-          (imageFailed)="onImageFailed()"
-          [alt]="asset()?.alt || 'Image preview'"
-          fill
-          sizes="(max-width: 1280px) 100vw, 33vw"
-          class="object-cover object-center"
-        />
-      } @else {
-        <div class="elements-center-col p-6 text-center gap-2">
-          <mat-icon name="add_photo_alternate" size="3xl" />
-          <span class="font-label-md font-bold! block">No image uploaded yet</span>
-          <span class="font-label-sm opacity-70 block"> Use "Upload Image" below to choose a photo </span>
+    @let spot = photoSpot();
+    @if (spot) {
+      <app-photo-size-line [spot]="spot" />
+    }
+
+    <!-- Visual Image Preview / Upload Placeholder Box: same shape as the store frame -->
+    @let previewImg = validPreviewPath();
+    @let fit = photoFit();
+    @let showsCut = !!fit && !fit.fits;
+    @if (isHeroBanner()) {
+      <div class="space-y-2">
+        <div class="grid grid-cols-[256fr_81fr] gap-3 items-start">
+          <div class="min-w-0 space-y-1.5">
+            <div
+              class="relative w-full aspect-video overflow-hidden panel-border bg-surface-container-lowest elements-center"
+            >
+              @if (previewImg) {
+                <img
+                  [ngSrc]="previewImg"
+                  [appImageFallback]="previewImg"
+                  (imageFailed)="onImageFailed()"
+                  [alt]="asset()?.alt || 'Computer preview'"
+                  fill
+                  sizes="(max-width: 1280px) 80vw, 25vw"
+                  class="object-center"
+                  [class.object-cover]="!showsCut"
+                  [class.object-contain]="showsCut"
+                />
+                @if (showsCut) {
+                  <span
+                    class="photo-fit-frame"
+                    [style.width.%]="fit?.framePercent"
+                    [style.height.%]="fit?.framePercent"
+                    aria-hidden="true"
+                  >
+                    <span class="photo-phone-area"></span>
+                  </span>
+                } @else {
+                  <span class="photo-phone-area" aria-hidden="true"></span>
+                }
+              } @else {
+                <mat-icon name="add_photo_alternate" size="3xl" />
+              }
+            </div>
+            <span class="font-label-sm font-bold! block">Computer</span>
+          </div>
+          <div class="min-w-0 space-y-1.5">
+            <div
+              class="relative w-full aspect-9/16 overflow-hidden panel-border bg-surface-container-lowest elements-center"
+            >
+              @if (previewImg) {
+                <img
+                  [ngSrc]="previewImg"
+                  [appImageFallback]="previewImg"
+                  [alt]="asset()?.alt || 'Phone preview'"
+                  fill
+                  sizes="120px"
+                  class="object-cover object-center"
+                />
+              }
+            </div>
+            <span class="font-label-sm font-bold! block">Phone</span>
+          </div>
         </div>
-      }
-    </div>
+        <p class="font-body-sm opacity-70">
+          Keep faces and text inside the dashed middle area. Phones only show that part.
+        </p>
+      </div>
+    } @else {
+      <div
+        [class]="
+          'relative w-full overflow-hidden panel-border bg-surface-container-lowest elements-center ' +
+          previewAspectClass()
+        "
+      >
+        @if (previewImg) {
+          <img
+            [ngSrc]="previewImg"
+            [appImageFallback]="previewImg"
+            (imageFailed)="onImageFailed()"
+            [alt]="asset()?.alt || 'Image preview'"
+            fill
+            sizes="(max-width: 1280px) 100vw, 33vw"
+            class="object-center"
+            [class.object-cover]="!showsCut"
+            [class.object-contain]="showsCut"
+          />
+          @if (showsCut) {
+            <span
+              class="photo-fit-frame"
+              [style.width.%]="fit?.framePercent"
+              [style.height.%]="fit?.framePercent"
+              aria-hidden="true"
+            ></span>
+          }
+        } @else {
+          <div class="elements-center-col p-6 text-center gap-2">
+            <mat-icon name="add_photo_alternate" size="3xl" />
+            <span class="font-label-md font-bold! block">No image uploaded yet</span>
+            <span class="font-label-sm opacity-70 block"> Use "Upload Image" below to choose a photo </span>
+          </div>
+        }
+      </div>
+    }
+
+    @if (spot && previewImg) {
+      <app-photo-fit-note [spot]="spot" [width]="asset()?.width" [height]="asset()?.height" />
+    }
 
     <!-- Optional Web Import / Manual Path input when toggled -->
     @if (showManualUrlInput()) {

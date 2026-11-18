@@ -12,8 +12,13 @@ import { AppImageFallbackDirective } from '@shared/directives/image-fallback';
 import { ImageInputError, ImageSourceService } from '@core/services/storage';
 import { SnackbarService } from '@core/services/snack-bar/snack-bar.service';
 import { ImageAsset } from '@shared/schemas';
+import { PhotoFitNoteComponent, PhotoSizeLineComponent } from '@shared/ui/photo-fit';
 import {
+  checkPhotoFit,
   IMAGE_LIMITS,
+  PHOTO_SPOTS,
+  PhotoFit,
+  PhotoSpotId,
   ImageFolderPath,
   isExternalUrl,
   looksLikeDomainUrl,
@@ -37,6 +42,8 @@ import {
     MatTooltipModule,
     MatProgressSpinnerModule,
     SharedIconModule,
+    PhotoSizeLineComponent,
+    PhotoFitNoteComponent,
   ],
 })
 export class ImageGalleryEditorComponent {
@@ -51,6 +58,8 @@ export class ImageGalleryEditorComponent {
     'Add up to 8 photos. Drag to reorder — the first photo is the Main Image used on cards and social sharing.',
   );
   readonly defaultAlt = input<string>('');
+  /** Where these photos show on the store: sets the size line, thumbnail shape and fit check (ATS-328). */
+  readonly spot = input<PhotoSpotId>('product');
 
   readonly imagesChange = output<ImageAsset[]>();
   readonly uploaded = output<string>();
@@ -67,6 +76,8 @@ export class ImageGalleryEditorComponent {
   protected readonly isImportingUrl = this.#isImportingUrl.asReadonly();
   protected readonly showWebLinkBar = this.#showWebLinkBar.asReadonly();
   protected readonly webLinkInput = this.#webLinkInput.asReadonly();
+
+  protected readonly photoSpot = computed(() => PHOTO_SPOTS[this.spot()]);
 
   protected readonly isFull = computed(() => this.images().length >= this.maxImages());
 
@@ -87,6 +98,11 @@ export class ImageGalleryEditorComponent {
   #setImportingUrl(value: boolean): void {
     this.#isImportingUrl.set(value);
     this.busyChange.emit(this.#isUploadingFiles() || this.#isImportingUrl());
+  }
+
+  /** Null until the photo's size is known; never blocks saving. */
+  protected fitOf(asset: ImageAsset): PhotoFit | null {
+    return checkPhotoFit(this.photoSpot(), asset.width, asset.height);
   }
 
   protected getDisplayPath(asset: ImageAsset): string {
