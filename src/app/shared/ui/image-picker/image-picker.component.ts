@@ -14,6 +14,7 @@ import { ImageAsset } from '@shared/schemas';
 import { PhotoFitNoteComponent, PhotoSizeLineComponent } from '@shared/ui/photo-fit';
 import {
   checkPhotoFit,
+  heroPhoneAreaPercent,
   IMAGE_LIMITS,
   PHOTO_SPOTS,
   PhotoSpot,
@@ -101,6 +102,11 @@ export class ImagePickerComponent {
   });
   protected readonly photoWidth = computed(() => this.photoFit()?.size.width);
   protected readonly photoHeight = computed(() => this.photoFit()?.size.height);
+  /** Hero: the phone's slice drawn on the computer preview, matching the Phone preview beside it. */
+  protected readonly phoneArea = computed(() => {
+    const fit = this.photoFit();
+    return heroPhoneAreaPercent(fit?.size, !!fit && !fit.fits);
+  });
 
   protected readonly isExternalUrlInput = computed(() => {
     const raw = this.#manualUrlInput().trim();

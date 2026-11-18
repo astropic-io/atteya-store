@@ -77,3 +77,31 @@ export function photoFitMessage(spot: PhotoSpot, fit: PhotoFit): string {
 export function photoSmallMessage(spot: PhotoSpot): string {
   return `This photo is small and may look blurry. Use at least ${photoSizeLabel(spot.smallest)}.`;
 }
+
+/** Hero banner shapes: the computer preview is 16:9 and a phone shows a 9:16 slice. */
+const HERO_COMPUTER_RATIO = 16 / 9;
+const HERO_PHONE_RATIO = 9 / 16;
+
+/**
+ * Where a phone's slice of the hero photo sits on the 16:9 computer preview, as a percent of that
+ * preview in each direction. A phone fills its full-height frame with the whole photo
+ * (object-cover), so the slice depends on the photo's own shape. `showsWholePhoto` is true when the
+ * preview shows the whole photo (object-contain, a photo that doesn't fit 16:9); otherwise the
+ * preview is filled like the store's computer banner. Unknown size: the slice of a 16:9 photo.
+ */
+export function heroPhoneAreaPercent(
+  size: PhotoSize | null | undefined,
+  showsWholePhoto: boolean,
+): { readonly width: number; readonly height: number } {
+  const ratio =
+    showsWholePhoto && size && size.width > 0 && size.height > 0
+      ? size.width / size.height
+      : HERO_COMPUTER_RATIO;
+  // The photo's box on the preview (object-contain), as a share of the preview.
+  const photoWidth = ratio <= HERO_COMPUTER_RATIO ? ratio / HERO_COMPUTER_RATIO : 1;
+  const photoHeight = ratio <= HERO_COMPUTER_RATIO ? 1 : HERO_COMPUTER_RATIO / ratio;
+  // The phone keeps the full height of a wide photo, or the full width of a very tall one.
+  const width = photoWidth * (ratio >= HERO_PHONE_RATIO ? HERO_PHONE_RATIO / ratio : 1);
+  const height = photoHeight * (ratio >= HERO_PHONE_RATIO ? 1 : ratio / HERO_PHONE_RATIO);
+  return { width: width * 100, height: height * 100 };
+}

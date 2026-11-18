@@ -22,9 +22,10 @@
     box-shadow: 0 0 0 9999px color-mix(in srgb, var(--mat-sys-scrim) 45%, transparent);
   }
 
-  /* Hero banner: the middle part a phone shows, drawn on the computer preview. */
+  /* Hero banner: the part a phone shows, drawn on the computer preview (size set from the photo's shape). */
   .photo-phone-area {
-    @apply absolute inset-y-0 left-1/2 -translate-x-1/2 pointer-events-none border-x-2 border-dashed border-on-primary;
+    @apply absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none border-2 border-dashed border-on-primary;
     width: calc(100% * 81 / 256);
+    height: 100%;
   }
 }
