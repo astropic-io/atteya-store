@@ -122,7 +122,7 @@ import {
 } from './utils/product-bundle';
 import { SizeGuideComponent } from './components/size-guide/size-guide.component';
 import { watchProductDoc } from './utils/product-live';
-import { sizeGuidesFor } from './utils/size-guide';
+import { sizeGuideFor } from './utils/size-guide';
 import {
   findVariant,
   initialSelection,
@@ -340,10 +340,10 @@ export class ProductComponent {
     productDetailsTitle(this.#categoryPage()?.detailsTitle ?? 'specifications'),
   );
 
-  /** Size & Fit charts (clothing size chart categories, products with sizes); empty hides the section. */
-  readonly sizeGuides = computed(() => {
+  /** Size & Fit chart (the client's t-shirt and hoodie charts); null hides the section. */
+  readonly sizeGuide = computed(() => {
     const p = this.product();
-    return p ? sizeGuidesFor(p, this.#categoryPage()?.sizeChart ?? 'none') : [];
+    return p ? sizeGuideFor(p, this.#categoryPage()?.sizeChart ?? 'none') : null;
   });
 
   /** Description with real words in it (some imported products only have `<p></p>`). */
