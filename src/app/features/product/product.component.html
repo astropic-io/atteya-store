@@ -207,15 +207,15 @@
             </details>
           }
 
-          @let guides = sizeGuides();
-          @if (guides.length > 0) {
+          @let fitGuide = sizeGuide();
+          @if (fitGuide) {
             <details class="pdp-section">
               <summary>
                 <span>Size &amp; Fit</span>
                 <span class="pdp-section__icon" aria-hidden="true"><mat-icon name="add" size="lg" /></span>
               </summary>
               <div class="pdp-section__body max-w-none!">
-                <app-size-guide [guides]="guides" />
+                <app-size-guide [guide]="fitGuide" />
               </div>
             </details>
           }
