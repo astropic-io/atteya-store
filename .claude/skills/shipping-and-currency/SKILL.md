@@ -66,3 +66,15 @@ Moved here word for word from AGENTS.md so that file stays small (<KEY>-282). Th
 - `setDeliveryFee` accepts `international-agreed` Bank Transfer orders: the fee is typed in EGP and `payInWithAgreedShipping()` (`pay-in.ts`) converts it at the plain rate (`payIn.shippingFactor`, else `orderStaffNotes.payInRate.rate`; refused with neither) and saves `payIn.shipping` and `payIn.amount` (items as saved + shipping).
 - Emails: `bank-transfer-placed` for these orders says nothing to pay yet and that we'll contact them on WhatsApp; `delivery-fee-set` / `delivery-fee-changed` are also sent for Bank Transfer and show the shipping fee and total in the shopper's currency only, with the bank details; the staff email says "Confirm Delivery".
 - Tests: `delivery-countries.test.ts` and `order-abroad-agreed.test.ts` in `functions/`.
+
+
+## Extra delivery fee per country abroad (<KEY>-326)
+
+- Abroad delivery to a listed country = the abroad weight box fee + the country's extra fee, the same way an Egypt governorate's extra is added (<KEY>-306).
+- `settings/shipping.deliveryCountryFees` is `{ [code]: whole EGP }` (0 to `MAX_COUNTRY_EXTRA_FEE_EGP`, 50,000); a listed country with no entry counts as 0. `parseDeliveryCountryFees()` (engine `delivery-countries.ts`) cleans it on the server and in the client schema: known codes only, never `EG`, rounded, out-of-range entries left out.
+- `countryExtraFee(settings, country)` gives the extra: 0 for Egypt, for a country not on the Delivery Countries list (its whole fee is agreed on WhatsApp) and for one with no saved fee.
+- `shippingQuote` takes `countryExtraEgp` (abroad only) and the box candidate becomes `box.feeEgp + extra`; `extraFeeEgp` on the quote is the governorate's in Egypt and the country's abroad. A Settings → Shipping promotion and free-over replace the whole fee, extra included; Free shipping offers never apply abroad.
+- Checkout (`checkout.page.ts`) and the server (`priceStoreOrder` → `quoteShippingLine`, `ShippingLineContext.countryExtraEgp`) both add it, so the shipping shown and charged agree. The fee is converted at the plain shipping rate like the box fee (`shippingEntry()`), with no markup.
+- Admin: Settings → Shipping → Abroad → Delivery Countries shows an Extra Fee (EGP) box on each country row. A newly picked country starts with an empty box, and Save Shipping refuses an empty or out-of-range fee ("Each country needs an extra fee in whole pounds, from 0 to 50,000."). Save writes a fee for each listed country and deletes the saved fee of each removed one by name (the save merges nested maps key by key).
+- The `onShippingSettingsWritten` audit log records `deliveryCountryFees`.
+- Tests: `delivery-countries.test.ts`, `order-abroad-agreed.test.ts` and `shipping.spec.ts` in `functions/`.

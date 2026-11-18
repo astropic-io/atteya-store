@@ -96,6 +96,7 @@ Adhere strictly to these core directives to ensure maximum performance, clean ar
 - **Image storage, the ImageKit proxy, dev and prod image hosts, uploads, galleries and image import**: read the `image-delivery` skill.
 - **Strictly use `NgOptimizedImage` (`[ngSrc]`) paired with `AppImageFallbackDirective` (`[appImageFallback]`)** for all storefront and preview media. Raw `<img [src]>` for media assets is banned.
 - Never build Storage or ImageKit URLs by hand; always use `normalizeImageKitPath()`, `buildImageKitUrl()`, and `buildStorageUrl()` from `@shared/utils/image`.
+- **Photo sizes per store spot (`PHOTO_SPOTS`, the size line and fit check in admin pickers)**: read the `image-delivery` skill.
 - **Skeleton Placeholders vs Blocking Spinners**:
   - Use `<app-skeleton>` (`@shared/ui/skeleton`) or `.skeleton` for layout/content placeholders (`@defer` placeholders, `resource.isLoading()` cards/lists/text) to prevent Cumulative Layout Shift (CLS).
   - Reserve `<mat-progress-spinner>` and `<app-loader>` for active button actions or blocking overlays.
@@ -113,14 +114,8 @@ Adhere strictly to these core directives to ensure maximum performance, clean ar
 
 ### Meta Pixel (ads tracking)
 
-- `MetaPixelService` (`@core/services/analytics/meta-pixel.service`) sends the client's Meta Pixel events (<KEY>-290). It runs in the browser only and only when `environment.metaPixelId` is set, which is the live store (`environment.prod.ts`); dev sends nothing.
-- `provideAppInitializer` in `app.config.ts` calls `start()`, which sends PageView once per path (query-only changes and `/admin` pages are skipped) and loads Meta's script on the first store page, never on `/admin`.
-- Events and where they are sent: ViewContent (product page, once per product), Search (search page, once per query), AddToCart (`app-add-to-bag-button` and the Bundle & Save page), InitiateCheckout (checkout, once the bag is priced), AddPaymentInfo (first payment pick, or Place Order), Purchase (after Place Order for InstaPay, Cash on Delivery and Bank Transfer; on the order page within 2 hours of a Card payment).
-- The Purchase value is the EGP the store receives (`receivedEgp()`, <KEY>-316): the Egypt total, or for an order abroad `chargeEgp` (Card) / `payIn.amount` at the plain rate (Bank Transfer).
-- Money goes to Meta in EGP with product ids. Free gift lines are left out of Purchase. Purchase is sent once per order per browser (`metaPixelPurchases` in localStorage) with event id `purchase-<orderId>`, ready for Conversions API de-duplication.
-- Nothing goes to Meta while the address bar holds a guest order's `?key=`, also inside an encoded `returnUrl` (it opens the order with the guest's address), or an order page address with Paymob's return details (also inside a `returnUrl`). The order page clears both from its address, and the Card Purchase waits for that. Meta's own PageView on history changes (`disablePushState`) and its automatic events (`autoConfig`) are off, so only the service's events are sent.
-- Set `localStorage.metaPixelDebug = '1'` in a browser to print every event in the console (works on dev, where nothing is sent).
-- New shop actions that matter to ads call `MetaPixelService.track()` with a Meta standard event; never add Meta's snippet to `index.html`. The privacy page's cookies section must stay in line with what is sent.
+- **Meta Pixel events, the Purchase value, when nothing is sent and the debug switch**: read the `meta-pixel` skill.
+- Never add Meta's snippet to `index.html`; new shop actions that matter to ads call `MetaPixelService.track()`.
 
 ### 📝 Living Documentation Directive
 
@@ -190,41 +185,7 @@ If Linear can't be reached (tool missing or signed out), say so in the final mes
 
 ## 🧠 3. Specialized Skills
 
-Activate the dedicated skills from `.agents/skills/` on demand. `sync-docs`, `ask`, and `teacher` live in `.cursor/skills/` because Cursor does not load workflow files:
-
-- **`new-feature`** for the end-to-end feature lifecycle, LIFT folder structure, and orchestration.
-- **`branch-naming`** for git branch names (`<type>/<short-name>`: `feature`, `fix`, `hotfix`, `refactor`, `perf`, `docs`, `test`, `chore` or `ci`), and PR titles and commit messages that start with the Linear id (`<KEY>-123 …`, `teamKey` in `linear.config.json`) so the Linear link keeps working. Load it before creating, naming or renaming a branch, writing a commit message, or opening a PR.
-- **`reusable-catalog`** for the living index of shared UI components, extracted Tailwind classes, and the "2+ Duplication Rule".
-- **`ui-design-rules`** for the Component Decision Matrix (Shared UI vs Material vs Tailwind), monochrome identity, and token rules.
-- **`dev-data-script`** (manual, local manager agent only) to run a `functions/scripts/` data script on dev: build, dry run, check against the ticket, `--apply` until `changed meanwhile 0`, Rebuild search, Linear QA comment and the prod checklist line.
-- **`board-status`** for the status report: what shipped, what's building or in review, the next scheduled build, and what waits on Youssef.
-- **`offers`** for every offer rule: the pricing engine, top banner, free gifts, Buy X Get Y, one discount per item, offer limits, the guards at Place Order and the offer data scripts. Read it before touching offers, pricing, the bag, checkout or the order callables.
-- **`copywriting`** for the house writing style: title case for buttons and payment/status names, say each thing once, money and order-ref formats, and order messages that match the order's real state. Read it before writing any user-facing text, email or WhatsApp message.
-- **`quality-standards`** for A11y guardrails (no fake buttons), ReDoS prevention, and SSR server route registration.
-- **`preflight-gate`** (Pre-Flight Beast Mode Gate) for `npm run preflight` automated audit and the 7-Point Quality Gate before shipping.
-- **`storefront-loading`** for storefront anti-flicker tiers, SSR/`TransferState` seeds, `ShellReadyService`, and async UI checklists.
-- **`angular-developer`** for architecture, components, signals, forms, DI, HTTP, and routing.
-- **`design-system`** for Tailwind v4, Material M3 token overrides, and style partial workflows.
-- **`typescript`** for strict types, Valibot schemas, pure models, and logic utilities.
-- **`sync-docs`** to audit recent changes and keep living catalogs in sync.
-- **`ask`** (manual) for discussion-only brainstorming without file edits.
-- **`teacher`** (manual) to guide implementation instead of writing the solution.
-
-Topic skills (moved out of this file, <KEY>-282; one fact per line, add new rules there, not here):
-
-- **`auth-and-access`** for sign-in, roles, Team, terms, confirm email, delete account and Firestore / Storage access.
-- **`checkout-and-orders`** for the bag, checkout, payments, guest checkout, order stage and status, admin Orders.
-- **`order-emails`** for order emails and their design.
-- **`customers-admin`** for customer summaries and the admin Customers pages.
-- **`returns-and-exchanges`** for return and exchange requests: who and when, kinds, statuses, gifts, refund and fee math, the stock plan, `requestReturn` / `cancelReturnRequest` and the return emails.
-- **`catalogue`** for products, stock, the product editor and page, Shop tabs, search and catalogue data scripts.
-- **`categories-brands-admin`** for the admin Categories & Brands page.
-- **`shipping-and-currency`** for shipping boxes, weights and prices outside Egypt.
-- **`navigation-and-home`** for navigation, the Brands page, the Home Page and Previous Versions.
-- **`storefront-chrome`** for the store layout, bag, footer, account pages and error pages.
-- **`seo-and-hosting`** for canonical and share tags, sitemap, auth proxy, allowed hosts, service worker.
-- **`ci-review-loop`** for the pre-push hook, Claude review, Claude Fix, auto-merge and Browser Check.
-- **`linear-board`** for writing tickets, How to Test on Dev, and the ticket-pickup routine.
+- Shared skills live in `.agents/skills/`; every tool lists them with their descriptions, so read the matching one before working in its area. Cursor-only `sync-docs`, `ask` and `teacher` live in `.cursor/skills/`.
 
 ## Learned User Preferences
 

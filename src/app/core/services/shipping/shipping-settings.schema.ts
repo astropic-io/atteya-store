@@ -1,5 +1,9 @@
 import * as v from 'valibot';
-import { MAX_GOVERNORATE_EXTRA_FEE_EGP, parseDeliveryCountries } from '@core/services/offers/engine';
+import {
+  MAX_GOVERNORATE_EXTRA_FEE_EGP,
+  parseDeliveryCountries,
+  parseDeliveryCountryFees,
+} from '@core/services/offers/engine';
 import { timestampSchema } from '@shared/schemas';
 
 const fee = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(1_000_000));
@@ -152,6 +156,17 @@ export const ShippingSettingsSchema = v.object({
       v.unknown(),
       v.transform((raw) => parseDeliveryCountries(raw) ?? undefined),
     ),
+  ),
+  /**
+   * Extra delivery fee per country abroad (ATS-326): `{ [code]: whole EGP }`, added to the abroad
+   * box fee. Cleaned by `parseDeliveryCountryFees()` like on the server; a country with none is 0.
+   */
+  deliveryCountryFees: v.optional(
+    v.pipe(
+      v.unknown(),
+      v.transform((raw) => ({ ...parseDeliveryCountryFees(raw) })),
+    ),
+    {},
   ),
   /**
    * Legacy zone/flat fields — accepted so old Firestore docs still parse.

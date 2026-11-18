@@ -192,8 +192,9 @@
         <div>
           <h3 id="delivery-countries-heading" class="font-title-sm font-bold!">Delivery Countries</h3>
           <p class="font-body-sm text-on-surface-variant">
-            Countries with a set shipping price. Orders to other countries can still be placed. We agree
-            delivery and the shipping fee with the customer on WhatsApp.
+            Countries with a set shipping price: the box fee plus the country's extra fee. Orders to other
+            countries can still be placed. We agree delivery and the shipping fee with the customer on
+            WhatsApp.
           </p>
         </div>
         <mat-form-field appearance="outline" class="w-full @3xl:max-w-md">
@@ -216,13 +217,33 @@
               <mat-option [value]="option.code">{{ option.label }}</mat-option>
             }
           </mat-autocomplete>
-          <mat-hint>Pick a country to add it, then save</mat-hint>
+          <mat-hint>Pick a country, type its extra fee, then save</mat-hint>
         </mat-form-field>
         @if (d.deliveryCountries.length) {
           <ul class="w-full" aria-label="Countries with a set shipping price">
             @for (code of d.deliveryCountries; track code) {
-              <li class="w-full elements-between gap-3 border-b border-outline-variant py-1">
-                <span class="font-body-md">{{ countryName(code) }}</span>
+              <li
+                class="w-full grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 items-center border-b border-outline-variant py-3 @3xl:grid-cols-[minmax(0,1fr)_14rem_auto]"
+              >
+                <p class="font-body-md">{{ countryName(code) }}</p>
+                <mat-form-field
+                  appearance="outline"
+                  class="w-full col-span-2 row-start-2 @3xl:col-span-1 @3xl:col-start-2 @3xl:row-start-1"
+                >
+                  <mat-label>Extra Fee (EGP)</mat-label>
+                  <input
+                    matInput
+                    type="number"
+                    inputmode="numeric"
+                    min="0"
+                    [max]="maxCountryExtraFee"
+                    step="1"
+                    [attr.aria-label]="'Extra Fee (EGP), ' + countryName(code)"
+                    [value]="d.countryFees[code] ?? ''"
+                    (input)="patchCountryFee(code, textFrom($event))"
+                  />
+                  <mat-hint>Added to the box fee, 0 to 50,000</mat-hint>
+                </mat-form-field>
                 <button
                   matIconButton
                   type="button"

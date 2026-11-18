@@ -27,6 +27,7 @@ import {
   EGYPT_GOVERNORATES,
   formatCairoDateTimeInput,
   governorateSetting,
+  MAX_COUNTRY_EXTRA_FEE_EGP,
   MAX_GOVERNORATE_EXTRA_FEE_EGP,
   parseCairoDateTimeInput,
   type GovernorateSetting,
@@ -72,6 +73,11 @@ interface ShippingDraft {
   governorates: Record<string, GovernorateDraft>;
   /** Countries abroad with a set shipping price (ATS-314), ISO codes, A to Z by name. */
   deliveryCountries: string[];
+  /**
+   * Extra delivery fee per listed country (ATS-326), as typed in its Extra Fee (EGP) box; checked
+   * on save (`parseExtraFee`). A newly added country starts empty so the admin types its fee.
+   */
+  countryFees: Record<string, string>;
 }
 
 interface GovernorateDraft {
@@ -116,6 +122,7 @@ const EMPTY_DRAFT: ShippingDraft = {
   note: '',
   governorates: governorateDrafts({}),
   deliveryCountries: byCountryName(DEFAULT_DELIVERY_COUNTRIES),
+  countryFees: countryFeeDrafts(DEFAULT_DELIVERY_COUNTRIES, {}),
 };
 
 function toDate(raw: unknown): Date | null {
@@ -140,12 +147,20 @@ function byCountryName(codes: readonly string[]): string[] {
   return [...codes].sort((a, b) => countryLabel(a).localeCompare(countryLabel(b), 'en'));
 }
 
-/** Whole pounds from 0 to 1,000, or null for anything else (an empty box included). */
-function parseExtraFee(raw: string): number | null {
+/** Whole pounds from 0 to `max` (1,000 by default), or null for anything else (an empty box included). */
+function parseExtraFee(raw: string, max = MAX_GOVERNORATE_EXTRA_FEE_EGP): number | null {
   const text = raw.trim();
   if (text === '') return null;
   const value = Number(text);
-  return Number.isInteger(value) && value >= 0 && value <= MAX_GOVERNORATE_EXTRA_FEE_EGP ? value : null;
+  return Number.isInteger(value) && value >= 0 && value <= max ? value : null;
+}
+
+/** The Extra Fee box of each listed country from the saved fees (a country with none: 0). */
+function countryFeeDrafts(
+  codes: readonly string[],
+  saved: Readonly<Record<string, number>>,
+): Record<string, string> {
+  return Object.fromEntries(codes.map((code) => [code, String(saved[code] ?? 0)]));
 }
 
 @Component({
@@ -186,9 +201,15 @@ export class ShippingTabComponent implements OnInit {
   readonly formatInput = formatCairoDateTimeInput;
   readonly governorateList = EGYPT_GOVERNORATES;
   readonly maxExtraFee = MAX_GOVERNORATE_EXTRA_FEE_EGP;
+  readonly maxCountryExtraFee = MAX_COUNTRY_EXTRA_FEE_EGP;
   readonly countryName = countryLabel;
   /** What is typed in Delivery Countries → Add a Country. */
   readonly countryQuery = signal('');
+  /**
+   * Countries with a fee saved in `settings/shipping.deliveryCountryFees`: from the loaded doc, then
+   * from each successful save. Save deletes the fee of any of these no longer listed (ATS-326).
+   */
+  #savedFeeCodes: readonly string[] = [];
   /** Countries that can still be added: every country but Egypt and the ones already listed. */
   readonly countryOptions = computed(() => {
     const listed = new Set(this.draft().deliveryCountries);
@@ -212,6 +233,7 @@ export class ShippingTabComponent implements OnInit {
     effect(() => {
       const data = this.settingsResource.value();
       if (!data) return;
+      this.#savedFeeCodes = Object.keys(data.deliveryCountryFees);
       untracked(() =>
         this.draft.set({
           egyptBoxes: cloneBoxes(sortedById(data.egyptBoxes)),
@@ -227,6 +249,10 @@ export class ShippingTabComponent implements OnInit {
           note: data.note,
           governorates: governorateDrafts(data.egyptGovernorates),
           deliveryCountries: byCountryName(data.deliveryCountries ?? DEFAULT_DELIVERY_COUNTRIES),
+          countryFees: countryFeeDrafts(
+            data.deliveryCountries ?? DEFAULT_DELIVERY_COUNTRIES,
+            data.deliveryCountryFees,
+          ),
         }),
       );
     });
@@ -295,17 +321,31 @@ export class ShippingTabComponent implements OnInit {
     this.draft.update((prev) =>
       code === 'EG' || prev.deliveryCountries.includes(code)
         ? prev
-        : { ...prev, deliveryCountries: byCountryName([...prev.deliveryCountries, code]) },
+        : {
+            ...prev,
+            deliveryCountries: byCountryName([...prev.deliveryCountries, code]),
+            countryFees: { ...prev.countryFees, [code]: '' },
+          },
     );
     this.countryQuery.set('');
     input.value = '';
   }
 
   removeDeliveryCountry(code: string): void {
-    this.draft.update((prev) => ({
-      ...prev,
-      deliveryCountries: prev.deliveryCountries.filter((entry) => entry !== code),
-    }));
+    this.draft.update((prev) => {
+      const countryFees = { ...prev.countryFees };
+      delete countryFees[code];
+      return {
+        ...prev,
+        deliveryCountries: prev.deliveryCountries.filter((entry) => entry !== code),
+        countryFees,
+      };
+    });
+  }
+
+  /** A listed country's Extra Fee (EGP) box changed. */
+  patchCountryFee(code: string, extraFee: string): void {
+    this.draft.update((prev) => ({ ...prev, countryFees: { ...prev.countryFees, [code]: extraFee } }));
   }
 
   dateFrom(event: Event, endOfDay: boolean): Date | null {
@@ -354,6 +394,12 @@ export class ShippingTabComponent implements OnInit {
       this.#snackbar.error('Turn on delivery for at least one governorate.');
       return;
     }
+    const countryFee = (code: string) => parseExtraFee(d.countryFees[code] ?? '', MAX_COUNTRY_EXTRA_FEE_EGP);
+    if (d.deliveryCountries.some((code) => countryFee(code) === null)) {
+      this.region.set('international');
+      this.#snackbar.error('Each country needs an extra fee in whole pounds, from 0 to 50,000.');
+      return;
+    }
 
     this.isSaving.set(true);
     try {
@@ -387,6 +433,16 @@ export class ShippingTabComponent implements OnInit {
           ),
           // Countries abroad with a set shipping price (ATS-314); any other country agrees on WhatsApp.
           deliveryCountries: [...d.deliveryCountries].sort(),
+          // Extra delivery fee per listed country, on top of the abroad box fee (ATS-326). The save
+          // merges nested maps key by key, so a removed country's saved fee is deleted by name.
+          deliveryCountryFees: {
+            ...Object.fromEntries(
+              this.#savedFeeCodes
+                .filter((code) => !d.deliveryCountries.includes(code))
+                .map((code) => [code, deleteField()]),
+            ),
+            ...Object.fromEntries(d.deliveryCountries.map((code) => [code, countryFee(code) ?? 0])),
+          },
           // Drop legacy zone / flat-fee fields on the next admin save.
           baseFee: deleteField(),
           zones: deleteField(),
@@ -396,6 +452,7 @@ export class ShippingTabComponent implements OnInit {
         },
         { merge: true },
       );
+      this.#savedFeeCodes = [...d.deliveryCountries];
       this.#snackbar.success('Shipping settings saved.');
     } catch {
       this.#snackbar.error("We couldn't save shipping settings. Please try again.");

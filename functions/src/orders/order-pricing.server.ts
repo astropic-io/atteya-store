@@ -6,6 +6,7 @@ import {
   liveOffers,
   parcelWeight,
   checkGovernorate,
+  countryExtraFee,
   hasSetShippingPrice,
   planDelivery,
   priceBagDeals,
@@ -536,6 +537,10 @@ async function priceWithOffers(
   const governorateExtraEgp = isInternational
     ? 0
     : egyptGovernorateExtraFee(shippingConfig.settings, input.shipping.governorateId);
+  // Abroad (ATS-326): the delivery country's extra fee is added to the abroad box fee.
+  const countryExtraEgp = isInternational
+    ? countryExtraFee(shippingConfig.settings, input.shipping.country)
+    : 0;
 
   const usedOffers = new Map<string, UsedOffer>();
   // Pieces the order takes from stock, by product and size: every paid line first, then gifts as
@@ -698,6 +703,7 @@ async function priceWithOffers(
     offers,
     ctx,
     governorateExtraEgp,
+    countryExtraEgp,
   });
 
   // A Free shipping offer counts only when it made the shipping free (not when the box fee, the
@@ -926,6 +932,8 @@ export interface ShippingLineContext {
   readonly ctx: PricingContext;
   /** Egypt: the governorate's extra fee on top of the box fee (0 abroad). */
   readonly governorateExtraEgp: number;
+  /** Abroad: the delivery country's extra fee on top of the box fee (ATS-326, 0 in Egypt). */
+  readonly countryExtraEgp: number;
 }
 
 /**
@@ -1012,6 +1020,7 @@ export function quoteShippingLine(
         goodsSubtotal: c.subtotalEgp,
         lines: c.cartProducts,
         governorateExtraEgp: c.governorateExtraEgp,
+        countryExtraEgp: c.countryExtraEgp,
       },
       c.offers,
       c.ctx,

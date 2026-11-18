@@ -32,4 +32,5 @@
 @import './styles/tailwind/components/admin-catalog';
 @import './styles/tailwind/components/admin-returns';
 @import './styles/tailwind/components/product-editor';
+@import './styles/tailwind/components/photo-fit';
 @import './styles/tailwind/utils-base';

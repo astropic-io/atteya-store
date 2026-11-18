@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 // Runs against the compiled code (`npm test` builds first).
 import {
+  countryExtraFee,
   DEFAULT_DELIVERY_COUNTRIES,
   DELIVERY_COUNTRY_CODES,
   hasSetShippingPrice,
   isDeliveryCountry,
   parseDeliveryCountries,
+  parseDeliveryCountryFees,
   setPriceCountries,
 } from '../../../lib/offers/engine/delivery-countries.js';
 
@@ -42,5 +44,28 @@ describe('delivery countries (ATS-314)', () => {
     assert.deepEqual(parseDeliveryCountries([]), []);
     assert.equal(parseDeliveryCountries(undefined), null);
     assert.equal(parseDeliveryCountries('US'), null);
+  });
+});
+
+describe('extra delivery fee per country (ATS-326)', () => {
+  it('keeps known countries abroad with whole fees from 0 to 50,000', () => {
+    assert.deepEqual(
+      parseDeliveryCountryFees({ ae: 200.4, US: 0, EG: 50, ZZ: 10, FR: -1, DE: 50_001, GB: 'x', IT: 99.6 }),
+      { AE: 200, US: 0, IT: 100 },
+    );
+    assert.deepEqual(parseDeliveryCountryFees(null), {});
+    assert.deepEqual(parseDeliveryCountryFees(['AE']), {});
+  });
+
+  it('only a listed country abroad pays its extra', () => {
+    const settings = { deliveryCountries: ['AE', 'US'], deliveryCountryFees: { AE: 300, BR: 500, EG: 40 } };
+    assert.equal(countryExtraFee(settings, 'AE'), 300);
+    assert.equal(countryExtraFee(settings, 'US'), 0);
+    // Not on the list: the whole fee is agreed on WhatsApp, so no extra.
+    assert.equal(countryExtraFee(settings, 'BR'), 0);
+    // Egypt is priced by governorate.
+    assert.equal(countryExtraFee(settings, 'EG'), 0);
+    // Nothing saved: the default list, no extras.
+    assert.equal(countryExtraFee({}, 'AE'), 0);
   });
 });

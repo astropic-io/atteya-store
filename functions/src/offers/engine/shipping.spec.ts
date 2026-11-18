@@ -434,6 +434,24 @@ describe('Egypt delivery by governorate (ATS-306)', () => {
     assert.equal(result.extraFeeEgp, 0);
   });
 
+  it('abroad adds the country extra, Egypt never does (ATS-326)', () => {
+    const abroad = shippingQuote(
+      SETTINGS,
+      { region: 'international', totalWeightGrams: 250, goodsSubtotal: 1_000, countryExtraEgp: 200 },
+      [],
+      CTX,
+    );
+    assert.equal(abroad.fee, 2_000);
+    assert.equal(abroad.extraFeeEgp, 200);
+    const egypt = shippingQuote(
+      SETTINGS,
+      { region: 'egypt', totalWeightGrams: 250, goodsSubtotal: 1_000, countryExtraEgp: 200 },
+      [],
+      CTX,
+    );
+    assert.equal(egypt.extraFeeEgp, 0);
+  });
+
   it('"Shipping from" adds the lowest extra of the governorates we deliver to', () => {
     assert.equal(shippingFromFee(SETTINGS), 125);
     const allFive = Object.fromEntries(

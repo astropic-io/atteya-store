@@ -4,7 +4,8 @@
  * - Every country in `DELIVERY_COUNTRY_CODES` can be ordered to.
  * - Egypt is always available and priced by its own boxes and governorates.
  * - Abroad, the countries in `settings/shipping.deliveryCountries` (Settings → Shipping → Abroad →
- *   Delivery Countries) get the abroad box fee. Any other country is placed with delivery and the
+ *   Delivery Countries) get the abroad box fee plus the country's extra fee
+ *   (`settings/shipping.deliveryCountryFees`, ATS-326). Any other country is placed with delivery and the
  *   shipping fee to be agreed with the shopper on WhatsApp (`international-agreed`).
  */
 
@@ -36,6 +37,12 @@ export const DEFAULT_DELIVERY_COUNTRIES: readonly string[] = [
 
 /** Most countries the Delivery Countries list can hold. */
 export const MAX_DELIVERY_COUNTRIES = 250;
+
+/**
+ * Highest extra delivery fee the admin can set for one country abroad (whole EGP, ATS-326).
+ * Added to the abroad box fee, the same way a governorate's extra is added in Egypt.
+ */
+export const MAX_COUNTRY_EXTRA_FEE_EGP = 50_000;
 
 /**
  * Every country an order can be delivered to: ISO 3166-1 alpha-2 codes (plus Kosovo, `XK`), the
@@ -336,4 +343,42 @@ export function hasSetShippingPrice(
 ): boolean {
   if (country === EGYPT_COUNTRY_CODE) return true;
   return setPriceCountries(settings).includes(country);
+}
+
+/**
+ * Saved extra delivery fees per country abroad (ATS-326, `settings/shipping.deliveryCountryFees`,
+ * `{ [code]: whole EGP }`), cleaned: known codes only, never Egypt, whole pounds from 0 to
+ * `MAX_COUNTRY_EXTRA_FEE_EGP` (rounded first). An unreadable entry is left out, so that country
+ * counts as 0. Not a map: nothing saved (every country 0).
+ */
+export function parseDeliveryCountryFees(raw: unknown): Readonly<Record<string, number>> {
+  const out: Record<string, number> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const code = key.trim().toUpperCase();
+    if (code === EGYPT_COUNTRY_CODE || !isDeliveryCountry(code)) continue;
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+    const fee = Math.round(value);
+    if (fee < 0 || fee > MAX_COUNTRY_EXTRA_FEE_EGP) continue;
+    out[code] = fee;
+  }
+  return out;
+}
+
+/**
+ * The extra delivery fee of a country abroad, added to the abroad box fee (ATS-326). 0 for Egypt
+ * (priced by governorate), for a country with no saved fee, and for one not on the Delivery
+ * Countries list (its whole fee is agreed on WhatsApp).
+ */
+export function countryExtraFee(
+  settings: {
+    readonly deliveryCountries?: readonly string[] | null;
+    readonly deliveryCountryFees?: Readonly<Record<string, number>> | null;
+  },
+  country: string,
+): number {
+  if (country === EGYPT_COUNTRY_CODE || !hasSetShippingPrice(settings, country)) return 0;
+  const fee = settings.deliveryCountryFees?.[country];
+  if (typeof fee !== 'number' || !Number.isFinite(fee)) return 0;
+  return Math.min(MAX_COUNTRY_EXTRA_FEE_EGP, Math.max(0, Math.round(fee)));
 }

@@ -1,7 +1,7 @@
-import { Component, computed, input, linkedSignal, signal } from '@angular/core';
+import { Component, computed, input, signal } from '@angular/core';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { HorizontalScrollDirective } from '@shared/directives/horizontal-scroll';
-import type { SizeGuide, SizeGuideId, SizeUnit } from '../../utils/size-guide';
+import type { SizeGuide, SizeUnit } from '../../utils/size-guide';
 
 /** Size chart for the product page's Size & Fit section. */
 @Component({
@@ -11,23 +11,14 @@ import type { SizeGuide, SizeGuideId, SizeUnit } from '../../utils/size-guide';
   host: { class: 'block w-full' },
 })
 export class SizeGuideComponent {
-  /** One chart, or men's and women's with a switch between them. */
-  readonly guides = input.required<readonly SizeGuide[]>();
+  readonly guide = input.required<SizeGuide>();
 
   readonly unit = signal<SizeUnit>('cm');
 
-  readonly guideId = linkedSignal<readonly SizeGuide[], SizeGuideId | null>({
-    source: this.guides,
-    computation: (guides, previous) =>
-      guides.some((guide) => guide.id === previous?.value) ? previous!.value : (guides[0]?.id ?? null),
-  });
-
-  readonly guide = computed(() => this.guides().find((guide) => guide.id === this.guideId()) ?? null);
-
-  readonly unitLabel = computed(() => (this.unit() === 'cm' ? 'centimetres' : 'inches'));
-
-  /** "Your body measurements in centimetres." or, with shirt and weight rows, "Measurements in …". */
-  readonly intro = computed(
-    () => `${this.guide()?.hasExtraRows ? 'Measurements' : 'Your body measurements'} in ${this.unitLabel()}.`,
+  /** Weight-only charts (hoodies) always read in kilograms, so the unit switch is hidden there. */
+  readonly intro = computed(() =>
+    this.guide().hasLengths
+      ? `Weight is your body weight in kilograms. Width and length are the shirt's own measurements in ${this.unit() === 'cm' ? 'centimetres' : 'inches'}.`
+      : 'Find your size by your body weight in kilograms.',
   );
 }
