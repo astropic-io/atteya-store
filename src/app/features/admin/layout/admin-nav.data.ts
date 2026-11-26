@@ -109,6 +109,14 @@ export const ADMIN_NAV_CATEGORIES: readonly AdminNavCategory[] = [
     icon: 'shopping_cart',
     subItems: [
       {
+        id: 'overview',
+        label: 'Overview',
+        path: '/admin/overview',
+        icon: 'dashboard',
+        description: 'How the store is doing: orders, sales, returns and stock',
+        overview: true,
+      },
+      {
         id: 'orders',
         label: 'Orders',
         path: '/admin/orders',

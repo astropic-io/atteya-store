@@ -13,6 +13,7 @@ export const environment: Environment = {
     appId: '1:367756769746:web:4f7741e4ab4058b563b00b',
     measurementId: 'G-90WCCKNBGF',
   },
+  adminOverview: true,
   imageKitUrl: 'https://ik.imagekit.io/atteyastore/dev',
   algolia: {
     appId: 'VP2KAG5WKX',

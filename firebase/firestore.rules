@@ -132,6 +132,18 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Admin Overview (ATS-340): one summary per Cairo day, written only by Cloud Functions.
+    // Counts for admin and staff; pounds in a separate admin-only doc so staff never read money.
+    match /storeStats/{day} {
+      allow read: if canManageStore();
+      allow write: if false;
+    }
+
+    match /storeStatsMoney/{day} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // One summary per customer email (ATS-276), written only by Cloud Functions.
     match /customers/{customerId} {
       allow read: if canManageStore();
@@ -380,9 +392,9 @@ service cloud.firestore {
     // Deny by default. Admins can reach future collections, but a matching
     // {document=**} rule is OR-ed with the rules above, so settings, roles,
     // auditLogs, products, categories, brands, offers, offerCodes, offerUsage,
-    // intlPricing, offerState, searchSyncErrors, settingsHistory, customers and customerNotes stay on the rules written for them.
+    // intlPricing, offerState, searchSyncErrors, settingsHistory, customers, customerNotes, storeStats and storeStatsMoney stay on the rules written for them.
     match /{collection}/{document=**} {
-      allow read, write: if canManageStore() && !(collection in ['settings', 'roles', 'auditLogs', 'products', 'categories', 'brands', 'offers', 'offerCodes', 'offerUsage', 'intlPricing', 'orders', 'orderStaffNotes', 'orderViews', 'orderRateLimits', 'paymobWebhookEvents', 'orderEmails', 'favorites', 'carts', 'users', 'emailSignups', 'emailSignupRateLimits', 'emailVerificationSends', 'offerState', 'searchSyncErrors', 'settingsHistory', 'customers', 'customerNotes', 'returnRequests', 'returnStaffNotes', 'returnEmails']);
+      allow read, write: if canManageStore() && !(collection in ['settings', 'roles', 'auditLogs', 'products', 'categories', 'brands', 'offers', 'offerCodes', 'offerUsage', 'intlPricing', 'orders', 'orderStaffNotes', 'orderViews', 'orderRateLimits', 'paymobWebhookEvents', 'orderEmails', 'favorites', 'carts', 'users', 'emailSignups', 'emailSignupRateLimits', 'emailVerificationSends', 'offerState', 'searchSyncErrors', 'settingsHistory', 'customers', 'customerNotes', 'returnRequests', 'returnStaffNotes', 'returnEmails', 'storeStats', 'storeStatsMoney']);
     }
   }
 }

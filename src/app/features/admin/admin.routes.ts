@@ -1,5 +1,9 @@
 import { Routes } from '@angular/router';
 import { adminGuard, adminOnlyGuard } from '@core/guards/admin/admin.guard';
+import { environment } from '@env/environment';
+
+/** Admin Overview (ATS-340): dev only until the client agrees to it. */
+const OVERVIEW_ON = environment.adminOverview === true;
 
 export const ADMIN_ROUTES: Routes = [
   {
@@ -11,8 +15,18 @@ export const ADMIN_ROUTES: Routes = [
       {
         path: '',
         pathMatch: 'full',
-        redirectTo: 'navigation',
+        redirectTo: OVERVIEW_ON ? 'overview' : 'navigation',
       },
+      ...(OVERVIEW_ON
+        ? [
+            {
+              path: 'overview',
+              loadComponent: () =>
+                import('./pages/overview/overview.page').then((m) => m.OverviewPageComponent),
+              title: 'Overview | Atteya Admin',
+            },
+          ]
+        : []),
       {
         path: 'home',
         loadComponent: () =>

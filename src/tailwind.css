@@ -28,6 +28,7 @@
 @import './styles/tailwind/components/returns';
 @import './styles/tailwind/components/admin-orders';
 @import './styles/tailwind/components/admin-customers';
+@import './styles/tailwind/components/admin-overview';
 @import './styles/tailwind/components/admin-offers';
 @import './styles/tailwind/components/admin-catalog';
 @import './styles/tailwind/components/admin-returns';
