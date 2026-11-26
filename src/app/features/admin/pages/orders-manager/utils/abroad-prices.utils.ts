@@ -73,9 +73,12 @@ export function inPounds(prices: AbroadPrices, amount: number): number | null {
   return prices.egpPerUnit === null ? null : Math.round(amount * prices.egpPerUnit);
 }
 
-/** "Abroad · QAR", the tag beside such an order's total in the list. */
-export function abroadTag(prices: AbroadPrices): string {
-  return `Abroad · ${prices.currency}`;
+/**
+ * "Abroad · QAR", the tag beside such an order's total in the list; "Paid from abroad · QAR" for
+ * an order delivered to someone in Egypt and paid from abroad.
+ */
+export function abroadTag(prices: AbroadPrices, paidFromAbroad = false): string {
+  return `${paidFromAbroad ? 'Paid from abroad' : 'Abroad'} · ${prices.currency}`;
 }
 
 /** "+408 abroad": what abroad prices add to a line's Egypt price; null when there is nothing to add. */

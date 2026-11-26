@@ -58,6 +58,8 @@ export interface OrderSearchSource {
   readonly fullName: string;
   readonly phone: string;
   readonly email: string | null;
+  /** Another number to find the order by (the payer's, when paid from abroad for delivery in Egypt). */
+  readonly otherPhone?: string | null;
 }
 
 /**
@@ -75,7 +77,7 @@ export function orderSearchTokens(source: OrderSearchSource): string[] {
     addPrefixes(tokens, id.slice(0, 6), MIN_PREFIX_LEN);
   }
 
-  for (const digits of phoneForms(source.phone)) {
+  for (const digits of [source.phone, source.otherPhone ?? ''].flatMap(phoneForms)) {
     addPrefixes(tokens, digits, MIN_PHONE_DIGITS);
     for (let start = 0; start <= digits.length - MIN_PHONE_DIGITS; start++) tokens.add(digits.slice(start));
   }

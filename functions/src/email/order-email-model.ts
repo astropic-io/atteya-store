@@ -53,6 +53,13 @@ export interface OrderEmailAddress {
   readonly phone: string;
 }
 
+/** The shopper paying from abroad for an order delivered to someone in Egypt. */
+export interface OrderEmailPayer {
+  readonly fullName: string;
+  readonly phone: string;
+  readonly country: string;
+}
+
 export interface OrderEmailOrder {
   readonly id: string;
   /** `#A1B2C3`: the same short number the site and dashboard show. */
@@ -61,6 +68,15 @@ export interface OrderEmailOrder {
   readonly paymentMethod: OrderEmailPaymentMethod;
   readonly customerEmail: string | null;
   readonly isInternational: boolean;
+  /**
+   * Shipped abroad, or paid from abroad for delivery to someone in Egypt (`pricing.paidFromCountry`):
+   * shopper amounts are in the currency they pay in (`shopper`), never EGP.
+   */
+  readonly paysInOtherCurrency: boolean;
+  /** Paid from abroad for delivery in Egypt: the country it is paid from (`pricing.paidFromCountry`). */
+  readonly paidFromCountry: string | null;
+  /** Paid from abroad: who pays (the address is the recipient in Egypt). Null for every other order. */
+  readonly payer: OrderEmailPayer | null;
   readonly address: OrderEmailAddress;
   readonly lines: readonly OrderEmailLine[];
   readonly subtotalEgp: number;
@@ -240,9 +256,15 @@ export function readOrderForEmail(
   // Same test as the order page (`orderShopperMoney`): shipped outside Egypt.
   const isInternational =
     pricing['isInternational'] === true || (shippingCountry !== '' && shippingCountry !== 'EG');
+  // Paid from abroad for delivery to someone in Egypt: amounts in the shopper's currency too.
+  const paidFromCountry =
+    typeof pricing['paidFromCountry'] === 'string' && pricing['paidFromCountry'] !== 'EG'
+      ? pricing['paidFromCountry']
+      : null;
+  const paysInOtherCurrency = isInternational || paidFromCountry !== null;
   const payIn = isRecord(pricing['payIn']) ? pricing['payIn'] : null;
   const shopper = shopperMoney({
-    abroad: isInternational,
+    abroad: paysInOtherCurrency,
     lines: moneyLines,
     subtotalEgp,
     shippingEgp,
@@ -268,6 +290,9 @@ export function readOrderForEmail(
     paymentMethod,
     customerEmail: email.includes('@') ? email : null,
     isInternational,
+    paysInOtherCurrency,
+    paidFromCountry,
+    payer: payerOf(data['payer'], paidFromCountry),
     address: {
       fullName: text(shippingAddress['fullName']),
       line1: text(shippingAddress['line1']),
@@ -347,4 +372,13 @@ function wholeNumber(value: unknown): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** The saved `payer` of an order paid from abroad, or null (missing, unreadable, or not paid from abroad). */
+function payerOf(raw: unknown, paidFromCountry: string | null): OrderEmailPayer | null {
+  if (!paidFromCountry || !isRecord(raw)) return null;
+  const fullName = text(raw['fullName']);
+  const phone = text(raw['phone']);
+  if (!fullName && !phone) return null;
+  return { fullName, phone, country: text(raw['country']) || paidFromCountry };
 }

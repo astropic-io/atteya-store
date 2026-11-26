@@ -23,7 +23,10 @@ export interface OrderMessageInput {
   readonly paymentMethod: string;
   /** `pending` | `confirmed` | `shipped` | `delivered` | `failed` | `cancelled`. */
   readonly status: string;
-  /** Shipping country (ISO alpha-2). */
+  /**
+   * Shipping country (ISO alpha-2); for an order paid from abroad and delivered in Egypt, the
+   * country it is paid from (`pricing.paidFromCountry`), so it reads as a Bank Transfer from abroad.
+   */
   readonly country: string;
   /** Saved shipping fee in whole EGP, or null when unknown. */
   readonly shippingEgp: number | null;
@@ -381,6 +384,15 @@ export const DELIVERY_FIELD_MESSAGES = {
   line1: 'Enter your address.',
   city: 'Enter your city.',
   phone: 'Enter a phone number we can reach you on.',
+} as const;
+
+/**
+ * Paid from abroad, delivered in Egypt: what checkout and the order callables say about the
+ * shopper's own details (the recipient in Egypt uses `DELIVERY_FIELD_MESSAGES`).
+ */
+export const PAYER_FIELD_MESSAGES = {
+  fullName: 'Enter your name.',
+  country: "Choose the country you're paying from.",
 } as const;
 
 /** Checkout and the order callables refuse an Egypt phone that `isEgyptMobile()` rejects. */

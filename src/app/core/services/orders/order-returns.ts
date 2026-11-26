@@ -20,7 +20,8 @@ export function returnOrderFacts(order: OrderDoc): ReturnOrderFacts {
   return {
     status: order.status,
     deliveredAtMs: parsed !== null && Number.isFinite(parsed) ? parsed : null,
-    isInternational: order.pricing.isInternational,
+    // Paid from abroad (delivered in Egypt) is handled on WhatsApp like an order shipped abroad.
+    isInternational: order.pricing.isInternational || order.pricing.paidFromCountry !== undefined,
     returns: readReturnSummaries(order.returns),
   };
 }

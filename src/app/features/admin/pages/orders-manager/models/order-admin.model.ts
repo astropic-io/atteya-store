@@ -205,7 +205,14 @@ export interface OrderDetails {
     readonly email: string | null;
     readonly phone: string;
     readonly account: 'Has an account' | 'Guest';
+    /** Paid from abroad for delivery in Egypt: "Pays from United States"; null for other orders. */
+    readonly paysFrom: string | null;
   };
+  /**
+   * Paid from abroad: who receives the order in Egypt (the customer above pays). Null when the
+   * customer receives it themselves.
+   */
+  readonly recipient: { readonly name: string; readonly phone: string } | null;
   /** "Cairo", or "Dubai, United Arab Emirates" abroad. */
   readonly city: string;
   readonly address: { readonly lines: readonly string[]; readonly copyText: string };

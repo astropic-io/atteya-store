@@ -597,7 +597,7 @@ function paidConfirmed(order: OrderEmailOrder, ctx: OrderEmailContext): Rendered
     : paid
       ? { label: `Paid by ${name}`, amount: paid }
       : null;
-  const cardAbroad = order.paymentMethod === 'paymob' && order.isInternational;
+  const cardAbroad = order.paymentMethod === 'paymob' && order.paysInOtherCurrency;
   return renderShopper(order, ctx, {
     subject: `Payment received – order ${order.ref} is confirmed`,
     kicker: 'Payment received',
@@ -743,7 +743,7 @@ function paymentFailed(order: OrderEmailOrder, ctx: OrderEmailContext): Rendered
         {
           label: 'Charged',
           // Abroad: no amount in pounds (ATS-309).
-          amount: order.isInternational ? 'Nothing' : formatEgp(0),
+          amount: order.paysInOtherCurrency ? 'Nothing' : formatEgp(0),
           note: "You haven't been charged. Nothing left your account.",
         },
       ]),
@@ -1061,7 +1061,7 @@ function orderSummary(order: OrderEmailOrder, ctx: OrderEmailContext, opts: Summ
  * the shopper's own currency only, leaving out a row the order didn't save (ATS-309).
  */
 function shopperTotals(order: OrderEmailOrder, totalLabel: string): [string, string][] {
-  if (!order.isInternational) return totalsFor(order, totalLabel);
+  if (!order.paysInOtherCurrency) return totalsFor(order, totalLabel);
   const money = order.shopper;
   const rows: [string, string][] = [];
   const subtotal = shopperAmount(order, money.subtotal);
@@ -1225,7 +1225,7 @@ interface StaffAbroad {
 
 function staffAbroad(order: OrderEmailOrder): StaffAbroad | null {
   const shopper = order.shopper;
-  if (!order.isInternational || shopper.currency === 'EGP') return null;
+  if (!order.paysInOtherCurrency || shopper.currency === 'EGP') return null;
   const money = (amount: number) => formatPayIn({ currency: shopper.currency, amount });
   const perUnit = order.staffRate ? 1 / order.staffRate.rate : null;
   const pounds = (amount: number | null): number | null =>
@@ -1629,20 +1629,28 @@ function staffCustomer(order: OrderEmailOrder, ctx: OrderEmailContext): Block {
   ]
     .filter((part): part is string => Boolean(part))
     .join(' · ');
-  const phone = a.phone.trim();
+  // Paid from abroad: the customer is the payer; the address is the recipient's in Egypt.
+  const payer = order.payer;
+  const recipientLine = payer
+    ? `Pays from ${countryName(payer.country)} · Recipient in Egypt: ${joinWith([a.fullName, a.phone.trim()], ', ')}`
+    : null;
+  const customerName = payer ? payer.fullName || a.fullName : a.fullName;
+  const phone = (payer ? payer.phone : a.phone).trim();
   const email = order.customerEmail?.trim() ?? '';
   const phoneHtml = phone
     ? `<a href="tel:${escapeHtml(phone.replace(/[^\d+]/g, ''))}" style="color:${INK};font-weight:600;text-decoration:underline;">${escapeHtml(phone)}</a>`
     : '';
   const contactHtml = [phoneHtml, email ? escapeHtml(email) : ''].filter(Boolean).join(' · ');
-  const waNumber = shopperWhatsappNumber(a.phone, a.country);
+  const waNumber = payer
+    ? shopperWhatsappNumber(payer.phone, payer.country)
+    : shopperWhatsappNumber(a.phone, a.country);
   let waText: string | null = null;
   if (waNumber) {
     const input = messageInput(order);
     waText = staffWhatsappText(
       orderStage(input),
       input,
-      a.fullName,
+      customerName,
       ctx.instapay,
       ctx.storeName,
       ctx.bankTransfer,
@@ -1652,16 +1660,18 @@ function staffCustomer(order: OrderEmailOrder, ctx: OrderEmailContext): Block {
   const wa = waUrl ? { label: 'Message Customer on WhatsApp', url: waUrl } : null;
 
   const html = section(
-    `<p style="margin:0;${FONT}font-size:24px;line-height:1.25;font-weight:800;letter-spacing:-0.5px;color:${INK};word-break:break-word;">${escapeHtml(a.fullName || 'Customer')}</p>
+    `<p style="margin:0;${FONT}font-size:24px;line-height:1.25;font-weight:800;letter-spacing:-0.5px;color:${INK};word-break:break-word;">${escapeHtml(customerName || 'Customer')}</p>
 ${contactHtml ? `<p style="margin:10px 0 0;${FONT}font-size:15px;line-height:1.5;color:${INK};word-break:break-word;">${contactHtml}</p>` : ''}
+${recipientLine ? `<p style="margin:6px 0 0;${FONT}font-size:14px;line-height:1.5;color:${INK};word-break:break-word;">${escapeHtml(recipientLine)}</p>` : ''}
 ${greyLine ? `<p style="margin:6px 0 0;${FONT}font-size:14px;line-height:1.5;color:${TEXT_MUTED};word-break:break-word;">${escapeHtml(greyLine)}</p>` : ''}
 ${wa ? `<div style="margin-top:18px;">${outlinedButton(wa)}</div>` : ''}`,
     36,
   );
   const text = joinParts([
-    `Customer: ${a.fullName || 'Customer'}`,
+    `Customer: ${customerName || 'Customer'}`,
     phone ? `Phone: ${phone}` : null,
     email ? `Email: ${email}` : null,
+    recipientLine,
     greyLine || null,
     wa ? `${wa.label}: ${wa.url}` : null,
   ]);
@@ -1722,7 +1732,8 @@ function messageInput(order: OrderEmailOrder): OrderMessageInput {
     ref: order.ref,
     paymentMethod: order.paymentMethod,
     status: order.status,
-    country: order.address.country,
+    // Paid from abroad for delivery in Egypt: messages follow where the money comes from.
+    country: order.paidFromCountry ?? order.address.country,
     // Not known until staff set the delivery fee.
     shippingEgp: order.feeToBeAgreed ? null : order.shippingEgp,
     totalEgp: order.feeToBeAgreed ? null : order.totalEgp,
@@ -1741,7 +1752,9 @@ function orderButton(order: OrderEmailOrder, ctx: OrderEmailContext): EmailButto
 }
 
 function firstName(order: OrderEmailOrder): string {
-  const first = order.address.fullName.split(/\s+/)[0] ?? '';
+  // Paid from abroad: emails go to the payer, not the recipient in Egypt.
+  const name = order.payer?.fullName || order.address.fullName;
+  const first = name.split(/\s+/)[0] ?? '';
   return first || 'there';
 }
 

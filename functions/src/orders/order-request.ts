@@ -6,6 +6,7 @@ import {
   DELIVERY_FIELD_MESSAGES,
   EGYPT_PHONE_MESSAGE,
   isEgyptMobile,
+  PAYER_FIELD_MESSAGES,
   shopperWhatsappNumber,
 } from '../store/order-messages.js';
 
@@ -72,9 +73,27 @@ export interface OrderShippingInput {
   readonly governorateId: string | null;
 }
 
+/**
+ * The shopper paying from abroad for an order delivered to someone in Egypt: `shipping` is the
+ * recipient's Egypt address and Egyptian mobile; this is who pays and who we message about payment.
+ */
+export interface OrderPayerInput {
+  readonly fullName: string;
+  /** Their WhatsApp number with its country code (`shopperWhatsappNumber()` can read it). */
+  readonly phone: string;
+  /** Where they pay from (never `EG`): decides the currency they pay in. */
+  readonly country: string;
+}
+
 export interface CreateStoreOrderRequest {
   readonly lines: readonly OrderLineInput[];
   readonly shipping: OrderShippingInput;
+  /**
+   * Set when a shopper outside Egypt pays for an order delivered to someone in Egypt: items at
+   * abroad prices in their currency, the Egypt delivery fee for `shipping`, Bank Transfer only.
+   * Missing or null for every other order.
+   */
+  readonly payer?: OrderPayerInput | null;
   readonly paymentMethod: StorePaymentMethod;
   /**
    * Buy X Get Y offers checkout already told the shopper have ended (from an earlier refusal) and
@@ -139,7 +158,8 @@ export function parseCreateStoreOrderRequest(data: unknown): CreateStoreOrderReq
   }
   const lines = parseLines(data['lines']);
   const shipping = parseShipping(data['shipping']);
-  const paymentMethod = parsePaymentMethod(data['paymentMethod'], shipping.country);
+  const payer = parsePayer(data['payer'], shipping.country);
+  const paymentMethod = parsePaymentMethod(data['paymentMethod'], shipping.country, payer !== null);
   // Staff reach Egypt shoppers on WhatsApp (InstaPay screenshot, cash-on-delivery fee).
   if (shipping.country === 'EG' && !isEgyptMobile(shipping.phone)) {
     throw new HttpsError('invalid-argument', EGYPT_PHONE_MESSAGE);
@@ -156,6 +176,7 @@ export function parseCreateStoreOrderRequest(data: unknown): CreateStoreOrderReq
   return {
     lines,
     shipping,
+    payer,
     paymentMethod,
     endedOfferIds,
     dealOfferIds,
@@ -204,9 +225,45 @@ export function parseOfferIds(raw: unknown): string[] {
   return Array.from(ids);
 }
 
-function parsePaymentMethod(raw: unknown, country: string): StorePaymentMethod {
+/** Paying from abroad for delivery in Egypt is paid by Bank Transfer only. */
+export const PAID_FROM_ABROAD_METHOD_MESSAGE =
+  'When you pay from outside Egypt for delivery in Egypt, pay by Bank Transfer.';
+
+/**
+ * The `payer` block (paid from abroad, delivered in Egypt), or null when it is missing. Only for an
+ * Egypt delivery address; the shopper's name, a country outside Egypt and a WhatsApp number with
+ * its country code are required.
+ */
+export function parsePayer(raw: unknown, shippingCountry: string): OrderPayerInput | null {
+  if (raw === null || raw === undefined) return null;
+  if (!isRecord(raw)) {
+    throw new HttpsError('invalid-argument', 'Your details could not be read. Refresh and try again.');
+  }
+  if (shippingCountry !== 'EG') {
+    throw new HttpsError(
+      'invalid-argument',
+      'Choose Deliver to Someone in Egypt again, or enter your own address abroad.',
+    );
+  }
+  const countryRaw = typeof raw['country'] === 'string' ? raw['country'].trim().toUpperCase() : '';
+  if (!COUNTRY_CODE.test(countryRaw) || !isDeliveryCountry(countryRaw) || countryRaw === 'EG') {
+    throw new HttpsError('invalid-argument', PAYER_FIELD_MESSAGES.country);
+  }
+  const fullName = readText(raw['fullName'], MAX_NAME, PAYER_FIELD_MESSAGES.fullName);
+  const phone = readText(raw['phone'], MAX_PHONE, ABROAD_PHONE_MESSAGE);
+  if (shopperWhatsappNumber(phone, countryRaw) === null) {
+    throw new HttpsError('invalid-argument', ABROAD_PHONE_MESSAGE);
+  }
+  return { fullName, phone, country: countryRaw };
+}
+
+function parsePaymentMethod(raw: unknown, country: string, paidFromAbroad: boolean): StorePaymentMethod {
   if (raw !== 'paymob' && raw !== 'cash-on-delivery' && raw !== 'instapay' && raw !== 'bank-transfer') {
     throw new HttpsError('invalid-argument', 'Choose how you want to pay.');
+  }
+  if (paidFromAbroad) {
+    if (raw !== 'bank-transfer') throw new HttpsError('failed-precondition', PAID_FROM_ABROAD_METHOD_MESSAGE);
+    return raw;
   }
   if (raw === 'cash-on-delivery' && country !== 'EG') {
     throw new HttpsError(
@@ -436,4 +493,12 @@ function readOptionalText(raw: unknown, max: number): string | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The country whose currency a Bank Transfer is paid in: the payer's when the order is paid from
+ * abroad for delivery in Egypt (the recipient's Egypt address doesn't decide it), else the address's.
+ */
+export function payInCountryOf(input: Pick<CreateStoreOrderRequest, 'payer' | 'shipping'>): string {
+  return input.payer?.country ?? input.shipping.country;
 }

@@ -17,6 +17,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatRadioModule } from '@angular/material/radio';
+import { MatSelectModule } from '@angular/material/select';
 import { doc, getDoc } from 'firebase/firestore';
 import { AuthService } from '@core/services/auth/auth.service';
 import { isPermissionDenied } from '@core/services/auth/auth.utils';
@@ -72,6 +73,7 @@ import {
 } from '@core/services/orders/order-refusal';
 import {
   CheckoutOrderService,
+  type CheckoutPayerInput,
   type CheckoutPaymentMethod,
   type CheckoutShippingInput,
   type ShownOrderTotals,
@@ -96,6 +98,7 @@ import {
   instapaySteps,
 } from '../utils/checkout-pay-steps';
 import {
+  CHECKOUT_COUNTRY_OPTIONS,
   countryLabel,
   filterCheckoutCountries,
   isCheckoutCountry,
@@ -109,6 +112,7 @@ import {
   checkoutFieldErrors,
   checkoutFieldId,
   FIELDS_ABOVE_GOVERNORATE,
+  payerFieldErrors,
   type CheckoutField,
   type CheckoutFieldErrors,
 } from '../utils/checkout-fields';
@@ -125,6 +129,11 @@ import { BagOfferNotesComponent } from '@shared/components/bag-offer-notes/bag-o
 const ABROAD_COMING_SOON_MESSAGE =
   "Ordering from outside Egypt is coming soon. Message us on WhatsApp and we'll help you order.";
 const DELIVERY_UNAVAILABLE_MESSAGE = 'We could not work out delivery for this order. Please try again later.';
+/** Paid from abroad for delivery in Egypt, heavier than every Egypt box (the server says the same). */
+const TOO_LARGE_FROM_ABROAD_MESSAGE =
+  "This order is too large to send to someone in Egypt from here. Message us on WhatsApp and we'll help you order.";
+/** Countries a shopper can pay from when sending to someone in Egypt (every country but Egypt). */
+const PAYER_COUNTRY_OPTIONS = CHECKOUT_COUNTRY_OPTIONS.filter((option) => option.code !== 'EG');
 
 /**
  * Product details by id. `null` = no longer available (deleted, or unpublished: shoppers get
@@ -266,6 +275,7 @@ type CheckoutSummary =
     MatInputModule,
     MatProgressSpinnerModule,
     MatRadioModule,
+    MatSelectModule,
     SharedIconModule,
     PaymentMarkComponent,
     GovernorateInputComponent,
@@ -323,6 +333,8 @@ export class CheckoutPageComponent implements OnInit {
    * (nothing to pay with, so checkout points to WhatsApp instead).
    */
   readonly paymentMethod = computed<CheckoutPaymentMethod | null>(() => {
+    // Paid from abroad for delivery to someone in Egypt: Bank Transfer only, never a fee agreed later.
+    if (this.sendToEgypt()) return this.bankTransferLive && !this.feeToBeAgreed() ? 'bank-transfer' : null;
     if (!this.isEgypt()) {
       // Delivery and the fee agreed on WhatsApp first (ATS-314): Bank Transfer only.
       if (this.feeToBeAgreed()) return this.bankTransferLive ? 'bank-transfer' : null;
@@ -377,6 +389,31 @@ export class CheckoutPageComponent implements OnInit {
   readonly lines = this.#cart.lines;
   readonly isEmpty = this.#cart.isEmpty;
   readonly isEgypt = computed(() => this.shipping().country === 'EG');
+
+  /**
+   * Shoppers outside Egypt choose where the order goes: to them abroad, or to someone in Egypt (a
+   * friend, family or a forwarder) who takes it from there. Shown while the visitor is outside
+   * Egypt, or once they picked sending to Egypt.
+   */
+  readonly showDeliveryChoice = computed(() => {
+    if (this.sendToEgypt()) return true;
+    const visitor = this.#currency.visitorCountry();
+    return !!visitor && visitor !== 'EG' && isCheckoutCountry(visitor);
+  });
+  /**
+   * Deliver to someone in Egypt, paid from abroad: the address is the recipient's in Egypt, the
+   * items keep their abroad prices in the shopper's currency, shipping is the Egypt fee (box +
+   * governorate) and the shopper pays by Bank Transfer.
+   */
+  readonly sendToEgypt = signal(false);
+  /** The shopper's own details while sending to someone in Egypt. */
+  readonly payer = signal<CheckoutPayerInput>({ fullName: '', phone: '', country: '' });
+  /** Countries they can pay from (every country but Egypt). */
+  readonly payerCountries = PAYER_COUNTRY_OPTIONS;
+  /** The country the order is paid from: the payer's while sending to Egypt, else the delivery country. */
+  readonly #payingCountry = computed(() =>
+    this.sendToEgypt() ? this.payer().country : this.shipping().country,
+  );
   /** Only the country, so effects on it skip every keystroke in the other fields. */
   readonly #deliveryCountry = computed(() => this.shipping().country);
 
@@ -386,7 +423,8 @@ export class CheckoutPageComponent implements OnInit {
    */
   readonly #deliveryEntry = resource({
     params: () => {
-      const country = this.shipping().country;
+      // Sending to someone in Egypt: the country they pay from decides the currency.
+      const country = this.#payingCountry();
       return isCheckoutCountry(country) && country !== 'EG' ? country : undefined;
     },
     loader: ({ params: country }) => this.#currency.entryForDeliveryCountry(country),
@@ -400,8 +438,15 @@ export class CheckoutPageComponent implements OnInit {
    * amounts are shown and the order can't be placed: the server would refuse it too).
    */
   readonly #entry = computed<CurrencyEntry | null | undefined>(() => {
-    const country = this.shipping().country;
-    if (!isCheckoutCountry(country)) return this.#currency.entry();
+    const country = this.#payingCountry();
+    if (!isCheckoutCountry(country)) {
+      // Sending to Egypt before they say where they pay from: their browsing currency, never EGP.
+      if (this.sendToEgypt()) {
+        const browsing = this.#currency.entry();
+        return browsing && browsing.code !== 'EGP' ? browsing : null;
+      }
+      return this.#currency.entry();
+    }
     if (country === 'EG') return EGP_ENTRY;
     if (this.#deliveryEntry.error()) return undefined;
     if (!this.#deliveryEntry.hasValue()) return null;
@@ -411,16 +456,21 @@ export class CheckoutPageComponent implements OnInit {
   /** The currency code checkout shows prices in, for the offer notes above the summary. */
   readonly checkoutCurrency = computed(() => this.#entry()?.code ?? null);
   /** InstaPay and cash on delivery are Egypt-only. */
-  readonly localMethodsAvailable = computed(() => this.isEgypt());
+  readonly localMethodsAvailable = computed(() => this.isEgypt() && !this.sendToEgypt());
   /**
    * A country outside Egypt is chosen while no way to pay can be used (neither Card nor Bank
    * Transfer, or only Card while delivery is agreed first): order on WhatsApp.
    */
   readonly abroadOrderingClosed = computed(() => {
+    if (this.sendToEgypt()) return !this.bankTransferLive || this.feeToBeAgreed();
     const country = this.shipping().country;
     if (!isCheckoutCountry(country) || country === 'EG' || this.bankTransferLive) return false;
     return !this.cardOrWalletLive || this.feeToBeAgreed();
   });
+  /** Why ordering is closed here: what the note and the snackbar say. */
+  readonly closedMessage = computed(() =>
+    this.sendToEgypt() && this.feeToBeAgreed() ? TOO_LARGE_FROM_ABROAD_MESSAGE : ABROAD_COMING_SOON_MESSAGE,
+  );
   /** The delivery country's name ("Brazil"), for the notes about agreeing delivery abroad. */
   readonly deliveryCountryName = computed(() => countryLabel(this.shipping().country));
 
@@ -907,8 +957,9 @@ export class CheckoutPageComponent implements OnInit {
     // (Shop, product pages, the bag), until they pick or save another one.
     effect(() => {
       if (!this.#countryTouched()) return;
-      const country = this.#deliveryCountry();
-      if (!isCheckoutCountry(country)) return;
+      // Sending to someone in Egypt: browsing keeps the country they pay from, not Egypt.
+      const country = this.sendToEgypt() ? this.payer().country : this.#deliveryCountry();
+      if (!isCheckoutCountry(country) || (this.sendToEgypt() && country === 'EG')) return;
       untracked(() => this.#currency.rememberCheckoutCountry(country));
     });
     // Fill in the saved address once, when it is for the delivery country and the shopper
@@ -917,7 +968,8 @@ export class CheckoutPageComponent implements OnInit {
       if (this.#savedAddressFilled || !this.#savedAddress.hasValue()) return;
       const saved = this.#savedAddress.value();
       const country = this.shipping().country;
-      if (!saved || saved.country !== country) return;
+      // Sending to someone in Egypt: the address is theirs, not the shopper's saved one.
+      if (!saved || saved.country !== country || this.sendToEgypt()) return;
       untracked(() => {
         this.#savedAddressFilled = true;
         if (hasTypedAddress(this.shipping())) return;
@@ -942,6 +994,70 @@ export class CheckoutPageComponent implements OnInit {
         void this.#router.navigateByUrl('/');
       }
     });
+  }
+
+  /**
+   * Deliver to me / Deliver to someone in Egypt. Sending to Egypt sets the delivery country to
+   * Egypt and keeps the country they were ordering from as the one they pay from; going back puts
+   * that country back as the delivery country.
+   */
+  setSendToEgypt(on: boolean): void {
+    if (on === this.sendToEgypt()) return;
+    this.#countryTouched.set(true);
+    this.fieldErrors.set({});
+    this.governorateError.set(false);
+    if (on) {
+      const current = this.shipping().country;
+      const visitor = this.#currency.visitorCountry() ?? '';
+      const from = [this.payer().country, current, visitor].find(
+        (code) => isCheckoutCountry(code) && code !== 'EG',
+      );
+      if (from) this.payer.update((payer) => ({ ...payer, country: from }));
+      // Their own name and number usually were typed as the delivery ones: keep them as the payer's.
+      const typed = this.shipping();
+      if (!this.payer().fullName && typed.fullName.trim()) {
+        this.payer.update((payer) => ({ ...payer, fullName: typed.fullName }));
+      }
+      if (!this.payer().phone && typed.phone.trim() && current !== 'EG') {
+        this.payer.update((payer) => ({ ...payer, phone: typed.phone }));
+      }
+      this.sendToEgypt.set(true);
+      this.shipping.update((shipping) => ({
+        ...shipping,
+        fullName: '',
+        line1: '',
+        line2: null,
+        city: '',
+        region: null,
+        postalCode: '',
+        phone: '',
+        governorateId: null,
+      }));
+      this.patchShipping('country', 'EG');
+      this.countryQuery.set(countryLabel('EG'));
+      return;
+    }
+    this.sendToEgypt.set(false);
+    const back = this.payer().country;
+    const code = isCheckoutCountry(back) && back !== 'EG' ? back : this.#lastValidCountry();
+    this.shipping.update((shipping) => ({
+      ...shipping,
+      fullName: this.payer().fullName || shipping.fullName,
+      phone: this.payer().phone,
+      line1: '',
+      line2: null,
+      city: '',
+      region: null,
+      postalCode: '',
+      governorateId: null,
+    }));
+    this.patchShipping('country', code);
+    this.countryQuery.set(countryLabel(code));
+  }
+
+  patchPayer<K extends keyof CheckoutPayerInput>(key: K, value: CheckoutPayerInput[K]): void {
+    this.clearFieldError(key === 'fullName' ? 'payerName' : key === 'phone' ? 'payerPhone' : 'payerCountry');
+    this.payer.update((payer) => ({ ...payer, [key]: value }));
   }
 
   patchShipping<K extends keyof CheckoutShippingInput>(key: K, value: CheckoutShippingInput[K]): void {
@@ -1095,7 +1211,7 @@ export class CheckoutPageComponent implements OnInit {
 
   setPaymentMethod(method: CheckoutPaymentMethod): void {
     if (method === 'bank-transfer') {
-      if (this.isEgypt() || !this.bankTransferLive) return;
+      if ((this.isEgypt() && !this.sendToEgypt()) || !this.bankTransferLive) return;
       this.#chosenMethod.set(method);
       return;
     }
@@ -1179,9 +1295,10 @@ export class CheckoutPageComponent implements OnInit {
   async placeOrder(): Promise<void> {
     if (this.isSubmitting() || this.isEmpty()) return;
     if (this.abroadOrderingClosed()) {
-      this.#snackbar.error(ABROAD_COMING_SOON_MESSAGE);
+      this.#snackbar.error(this.closedMessage());
       return;
     }
+    const sendToEgypt = this.sendToEgypt();
     // A guest orders with an email (the order emails and the order link go there).
     const guest = this.isGuest() ? guestEmail(this.guestEmailInput()) : null;
     const draft = this.shipping();
@@ -1196,7 +1313,11 @@ export class CheckoutPageComponent implements OnInit {
     if (governorateMissing) this.governorateError.set(true);
     // Every required field that is empty or wrong gets its message under it (ATS-318); the first
     // one gets the cursor and the snackbar repeats its message.
-    const errors = checkoutFieldErrors(draft, this.isGuest() ? this.guestEmailInput() : null, !!guest);
+    const errors = {
+      ...checkoutFieldErrors(draft, this.isGuest() ? this.guestEmailInput() : null, !!guest),
+      // Sending to someone in Egypt: the shopper's own name, country and WhatsApp number too.
+      ...(sendToEgypt ? payerFieldErrors(this.payer()) : {}),
+    };
     this.fieldErrors.set(errors);
     const firstField = CHECKOUT_FIELD_ORDER.find((field) => errors[field]);
     if (firstField || governorateMissing) {
@@ -1230,10 +1351,10 @@ export class CheckoutPageComponent implements OnInit {
     }
     const method = this.paymentMethod();
     if (method === null) {
-      this.#snackbar.error(ABROAD_COMING_SOON_MESSAGE);
+      this.#snackbar.error(this.closedMessage());
       return;
     }
-    if (method === 'bank-transfer' && draft.country === 'EG') {
+    if (method === 'bank-transfer' && draft.country === 'EG' && !sendToEgypt) {
       this.#snackbar.error('Bank Transfer is only available for orders delivered outside Egypt.');
       return;
     }
@@ -1264,8 +1385,16 @@ export class CheckoutPageComponent implements OnInit {
         phone: draft.phone.trim(),
         governorateId: draft.country === 'EG' ? draft.governorateId : null,
       };
-      // ATS-317: browsing prices follow the country this order ships to.
-      this.#currency.rememberCheckoutCountry(shipping.country);
+      const payerDraft = this.payer();
+      const payer: CheckoutPayerInput | null = sendToEgypt
+        ? {
+            fullName: payerDraft.fullName.trim(),
+            phone: payerDraft.phone.trim(),
+            country: payerDraft.country,
+          }
+        : null;
+      // ATS-317: browsing prices follow the country this order ships to (or is paid from).
+      this.#currency.rememberCheckoutCountry(payer?.country ?? shipping.country);
 
       if (method === 'paymob') {
         const result = await this.#checkout.placePaymobOrder({
@@ -1301,6 +1430,7 @@ export class CheckoutPageComponent implements OnInit {
         shownPrices,
         shownTotals,
         guest: guest ? { email: guest } : null,
+        payer,
       });
       const viewKey = guest ? (result.viewKey ?? null) : null;
       if (guest) rememberGuestOrder(result.orderId, { key: viewKey, email: guest });
@@ -1308,7 +1438,8 @@ export class CheckoutPageComponent implements OnInit {
       // Card counts on the order page once Paymob confirms the payment.
       this.#pixel.trackOrderPurchase(result.orderId, result.pricing);
       void this.#cart.clear();
-      void this.#saveFirstAddress(shipping);
+      // The recipient's address in Egypt is not the shopper's own: it is never saved as theirs.
+      if (!payer) void this.#saveFirstAddress(shipping);
       // A guest's order page reads the order by its key (`?key=`); the page keeps it and hides it.
       await this.#router.navigate(['/checkout', 'confirmation', result.orderId], {
         state: { checkoutResult: result },
