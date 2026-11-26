@@ -404,6 +404,14 @@ export function itemRefundsToSendEgp(raw: unknown): number {
   );
 }
 
+/**
+ * How many of the order's item cancels still owe a refund (`orders.itemRefundsToSend`, <KEY>-345):
+ * the same entries `itemRefundsToSendEgp` adds up, so the admin Overview and the order page agree.
+ */
+export function itemRefundsToSendCount(raw: unknown): number {
+  return readItemCancels(raw).filter((e) => e.refundEgp > 0 && e.refundSentAtMs === null).length;
+}
+
 /** Pieces cancelled over all the order's item cancels (gifts not counted). */
 export function itemsCancelledCount(raw: unknown): number {
   return readItemCancels(raw).reduce((sum, e) => sum + e.item.quantity, 0);

@@ -2,9 +2,12 @@ import { Service } from '@angular/core';
 import {
   collection,
   documentId,
+  getAggregateFromServer,
   getCountFromServer,
   getDocs,
+  limit,
   query,
+  sum,
   Timestamp,
   where,
   type Query,
@@ -13,7 +16,7 @@ import * as v from 'valibot';
 import { injectFirestore } from '@core/firebase';
 import { OFFERS_COLLECTION } from '@core/services/offers/offer.model';
 import { ORDERS_COLLECTION } from '@core/services/orders/order.schema';
-import type { DayRange } from '../utils/overview-range.utils';
+import { MAX_RANGE_DAYS, type DayRange } from '../utils/overview-range.utils';
 import {
   DayCountsSchema,
   DayMoneySchema,
@@ -27,6 +30,8 @@ import {
 export const OVERVIEW_LOW_STOCK = 5;
 /** Confirmed orders older than this many days and not yet shipped need a look. */
 export const CONFIRMED_LATE_DAYS = 2;
+/** Most active offers read for the Offers box (only a handful are ever active at once). */
+const RUNNING_OFFERS_MAX = 100;
 
 export interface OverviewDays {
   readonly counts: ReadonlyMap<string, DayCounts>;
@@ -40,6 +45,8 @@ export interface OverviewLive {
   readonly confirmedLate: number | null;
   readonly openReturns: number | null;
   readonly refundsToSend: number | null;
+  /** Refunds owed for items staff cancelled before delivery, summed over orders (<KEY>-345). */
+  readonly itemRefundsToSend: number | null;
   readonly productsLive: number | null;
   readonly productsHidden: number | null;
   readonly outOfStock: number | null;
@@ -67,6 +74,8 @@ export class OverviewAdminService {
           collection(this.#firestore, name),
           where(documentId(), '>=', range.from),
           where(documentId(), '<=', range.to),
+          // The range and the one before it: never more than two longest ranges of days.
+          limit(MAX_RANGE_DAYS * 2 + 2),
         ),
       );
       const out = new Map<string, T>();
@@ -95,7 +104,8 @@ export class OverviewAdminService {
       waitingForPayment,
       confirmedLate,
       openReturns,
-      refundsToSend,
+      returnRefundsToSend,
+      itemRefundsToSend,
       productsLive,
       productsHidden,
       outOfStock,
@@ -106,6 +116,12 @@ export class OverviewAdminService {
       count(query(orders, where('status', '==', 'confirmed'), where('confirmedAt', '<', lateBefore))),
       count(query(returns, where('status', 'in', ['requested', 'waiting-for-payment', 'approved']))),
       count(query(returns, where('status', '==', 'received'), where('hasRefund', '==', true))),
+      // Refunds owed for items staff cancelled before delivery: the sum, since one order can owe several.
+      settled(
+        getAggregateFromServer(query(orders, where('itemRefundsToSend', '>', 0)), {
+          n: sum('itemRefundsToSend'),
+        }).then((snap) => snap.data().n ?? 0),
+      ),
       count(query(products, where('published', '==', true))),
       count(query(products, where('published', '==', false))),
       count(query(products, where('published', '==', true), where('stock', '<=', 0))),
@@ -123,8 +139,12 @@ export class OverviewAdminService {
     return {
       waitingForPayment,
       confirmedLate,
-      openReturns: openReturns === null || refundsToSend === null ? openReturns : openReturns + refundsToSend,
-      refundsToSend,
+      openReturns:
+        openReturns === null || returnRefundsToSend === null
+          ? openReturns
+          : openReturns + returnRefundsToSend,
+      refundsToSend: returnRefundsToSend,
+      itemRefundsToSend,
       productsLive,
       productsHidden,
       outOfStock,
@@ -137,7 +157,11 @@ export class OverviewAdminService {
   /** Active offers whose dates include now (only a handful are ever active, so they are read whole). */
   async #runningOffers(now: Date): Promise<{ running: number; endsInDays: number | null }> {
     const snap = await getDocs(
-      query(collection(this.#firestore, OFFERS_COLLECTION), where('active', '==', true)),
+      query(
+        collection(this.#firestore, OFFERS_COLLECTION),
+        where('active', '==', true),
+        limit(RUNNING_OFFERS_MAX),
+      ),
     );
     const nowMs = now.getTime();
     let running = 0;

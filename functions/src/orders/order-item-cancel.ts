@@ -3,6 +3,7 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import type { RequiredCaller } from '../auth/require-role.js';
 import {
   itemCancelLabel,
+  itemRefundsToSendCount,
   pieceFromLine,
   planItemCancel,
   type ItemCancelRequest,
@@ -122,6 +123,8 @@ export async function cancelOrderItem(
       'pricing.totalEgp': plan.totalEgp,
       'pricing.totalDisplay': plan.totalEgp,
       itemCancels: FieldValue.arrayUnion(entry),
+      // How many item refunds are still to send, so the admin Overview can count them.
+      itemRefundsToSend: itemRefundsToSendCount(order['itemCancels']) + (refundEgp > 0 ? 1 : 0),
       ...(notReturned > 0 ? { stockNotReturned: FieldValue.increment(notReturned) } : {}),
       updatedAt: now,
     });
@@ -202,7 +205,11 @@ export async function markItemRefundSent(
     const next = list.map((e, i) =>
       i === index ? { ...e, refundSentEgp: entry['refundEgp'], refundSentAt: at } : e,
     );
-    tx.update(orderRef, { itemCancels: next, updatedAt: FieldValue.serverTimestamp() });
+    tx.update(orderRef, {
+      itemCancels: next,
+      itemRefundsToSend: itemRefundsToSendCount(next),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
     tx.set(
       orderStaffNotesRef(db, req.orderId),
       {

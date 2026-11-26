@@ -5,6 +5,7 @@ import {
   ITEM_CANCEL_LAST_PIECES_MESSAGE,
   ITEM_CANCEL_LINE_CHANGED_MESSAGE,
   itemCancelRefusal,
+  itemRefundsToSendCount,
   itemRefundsToSendEgp,
   parseItemCancelRequest,
   planItemCancel,
@@ -284,6 +285,7 @@ describe('cancelOrderItem', () => {
     assert.deepEqual((product.data['stockBySize'] as Record<string, number>)['s40'], 5);
     const orderWrite = writes.find((w) => w.path === 'orders/o1')!;
     assert.equal(orderWrite.data['pricing.totalEgp'], 1060);
+    assert.equal(orderWrite.data['itemRefundsToSend'], 1);
     assert.ok(writes.some((w) => w.path.startsWith('auditLogs/')));
     assert.ok(writes.some((w) => w.path === 'orderStaffNotes/o1'));
   });
@@ -331,6 +333,8 @@ describe('itemCancels list', () => {
     assert.equal(readItemCancels([entry, { bad: true }]).length, 1);
     assert.equal(itemRefundsToSendEgp([entry]), 75);
     assert.equal(itemRefundsToSendEgp([{ ...entry, refundSentAt: { seconds: 20 } }]), 0);
+    assert.equal(itemRefundsToSendCount([entry, { ...entry, id: 'c2' }, { bad: true }]), 2);
+    assert.equal(itemRefundsToSendCount([{ ...entry, refundSentAt: { seconds: 20 } }]), 0);
   });
   it('marks a refund sent once', async () => {
     const { db, writes } = fakeDb({ 'orders/o1': { itemCancels: [entry] } });
@@ -342,6 +346,7 @@ describe('itemCancels list', () => {
     assert.equal(res.changed, true);
     const list = writes.find((w) => w.path === 'orders/o1')!.data['itemCancels'] as Record<string, unknown>[];
     assert.equal(list[0]!['refundSentEgp'], 75);
+    assert.equal(writes.find((w) => w.path === 'orders/o1')!.data['itemRefundsToSend'], 0);
   });
 });
 
