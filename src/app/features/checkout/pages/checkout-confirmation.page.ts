@@ -38,7 +38,8 @@ import { formatShopperAmount, orderShopperMoney } from '@core/services/orders/or
 import { shortOrderRef } from '@core/services/orders/order-ref';
 import { orderStatusName } from '@core/services/orders/order-status-name';
 import { orderDate } from '@core/services/orders/shopper-orders.service';
-import { returnEntry, type ReturnEntry } from '@core/services/orders/order-returns';
+import { returnEntry, shortDay, type ReturnEntry } from '@core/services/orders/order-returns';
+import { readItemCancels } from '@core/config/order-item-cancel';
 import { MetaPixelService } from '@core/services/analytics/meta-pixel.service';
 import {
   isOrderViewKey,
@@ -511,6 +512,50 @@ export class CheckoutConfirmationPageComponent implements OnInit {
       byLine.set(index, item);
     });
     return items;
+  });
+
+  /** Pieces staff cancelled from the order (ATS-342), greyed out under the items. */
+  readonly cancelledItems = computed(() => {
+    const order = this.order();
+    if (!order) return [];
+    const isSize = (label: string) => label.trim().toLowerCase() === 'size';
+    return readItemCancels(order.itemCancels).map((entry) => {
+      const imagePath = entry.item.imagePath?.trim() || null;
+      return {
+        key: entry.id,
+        name: entry.item.name || 'Item',
+        details: entry.item.optionLabels
+          .map((opt) => (isSize(opt.label) ? `Size ${opt.value}` : opt.value))
+          .join(' · '),
+        quantity: entry.item.quantity,
+        gifts: entry.gifts.reduce((sum, g) => sum + g.quantity, 0),
+        imagePath,
+        imageSrc: imagePath ? normalizeImageKitPath(imagePath) : '',
+        amountOff: entry.amountOffEgp > 0 ? formatMoney(entry.amountOffEgp, 'EGP', 0) : '',
+      };
+    });
+  });
+
+  /** The money coming back for cancelled items: still to send, or sent (with the last date). */
+  readonly itemRefund = computed(() => {
+    const order = this.order();
+    if (!order) return null;
+    const owed = readItemCancels(order.itemCancels).filter((entry) => entry.refundEgp > 0);
+    if (owed.length === 0) return null;
+    const pending = owed.filter((entry) => entry.refundSentAtMs === null);
+    const amount = (pending.length ? pending : owed).reduce((sum, entry) => sum + entry.refundEgp, 0);
+    const to = (pending[0] ?? owed[0])?.refundTo ?? null;
+    if (pending.length) {
+      return {
+        title: `Refund: ${formatMoney(amount, 'EGP', 0)}`,
+        text: `We'll send it by InstaPay${to ? ` to ${to}` : ''}. This page updates once it's sent.`,
+      };
+    }
+    const lastMs = Math.max(...owed.map((entry) => entry.refundSentAtMs ?? 0));
+    return {
+      title: `Refund sent: ${formatMoney(amount, 'EGP', 0)}`,
+      text: `We sent it by InstaPay${to ? ` to ${to}` : ''} on ${shortDay(lastMs)}.`,
+    };
   });
 
   /** Return or Exchange: the button (while the 14 days are open), the "Returns closed" line, or nothing. */

@@ -116,6 +116,15 @@ Moved here word for word from AGENTS.md so that file stays small (<KEY>-282). Th
 - The Date field is a Material menu (Any Date, Today, Yesterday, Last 7 Days, This Month, Pick a Day…, Pick a Range…); Pick a Day opens `mat-datepicker`, Pick a Range opens `mat-date-range-picker` with Cancel / Apply (one day picked then Apply = that day), both under the field and stopping at today; days are whole days in the admin's own time, by the day the order was placed.
 - A Delivered order can get return and exchange requests: the order's `returns` array (server-written, copied to `orderViews`) and `returnRequests/{id}`; every rule is in the `returns-and-exchanges` skill.
 
+## Cancel one item (<KEY>-342)
+
+- Staff and admins cancel some pieces of one item on `/admin/orders/:id` with **Cancel Item** (`app-order-items` with `order` and `afterChange`, dialog `cancel-item-dialog`); the Orders list panel shows cancelled pieces but no button.
+- Allowed only for Waiting for Payment or Confirmed orders shipped in Egypt and paid by Cash on Delivery or InstaPay (`itemCancelRefusal()` in `functions/src/store/order-item-cancel.ts`, copied by `npm run sync:engine`); Card, abroad, Shipped, Delivered and Cancelled orders are refused. Cancelling every piece left is refused: use Cancel Order.
+- The amount off defaults to the paid share of those pieces (`paidShareEgp()`); staff may lower it to the price of the pieces left without the full offer (`planItemCancel()` min and max). Shipping never changes. A free gift goes with its item.
+- A refund is owed only for a Confirmed InstaPay order (`itemCancelOwesRefund()`); staff type where to send it (`refundTo`, prefilled with the phone), and an admin presses **Refund Sent** (`markItemRefundSent`, idempotent).
+- `cancelOrderItem` (staff) runs one transaction: removes the pieces from `pricing.lines`, new subtotal and total, stock back only when the order took it (`orderStockTaken()`), an entry on `orders.itemCancels` (copied to `orderViews` with `refundTo: null`), a staff row with the reason in `orderStaffNotes.itemCancels`, and an `auditLogs` row `order.item-cancel`. Tests: `functions/src/orders/order-item-cancel.test.ts`.
+- The admin order page shows each cancel greyed under the items ("Cancelled ×1", who, when, reason, refund state), "Was" and "Refund to send" under Total, and a Next step to send the refund. The shopper's order page shows the pieces as Removed, the new total and a refund box (to send, or sent with the date).
+
 ## Orders abroad with delivery to be agreed (<KEY>-314)
 
 - A Bank Transfer order to a country with no set shipping price, or heavier than every abroad box, is saved with `pricing.shipping.kind: 'international-agreed'` and waits in `fee-to-be-agreed` until staff use Set Delivery Fee; then it is a normal `bank-transfer-due` order with the full amount in `payIn`. The full rules are in the `shipping-and-currency` skill (**Orders from any country**).
