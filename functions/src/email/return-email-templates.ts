@@ -688,7 +688,8 @@ function refundPart(request: ReturnEmailRequest, ctx: OrderEmailContext, padTop 
 
 /**
  * Every item in the order by state (ATS-342): Delivered (yours to keep), Returning (this request,
- * in black), Cancelled before delivery. Nothing when the order couldn't be read.
+ * in black), Cancelled before delivery. Pieces an earlier request already holds are left out of
+ * Delivered (`otherReturned`). Nothing when the order couldn't be read.
  */
 function orderItemsPart(request: ReturnEmailRequest, ctx: OrderEmailContext): EmailPart[] {
   const order = request.order;
@@ -697,7 +698,10 @@ function orderItemsPart(request: ReturnEmailRequest, ctx: OrderEmailContext): Em
   for (const item of request.items)
     returning.set(item.lineIndex, (returning.get(item.lineIndex) ?? 0) + item.quantity);
   const kept = order.lines
-    .map((line, index) => ({ ...line, quantity: line.quantity - (returning.get(index) ?? 0) }))
+    .map((line, index) => ({
+      ...line,
+      quantity: line.quantity - (returning.get(index) ?? 0) - (request.otherReturned?.get(index) ?? 0),
+    }))
     .filter((line) => line.quantity > 0)
     .map((line) => ({ ...line, shopperAmount: null }));
   const groups = itemStateGroups(order, ctx, kept, '');

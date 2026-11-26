@@ -5,6 +5,8 @@
 import {
   isReturnKind,
   isReturnStatus,
+  readReturnSummaries,
+  returnHoldsPieces,
   readCourierFeePaid,
   timestampMs,
   waitingForPaymentStartMs,
@@ -94,6 +96,33 @@ export interface ReturnEmailRequest {
    * Cancelled, ATS-342). Filled by the trigger; null in tests and when it can't be read.
    */
   readonly order?: OrderEmailOrder | null;
+  /**
+   * Pieces per order line that other requests on the same order already hold (sent back, on their
+   * way, or kept on a Rejected Wrong Item Sent), so the item list doesn't call them "yours to keep".
+   * Filled by the trigger from the order's `returns` summary; empty when absent.
+   */
+  readonly otherReturned?: ReadonlyMap<number, number>;
+}
+
+/**
+ * Pieces per `pricing.lines` index held by the order's other return requests (every request but
+ * `requestId`): the same rule as `piecesLeft()` in store/returns.ts.
+ */
+export function piecesHeldByOtherReturns(
+  rawReturns: unknown,
+  requestId: string,
+): ReadonlyMap<number, number> {
+  const held = new Map<number, number>();
+  for (const entry of readReturnSummaries(rawReturns)) {
+    if (entry.id === requestId) continue;
+    const items = returnHoldsPieces(entry.status)
+      ? entry.items
+      : entry.status === 'rejected'
+        ? (entry.keptItems ?? [])
+        : [];
+    for (const item of items) held.set(item.lineIndex, (held.get(item.lineIndex) ?? 0) + item.quantity);
+  }
+  return held;
 }
 
 /** Null when the document can't be described (no items or unknown status). */

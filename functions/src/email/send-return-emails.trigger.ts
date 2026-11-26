@@ -6,7 +6,11 @@ import { emailContext } from './email-context.js';
 import type { OrderEmailContext } from './order-email-templates.js';
 import { sendResendEmail } from './resend-client.js';
 import { returnClaimId, returnEmailsForWrite, type ReturnEmailKind } from './return-email-events.js';
-import { readReturnForEmail, type ReturnEmailRequest } from './return-email-model.js';
+import {
+  piecesHeldByOtherReturns,
+  readReturnForEmail,
+  type ReturnEmailRequest,
+} from './return-email-model.js';
 import { readOrderForEmail } from './order-email-model.js';
 import { renderReturnEmail } from './return-email-templates.js';
 import { isReturnStatus } from '../store/returns.js';
@@ -59,6 +63,7 @@ export const sendReturnEmails = onDocumentWritten(
     const request = {
       ...read,
       order: readOrderForEmail(after.orderId, orderSnap.exists ? orderSnap.data() : null),
+      otherReturned: piecesHeldByOtherReturns(orderSnap.get('returns'), requestId),
     };
     const ctx = emailContext();
     for (const kind of kinds) {
