@@ -155,6 +155,8 @@ Every agent (Claude Code, including Projects threads, Cursor, Antigravity) updat
 
 If Linear can't be reached (tool missing or signed out), say so in the final message and list the exact board changes still needed. Never skip them silently.
 
+**Self-review before every push (every Claude Code session, including Projects threads).** Before pushing a code change or opening a PR, run `/code-review` (`high` for money, stock, sign-in, rules, `functions/` or checkout; `medium` otherwise) and `/security-review` on the branch against `origin/develop`, fix the high and medium findings, and list the results in a "Self-review" section of the PR body. Details: the **`linear-board`** skill.
+
 **Writing tickets, building tickets in Claude Code Projects threads, Conflict Watch and the conflict-fix routine, and the self-review before a push** are in the **`linear-board`** skill. Read it before creating any Linear issue.
 
 ### Branches and merges
