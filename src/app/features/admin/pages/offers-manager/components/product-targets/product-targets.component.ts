@@ -33,13 +33,17 @@ import {
 import {
   ALL_COLOURS,
   colourChoiceValues,
-  colourCountNote,
   groupOfferProducts,
   hasColourChoice,
+  matchedOtherName,
+  matchesAllWords,
+  nameHasWholeQuery,
   newProductPick,
   nextColourChoice,
   productPickLabel,
   readProductPicks,
+  searchQueryWords,
+  simplifySearchText,
   writeProductPicks,
   type OfferProductColour,
   type OfferProductModel,
@@ -58,12 +62,21 @@ const PALETTE = new Map<string, PickerColourInfo>(
 const colourInfo = (colorId: string): PickerColourInfo | null => PALETTE.get(colorId) ?? null;
 
 type TargetOption =
-  | { readonly kind: 'tag'; readonly tag: TargetTag; readonly name: string; readonly note: null }
+  | {
+      readonly kind: 'tag';
+      readonly tag: TargetTag;
+      readonly name: string;
+      readonly detail: null;
+      readonly also: null;
+    }
   | {
       readonly kind: 'product';
       readonly model: OfferProductModel;
       readonly name: string;
-      readonly note: string | null;
+      /** "Siux · Socks · 2 colours: Black, White" */
+      readonly detail: string | null;
+      /** The colour's own name the typed words matched, shown as · also "Siux Socks". */
+      readonly also: string | null;
     };
 
 let nextId = 0;
@@ -116,7 +129,19 @@ export class ProductTargetsComponent {
   readonly query = signal('');
 
   readonly view = computed(() => readTargets(this.conditions()));
-  readonly models = computed(() => groupOfferProducts(this.products(), colourInfo));
+  readonly models = computed(() => {
+    const brandNames = new Map<string, string>(this.names().brands);
+    for (const brand of this.brands()) brandNames.set(brand.id, brand.name);
+    const categoryNames = new Map<string, { name: string; depth: number }>();
+    for (const [id, name] of this.names().categories) categoryNames.set(id, { name, depth: 0 });
+    for (const category of this.categories()) {
+      categoryNames.set(category.id, { name: category.name, depth: category.depth });
+    }
+    return groupOfferProducts(this.products(), colourInfo, {
+      brandName: (id) => brandNames.get(id) ?? null,
+      category: (id) => categoryNames.get(id) ?? null,
+    });
+  });
 
   /** Category and brand tags. */
   readonly groupTags = computed(() =>
@@ -154,7 +179,8 @@ export class ProductTargetsComponent {
   );
 
   readonly options = computed(() => {
-    const query = this.query().trim().toLowerCase();
+    const words = searchQueryWords(this.query());
+    const query = words.length > 0;
     const limit = query ? MAX_OPTIONS : MAX_BROWSE_OPTIONS;
     const chosen = new Set(this.groupTags().map((tag) => `${tag.field}:${tag.value}`));
     const pickedModels = new Set(this.picks().flatMap((pick) => (pick.model ? [pick.model.key] : [])));
@@ -166,20 +192,35 @@ export class ProductTargetsComponent {
       for (const item of items) {
         if (result.length >= limit) break;
         if (chosen.has(`${field}:${item.id}`)) continue;
-        if (query && !item.name.toLowerCase().includes(query)) continue;
-        result.push({ kind: 'tag', tag: { field, value: item.id }, name: item.name, note: null });
+        if (query && !matchesAllWords(simplifySearchText(item.name), words)) continue;
+        result.push({
+          kind: 'tag',
+          tag: { field, value: item.id },
+          name: item.name,
+          detail: null,
+          also: null,
+        });
       }
       return result;
     };
     const pickProducts = (): TargetOption[] => {
-      const result: TargetOption[] = [];
+      const whole: TargetOption[] = [];
+      const rest: TargetOption[] = [];
       for (const item of this.models()) {
-        if (result.length >= limit) break;
         if (pickedModels.has(item.key)) continue;
-        if (query && !item.name.toLowerCase().includes(query)) continue;
-        result.push({ kind: 'product', model: item, name: item.name, note: colourCountNote(item) });
+        if (query && !matchesAllWords(item.searchText, words)) continue;
+        const option: TargetOption = {
+          kind: 'product',
+          model: item,
+          name: item.name,
+          detail: item.detail || null,
+          also: matchedOtherName(item, words),
+        };
+        // Products whose own name holds the whole typed text come first, each group in today's order.
+        (query && nameHasWholeQuery(item.name, words) ? whole : rest).push(option);
+        if (!query && whole.length + rest.length >= limit) break;
       }
-      return result;
+      return [...whole, ...rest].slice(0, limit);
     };
     const groups =
       this.kinds() === 'products'

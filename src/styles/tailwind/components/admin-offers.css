@@ -178,6 +178,18 @@
     @apply border border-dashed border-outline border-shape px-4 py-2 font-label-lg font-bold! cursor-pointer bg-surface-container-lowest;
   }
 
+  /* A product in the search list: its name, then brand · category · colours on a second line that wraps. */
+  .offer-option-name {
+    @apply font-body-md;
+    white-space: normal;
+  }
+
+  .offer-option-detail {
+    @apply block;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
   /* A picked product with several colours: a card with its name, count and remove button, then the
      Colours dropdown (as wide as the search box, full width on phone). */
   .offer-colour-pick {
@@ -196,6 +208,15 @@
 
   .offer-colour-dot {
     @apply inline-flex size-7 shrink-0 rounded-full border border-outline-variant bg-surface p-0.5;
+  }
+
+  /* Step 2: the included products by category, as small grey chips that wrap. */
+  .offer-category-chips {
+    @apply elements-start flex-wrap gap-2 w-full list-none p-0 m-0;
+  }
+
+  .offer-category-chip {
+    @apply bg-surface-container border-shape px-3 py-1 font-label-lg;
   }
 
   /* A grey note box (overlaps, the run line, Good to know). */
