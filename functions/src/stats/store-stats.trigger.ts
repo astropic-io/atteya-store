@@ -5,7 +5,6 @@ import {
   buildDayStats,
   cairoDayRangeMs,
   daysOf,
-  isEmptyDay,
   MAX_DAY_ORDERS,
   MAX_DAY_RETURNS,
   orderStatsChanged,
@@ -30,7 +29,7 @@ const toMs = (value: unknown): number | null => (value instanceof Timestamp ? va
  * Rebuilds `storeStats/{day}` and `storeStatsMoney/{day}` from scratch from every order placed that
  * Cairo day and every return request sent or refunded that day. Reads outside the transaction (so
  * orders are never locked), then writes only when this read is newer than the one the day was
- * built from. Deletes both docs when the day has nothing left (for example after Delete Order).
+ * built from. A day that has nothing left is written with zeros (never deleted) so that guard stays.
  */
 export async function rebuildStoreStatsDay(db: Firestore, day: string): Promise<void> {
   const { startMs, endMs } = cairoDayRangeMs(day);
@@ -81,11 +80,8 @@ export async function rebuildStoreStatsDay(db: Firestore, day: string): Promise<
     const current = await tx.get(countsRef);
     const builtFrom = current.get(BUILT_FROM_FIELD);
     if (builtFrom instanceof Timestamp && builtFrom.valueOf() > readTime.valueOf()) return;
-    if (isEmptyDay(stats)) {
-      tx.delete(countsRef);
-      tx.delete(moneyRef);
-      return;
-    }
+    // A day left with nothing (for example after Delete Order) is written with zeros, never deleted,
+    // so the read-time guard stays and an older rebuild still in flight can't bring back old numbers.
     const stamp = { [BUILT_FROM_FIELD]: readTime, updatedAt: FieldValue.serverTimestamp() };
     tx.set(countsRef, { ...stats.counts, ...stamp });
     tx.set(moneyRef, { ...stats.money, ...stamp });
