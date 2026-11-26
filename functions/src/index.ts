@@ -66,3 +66,4 @@ export {
   onUserDeletedUpdateCustomer,
   onUserUpdatedUpdateCustomer,
 } from './customers/customer-summary.trigger.js';
+export { onOrderWrittenStoreStats, onReturnRequestWrittenStoreStats } from './stats/store-stats.trigger.js';
