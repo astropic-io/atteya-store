@@ -1,6 +1,10 @@
 <div class="grid grid-cols-1 @3xl:grid-cols-2 gap-3 w-full">
   <div class="elements-start-col items-stretch! gap-1 w-full min-w-0">
-    <mat-form-field class="w-full" appearance="outline">
+    <mat-form-field
+      class="w-full"
+      appearance="outline"
+      [subscriptSizing]="saleSkipWarning() ? 'dynamic' : 'fixed'"
+    >
       <mat-label>Products already on sale</mat-label>
       <mat-select
         #saleItemsSelect
