@@ -351,8 +351,11 @@ export class OfferEditorPageComponent implements OnInit {
     return brandKindsHint(brandNames, kinds);
   });
 
+  /** Step 2 overlap lines, each with the other offer's id so staff can open it in a new tab. */
   readonly overlapWarnings = computed(() =>
-    this.validation().warnings.filter((issue) => issue.code.startsWith('overlap.')),
+    this.validation()
+      .warnings.filter((issue) => issue.code.startsWith('overlap.'))
+      .map((issue) => ({ ...issue, offerId: issue.code.slice('overlap.'.length) })),
   );
 
   /** Step 4 "Good to know": every warning, plus how products already on sale are treated. */

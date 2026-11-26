@@ -295,7 +295,16 @@
                 @for (warning of overlapWarnings(); track warning.code) {
                   <p class="elements-start gap-2">
                     <mat-icon name="info" size="lg" aria-hidden="true" />
-                    <span>{{ warning.message }}</span>
+                    <span>
+                      {{ warning.message }}
+                      <a
+                        class="font-bold! underline"
+                        [routerLink]="['/admin/offers', warning.offerId]"
+                        target="_blank"
+                        rel="noopener"
+                        >Open the Other Offer<span class="sr-only"> (opens in a new tab)</span></a
+                      >
+                    </span>
                   </p>
                 }
               </div>
