@@ -287,7 +287,11 @@ function cancelledItems(order: OrderDoc, notes: OrderStaffNotes | null): OrderCa
       imageSrc: imagePath ? normalizeImageKitPath(imagePath) : '',
       quantity: entry.item.quantity,
       gifts: giftPieces > 0 ? `+ ${giftPieces} free ${giftPieces === 1 ? 'gift' : 'gifts'}` : null,
-      stock: entry.stockReturned ? 'Back in stock' : 'Nothing was taken out of stock',
+      stock: !entry.stockReturned
+        ? 'Nothing was taken out of stock'
+        : entry.notReturned > 0
+          ? `${entry.notReturned === 1 ? '1 piece' : `${entry.notReturned} pieces`} couldn't go back into stock, check by hand`
+          : 'Back in stock',
       meta: `Cancelled ${meta.join(' · ')}`.trim(),
       amountOff: entry.amountOffEgp > 0 ? `−${egpMoney(entry.amountOffEgp)}` : egpMoney(0),
       refundToSendEgp: toSend,

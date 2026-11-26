@@ -109,6 +109,7 @@ export async function cancelOrderItem(
       totalAfterEgp: plan.totalEgp,
       statusAtCancel: order['status'] === 'confirmed' ? 'confirmed' : 'pending',
       stockReturned: stockTaken,
+      notReturned,
       emailCustomer: req.emailCustomer,
       at,
       refundSentEgp: null,

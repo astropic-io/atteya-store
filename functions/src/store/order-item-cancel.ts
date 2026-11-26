@@ -346,6 +346,8 @@ export interface ItemCancelEntry {
   readonly totalAfterEgp: number;
   readonly statusAtCancel: 'pending' | 'confirmed';
   readonly stockReturned: boolean;
+  /** Pieces that couldn't go back into stock (the size or product is gone). */
+  readonly notReturned: number;
   readonly emailCustomer: boolean;
   /** Milliseconds; saved as a Timestamp (arrays can't hold server time stamps). */
   readonly atMs: number;
@@ -376,6 +378,7 @@ export function readItemCancels(raw: unknown): ItemCancelEntry[] {
       totalAfterEgp: num(e['totalAfterEgp']),
       statusAtCancel: e['statusAtCancel'] === 'confirmed' ? 'confirmed' : 'pending',
       stockReturned: e['stockReturned'] === true,
+      notReturned: num(e['notReturned']),
       emailCustomer: e['emailCustomer'] === true,
       atMs: timeMs(e['at']) ?? 0,
       refundSentEgp: typeof e['refundSentEgp'] === 'number' ? e['refundSentEgp'] : null,

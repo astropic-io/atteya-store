@@ -595,6 +595,7 @@ function returnPaymentReceived(request: ReturnEmailRequest, ctx: OrderEmailConte
     body: [
       labelled('Hand Over', handOverText(request)),
       labelled('You Get', youGetText(request), 20),
+      ...refundPart(request, ctx, 20),
       ...orderItemsPart(request, ctx),
     ],
   });
