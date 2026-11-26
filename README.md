@@ -8,7 +8,7 @@ This project was generated using [Angular CLI](https://github.com/angular/angula
 - Branch names are `<type>/<short-name>`, for example `fix/sign-in-errors`. PR titles and commit messages start with the Linear id.
 - `npm ci` turns on a pre-push check that blocks bad branch names and commits without the Linear id. It also runs preflight, tests and the build before anything reaches GitHub.
 - On a pull request, the Claude review checks it, and Claude fixes its high and medium findings (up to 3 rounds). The PR merges into `develop` by itself when it's clean, but PRs that change `.github/` wait for a person.
-- `npm run agent:build -- <id> <id>` starts Claude on Linear tickets right away (Opus by default; add `--sonnet` or `--haiku` only to go faster on a clearly simple ticket, matching the ticket's Model label, `--help` for details). Tickets labelled `agent-ready` are built by the hourly routine, one new ticket per run and up to 4 at a time, in the order their Linear "blocked by" links allow.
+- Linear tickets are built in Claude Code Projects threads, one thread per ticket and several at once (see the `linear-board` skill). The Opus routine on claude.ai only fixes PRs that conflict with `develop`, started by Conflict Watch.
 - Merged work goes to QA in Linear. A person checks it on the dev site and moves it to Done.
 
 ## Development server
