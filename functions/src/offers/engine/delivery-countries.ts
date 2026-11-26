@@ -345,40 +345,65 @@ export function hasSetShippingPrice(
   return setPriceCountries(settings).includes(country);
 }
 
+/** A country's extra delivery fee for each abroad box (ATS-338), whole EGP, by box id. */
+export type CountryBoxFees = Readonly<Partial<Record<CountryFeeBoxId, number>>>;
+
+/** The abroad box ids a country's extra fees are saved under (`ShippingBoxId` in `shipping.ts`). */
+export type CountryFeeBoxId = 'box1' | 'box2' | 'box3';
+
+const COUNTRY_FEE_BOX_IDS: readonly CountryFeeBoxId[] = ['box1', 'box2', 'box3'];
+
+function cleanCountryFee(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const fee = Math.round(value);
+  return fee < 0 || fee > MAX_COUNTRY_EXTRA_FEE_EGP ? null : fee;
+}
+
 /**
- * Saved extra delivery fees per country abroad (ATS-326, `settings/shipping.deliveryCountryFees`,
- * `{ [code]: whole EGP }`), cleaned: known codes only, never Egypt, whole pounds from 0 to
- * `MAX_COUNTRY_EXTRA_FEE_EGP` (rounded first). An unreadable entry is left out, so that country
- * counts as 0. Not a map: nothing saved (every country 0).
+ * Saved extra delivery fees per country abroad (`settings/shipping.deliveryCountryFees`), cleaned:
+ * known codes only, never Egypt, whole pounds from 0 to `MAX_COUNTRY_EXTRA_FEE_EGP` (rounded first).
+ * Each entry is `{ box1, box2, box3 }` (ATS-338); an entry saved as one number before ATS-338
+ * (ATS-326) counts as that fee for every box, so old settings keep their prices. An unreadable box
+ * fee is left out (that box counts as 0), and a country with none left is dropped. Not a map:
+ * nothing saved (every country 0).
  */
-export function parseDeliveryCountryFees(raw: unknown): Readonly<Record<string, number>> {
-  const out: Record<string, number> = {};
+export function parseDeliveryCountryFees(raw: unknown): Readonly<Record<string, CountryBoxFees>> {
+  const out: Record<string, CountryBoxFees> = {};
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     const code = key.trim().toUpperCase();
     if (code === EGYPT_COUNTRY_CODE || !isDeliveryCountry(code)) continue;
-    if (typeof value !== 'number' || !Number.isFinite(value)) continue;
-    const fee = Math.round(value);
-    if (fee < 0 || fee > MAX_COUNTRY_EXTRA_FEE_EGP) continue;
-    out[code] = fee;
+    const fees: Partial<Record<CountryFeeBoxId, number>> = {};
+    if (typeof value === 'number') {
+      const fee = cleanCountryFee(value);
+      if (fee === null) continue;
+      for (const id of COUNTRY_FEE_BOX_IDS) fees[id] = fee;
+    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      for (const id of COUNTRY_FEE_BOX_IDS) {
+        const fee = cleanCountryFee((value as Record<string, unknown>)[id]);
+        if (fee !== null) fees[id] = fee;
+      }
+    }
+    if (Object.keys(fees).length) out[code] = fees;
   }
   return out;
 }
 
 /**
- * The extra delivery fee of a country abroad, added to the abroad box fee (ATS-326). 0 for Egypt
- * (priced by governorate), for a country with no saved fee, and for one not on the Delivery
- * Countries list (its whole fee is agreed on WhatsApp).
+ * The extra delivery fee of a country abroad for one abroad box, added to that box's fee (ATS-326,
+ * per box since ATS-338). 0 for Egypt (priced by governorate), for a country with no saved fee for
+ * that box, and for one not on the Delivery Countries list (its whole fee is agreed on WhatsApp).
  */
 export function countryExtraFee(
   settings: {
     readonly deliveryCountries?: readonly string[] | null;
-    readonly deliveryCountryFees?: Readonly<Record<string, number>> | null;
+    readonly deliveryCountryFees?: Readonly<Record<string, CountryBoxFees>> | null;
   },
   country: string,
+  boxId: CountryFeeBoxId,
 ): number {
   if (country === EGYPT_COUNTRY_CODE || !hasSetShippingPrice(settings, country)) return 0;
-  const fee = settings.deliveryCountryFees?.[country];
+  const fee = settings.deliveryCountryFees?.[country]?.[boxId];
   if (typeof fee !== 'number' || !Number.isFinite(fee)) return 0;
   return Math.min(MAX_COUNTRY_EXTRA_FEE_EGP, Math.max(0, Math.round(fee)));
 }

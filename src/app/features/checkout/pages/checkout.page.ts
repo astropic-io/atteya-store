@@ -769,8 +769,10 @@ export class CheckoutPageComponent implements OnInit {
       }
       governorateExtraEgp = governorate.extraFeeEgp;
     }
-    // Abroad (ATS-326): the delivery country's extra fee on top of the box fee, as on the server.
-    const countryExtraEgp = region === 'egypt' ? 0 : countryExtraFee(settings, this.shipping().country);
+    // Abroad (ATS-326): the delivery country's extra fee for this box (ATS-338) on top of the box
+    // fee, as on the server.
+    const countryExtraEgp =
+      region === 'egypt' ? 0 : countryExtraFee(settings, this.shipping().country, plan.box.id);
 
     let feeEgp: number;
     let freeShippingOfferId: string | null;

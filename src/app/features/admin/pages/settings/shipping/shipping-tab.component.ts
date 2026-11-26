@@ -1,4 +1,4 @@
-import { isPlatformBrowser } from '@angular/common';
+import { DecimalPipe, isPlatformBrowser } from '@angular/common';
 import {
   Component,
   computed,
@@ -30,6 +30,7 @@ import {
   MAX_COUNTRY_EXTRA_FEE_EGP,
   MAX_GOVERNORATE_EXTRA_FEE_EGP,
   parseCairoDateTimeInput,
+  type CountryBoxFees,
   type GovernorateSetting,
   type ShippingBoxId,
 } from '@core/services/offers/engine';
@@ -74,11 +75,15 @@ interface ShippingDraft {
   /** Countries abroad with a set shipping price (ATS-314), ISO codes, A to Z by name. */
   deliveryCountries: string[];
   /**
-   * Extra delivery fee per listed country (ATS-326), as typed in its Extra Fee (EGP) box; checked
-   * on save (`parseExtraFee`). A newly added country starts empty so the admin types its fee.
+   * Extra delivery fee per listed country for each abroad box (ATS-326, per box since ATS-338), as
+   * typed in its Extra Fee boxes; checked on save (`parseExtraFee`). A newly added country, and a
+   * newly added box, start empty so the admin types the fee.
    */
-  countryFees: Record<string, string>;
+  countryFees: Record<string, CountryFeeDraft>;
 }
+
+/** One country's Extra Fee boxes as typed, by abroad box id (missing = empty). */
+type CountryFeeDraft = Partial<Record<ShippingBoxId, string>>;
 
 interface GovernorateDraft {
   /** The Extra Fee (EGP) box as typed; checked on save (`parseExtraFee`). */
@@ -155,18 +160,33 @@ function parseExtraFee(raw: string, max = MAX_GOVERNORATE_EXTRA_FEE_EGP): number
   return Number.isInteger(value) && value >= 0 && value <= max ? value : null;
 }
 
-/** The Extra Fee box of each listed country from the saved fees (a country with none: 0). */
+/**
+ * The Extra Fee boxes of each listed country from the saved fees (ATS-338). A country with nothing
+ * saved shows 0 in every box (what it is charged today). A country with fees saved but none for a
+ * box shows that box empty. An old single fee was already copied into every box when parsed.
+ */
 function countryFeeDrafts(
   codes: readonly string[],
-  saved: Readonly<Record<string, number>>,
-): Record<string, string> {
-  return Object.fromEntries(codes.map((code) => [code, String(saved[code] ?? 0)]));
+  saved: Readonly<Record<string, CountryBoxFees>>,
+): Record<string, CountryFeeDraft> {
+  return Object.fromEntries(
+    codes.map((code) => {
+      const fees = saved[code];
+      const draft: CountryFeeDraft = {};
+      for (const id of BOX_IDS) {
+        const fee = fees?.[id];
+        draft[id] = fees === undefined ? '0' : fee === undefined ? '' : String(fee);
+      }
+      return [code, draft];
+    }),
+  );
 }
 
 @Component({
   selector: 'app-shipping-tab',
   host: { class: 'block w-full' },
   imports: [
+    DecimalPipe,
     MatAutocompleteModule,
     MatButtonModule,
     MatButtonToggleModule,
@@ -302,10 +322,24 @@ export class ShippingTabComponent implements OnInit {
     });
   }
 
-  /** Removes the last box. Orders heavier than the boxes left are handled as described above them. */
+  /**
+   * Removes the last box. Orders heavier than the boxes left are handled as described above them.
+   * Abroad, each country's extra fee for that box is cleared too, so adding the box back starts
+   * empty (ATS-338).
+   */
   removeLastBox(): void {
     const key = this.region() === 'egypt' ? 'egyptBoxes' : 'internationalBoxes';
-    this.draft.update((prev) => (prev[key].length > 1 ? { ...prev, [key]: prev[key].slice(0, -1) } : prev));
+    this.draft.update((prev) => {
+      const removed = prev[key].at(-1);
+      if (prev[key].length <= 1 || !removed) return prev;
+      const next = { ...prev, [key]: prev[key].slice(0, -1) };
+      if (key === 'internationalBoxes') {
+        next.countryFees = Object.fromEntries(
+          Object.entries(prev.countryFees).map(([code, fees]) => [code, { ...fees, [removed.id]: '' }]),
+        );
+      }
+      return next;
+    });
   }
 
   patchGovernorate(id: string, change: Partial<GovernorateDraft>): void {
@@ -324,7 +358,7 @@ export class ShippingTabComponent implements OnInit {
         : {
             ...prev,
             deliveryCountries: byCountryName([...prev.deliveryCountries, code]),
-            countryFees: { ...prev.countryFees, [code]: '' },
+            countryFees: { ...prev.countryFees, [code]: {} },
           },
     );
     this.countryQuery.set('');
@@ -343,9 +377,30 @@ export class ShippingTabComponent implements OnInit {
     });
   }
 
-  /** A listed country's Extra Fee (EGP) box changed. */
-  patchCountryFee(code: string, extraFee: string): void {
-    this.draft.update((prev) => ({ ...prev, countryFees: { ...prev.countryFees, [code]: extraFee } }));
+  /** A listed country's Extra Fee box for one abroad box changed. */
+  patchCountryFee(code: string, boxId: ShippingBoxId, extraFee: string): void {
+    this.draft.update((prev) => ({
+      ...prev,
+      countryFees: { ...prev.countryFees, [code]: { ...prev.countryFees[code], [boxId]: extraFee } },
+    }));
+  }
+
+  /** "Use Box 1 Fee for All": copies the country's first box extra into its other boxes. */
+  copyFirstBoxFee(code: string): void {
+    const boxes = this.draft().internationalBoxes;
+    const first = boxes[0];
+    if (!first) return;
+    this.draft.update((prev) => {
+      const value = prev.countryFees[code]?.[first.id] ?? '';
+      const fees: CountryFeeDraft = { ...prev.countryFees[code] };
+      for (const box of boxes) fees[box.id] = value;
+      return { ...prev, countryFees: { ...prev.countryFees, [code]: fees } };
+    });
+  }
+
+  /** A country's extra for a box as typed, or null when the box is empty or out of range. */
+  countryBoxFee(code: string, boxId: ShippingBoxId): number | null {
+    return parseExtraFee(this.draft().countryFees[code]?.[boxId] ?? '', MAX_COUNTRY_EXTRA_FEE_EGP);
   }
 
   dateFrom(event: Event, endOfDay: boolean): Date | null {
@@ -394,10 +449,14 @@ export class ShippingTabComponent implements OnInit {
       this.#snackbar.error('Turn on delivery for at least one governorate.');
       return;
     }
-    const countryFee = (code: string) => parseExtraFee(d.countryFees[code] ?? '', MAX_COUNTRY_EXTRA_FEE_EGP);
-    if (d.deliveryCountries.some((code) => countryFee(code) === null)) {
+    const countryFee = (code: string, boxId: ShippingBoxId) =>
+      parseExtraFee(d.countryFees[code]?.[boxId] ?? '', MAX_COUNTRY_EXTRA_FEE_EGP);
+    const abroadBoxIds = d.internationalBoxes.map((box) => box.id);
+    if (d.deliveryCountries.some((code) => abroadBoxIds.some((id) => countryFee(code, id) === null))) {
       this.region.set('international');
-      this.#snackbar.error('Each country needs an extra fee in whole pounds, from 0 to 50,000.');
+      this.#snackbar.error(
+        'Each country needs an extra fee for every box, in whole pounds from 0 to 50,000.',
+      );
       return;
     }
 
@@ -433,15 +492,26 @@ export class ShippingTabComponent implements OnInit {
           ),
           // Countries abroad with a set shipping price (ATS-314); any other country agrees on WhatsApp.
           deliveryCountries: [...d.deliveryCountries].sort(),
-          // Extra delivery fee per listed country, on top of the abroad box fee (ATS-326). The save
-          // merges nested maps key by key, so a removed country's saved fee is deleted by name.
+          // Extra delivery fee per listed country for each abroad box, on top of that box's fee
+          // (ATS-326, ATS-338). The save merges nested maps key by key, so a removed country's saved
+          // fees, and each country's fee for a box that no longer exists, are deleted by name.
           deliveryCountryFees: {
             ...Object.fromEntries(
               this.#savedFeeCodes
                 .filter((code) => !d.deliveryCountries.includes(code))
                 .map((code) => [code, deleteField()]),
             ),
-            ...Object.fromEntries(d.deliveryCountries.map((code) => [code, countryFee(code) ?? 0])),
+            ...Object.fromEntries(
+              d.deliveryCountries.map((code) => [
+                code,
+                Object.fromEntries(
+                  BOX_IDS.map((id) => [
+                    id,
+                    abroadBoxIds.includes(id) ? (countryFee(code, id) ?? 0) : deleteField(),
+                  ]),
+                ),
+              ]),
+            ),
           },
           // Drop legacy zone / flat-fee fields on the next admin save.
           baseFee: deleteField(),

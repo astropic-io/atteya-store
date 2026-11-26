@@ -3,6 +3,7 @@ import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import {
   parseDeliveryCountries,
   parseDeliveryCountryFees,
+  type CountryBoxFees,
   type GovernorateSetting,
 } from '../offers/engine/index.js';
 import { parseEgyptGovernorates } from './shipping-settings.js';
@@ -16,8 +17,8 @@ interface ShippingAuditSnapshot {
   readonly egyptGovernorates: Readonly<Record<string, GovernorateSetting>> | null;
   /** Countries abroad with a set shipping price (ATS-314), as saved; null when not saved. */
   readonly deliveryCountries: readonly string[] | null;
-  /** Extra delivery fee per country abroad (ATS-326), as saved; null when not saved. */
-  readonly deliveryCountryFees: Readonly<Record<string, number>> | null;
+  /** Extra delivery fee per country abroad for each box (ATS-326, ATS-338); null when not saved. */
+  readonly deliveryCountryFees: Readonly<Record<string, CountryBoxFees>> | null;
 }
 
 export const onShippingSettingsWritten = onDocumentWritten(
