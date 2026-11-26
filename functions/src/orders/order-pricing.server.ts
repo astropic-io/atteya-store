@@ -537,10 +537,6 @@ async function priceWithOffers(
   const governorateExtraEgp = isInternational
     ? 0
     : egyptGovernorateExtraFee(shippingConfig.settings, input.shipping.governorateId);
-  // Abroad (ATS-326): the delivery country's extra fee is added to the abroad box fee.
-  const countryExtraEgp = isInternational
-    ? countryExtraFee(shippingConfig.settings, input.shipping.country)
-    : 0;
 
   const usedOffers = new Map<string, UsedOffer>();
   // Pieces the order takes from stock, by product and size: every paid line first, then gifts as
@@ -693,6 +689,12 @@ async function priceWithOffers(
 
   // Client payloads cannot choose a box. A sent boxId is not on this input.
   const plan = planOrderDelivery(shippingConfig.settings, input.shipping.country, parcelLines);
+  // Abroad (ATS-326): the delivery country's extra fee for the box picked (ATS-338) is added to
+  // that box's fee.
+  const countryExtraEgp =
+    isInternational && plan.kind === 'box'
+      ? countryExtraFee(shippingConfig.settings, input.shipping.country, plan.box.id)
+      : 0;
   const { line: shippingLine, freeShippingOfferId } = quoteShippingLine(plan, {
     settings: shippingConfig.settings,
     region,

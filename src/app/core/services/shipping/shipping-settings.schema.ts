@@ -158,8 +158,9 @@ export const ShippingSettingsSchema = v.object({
     ),
   ),
   /**
-   * Extra delivery fee per country abroad (ATS-326): `{ [code]: whole EGP }`, added to the abroad
-   * box fee. Cleaned by `parseDeliveryCountryFees()` like on the server; a country with none is 0.
+   * Extra delivery fee per country abroad for each abroad box (ATS-326, ATS-338):
+   * `{ [code]: { box1, box2, box3 } }` in whole EGP, added to that box's fee. An old single number
+   * counts for every box. Cleaned by `parseDeliveryCountryFees()` like on the server; none is 0.
    */
   deliveryCountryFees: v.optional(
     v.pipe(
