@@ -392,9 +392,9 @@ service cloud.firestore {
     // Deny by default. Admins can reach future collections, but a matching
     // {document=**} rule is OR-ed with the rules above, so settings, roles,
     // auditLogs, products, categories, brands, offers, offerCodes, offerUsage,
-    // intlPricing, offerState, searchSyncErrors, settingsHistory, customers and customerNotes stay on the rules written for them.
+    // intlPricing, offerState, searchSyncErrors, settingsHistory, customers, customerNotes, storeStats and storeStatsMoney stay on the rules written for them.
     match /{collection}/{document=**} {
-      allow read, write: if canManageStore() && !(collection in ['settings', 'roles', 'auditLogs', 'products', 'categories', 'brands', 'offers', 'offerCodes', 'offerUsage', 'intlPricing', 'orders', 'orderStaffNotes', 'orderViews', 'orderRateLimits', 'paymobWebhookEvents', 'orderEmails', 'favorites', 'carts', 'users', 'emailSignups', 'emailSignupRateLimits', 'emailVerificationSends', 'offerState', 'searchSyncErrors', 'settingsHistory', 'customers', 'customerNotes', 'returnRequests', 'returnStaffNotes', 'returnEmails']);
+      allow read, write: if canManageStore() && !(collection in ['settings', 'roles', 'auditLogs', 'products', 'categories', 'brands', 'offers', 'offerCodes', 'offerUsage', 'intlPricing', 'orders', 'orderStaffNotes', 'orderViews', 'orderRateLimits', 'paymobWebhookEvents', 'orderEmails', 'favorites', 'carts', 'users', 'emailSignups', 'emailSignupRateLimits', 'emailVerificationSends', 'offerState', 'searchSyncErrors', 'settingsHistory', 'customers', 'customerNotes', 'returnRequests', 'returnStaffNotes', 'returnEmails', 'storeStats', 'storeStatsMoney']);
     }
   }
 }
