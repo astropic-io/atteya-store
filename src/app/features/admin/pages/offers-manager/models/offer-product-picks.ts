@@ -87,7 +87,7 @@ export function matchesAllWords(searchText: string, words: readonly string[]): b
 
 /** True when the name contains the whole typed text, in the typed order. */
 export function nameHasWholeQuery(name: string, words: readonly string[]): boolean {
-  return simplifySearchText(name).includes(words.join(' '));
+  return searchQueryWords(name).join(' ').includes(words.join(' '));
 }
 
 /** The colour's own name that matches the typed words and differs from the product's name, or null. */
@@ -333,11 +333,6 @@ export function productPickLabel(pick: ProductPick): string {
     (id) => pick.model!.colours.find((colour) => colour.productId === id)?.label ?? 'Colour not found',
   );
   return `${pick.model.name} · ${labels.join(', ')}`;
-}
-
-/** "3 colours" for a product with several, or null. */
-export function colourCountNote(model: OfferProductModel): string | null {
-  return hasColourChoice(model) ? `${model.colours.length} colours` : null;
 }
 
 /** Product name per model (the first colour's name), for tags and sentences. */
