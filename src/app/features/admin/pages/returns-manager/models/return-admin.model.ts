@@ -83,6 +83,9 @@ export const ReturnRequestSchema = v.object({
   feeSentBackAt: v.optional(v.nullable(timestampSchema), null),
   /** What Reject moves after Approve (saved at Approve since ATS-298); only its presence is read. */
   rejectStock: v.optional(v.nullable(v.unknown()), null),
+  /** Staff sent it for the customer with Start Return for Customer (ATS-342). */
+  startedByStaff: v.optional(v.boolean(), false),
+  startedByEmail: text,
   createdAt: v.optional(v.nullable(timestampSchema), null),
   updatedAt: v.optional(v.nullable(timestampSchema), null),
 });

@@ -28,7 +28,7 @@ Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292
 - The signed-in owner is matched by uid (`customerId`); a guest by the order's secret `viewKey` from the emailed order link (`isOrderShopper()` in `functions/src/returns/return-access.ts`, constant-time compare).
 - Every refusal has a plain message (`returnRefusalMessage()` and `ReturnRequestError` in `return-request.ts`, turned into an `HttpsError` by the callable).
 - **Start Return for Customer (<KEY>-342)**: on `/admin/orders/:id`, while the shopper could send a request (`returnEntry()` open), staff open the same Return or Exchange screen with `forCustomer` (title "Return or Exchange for <name>", the refund number prefilled with the phone, a Courier fee choice "Customer pays … by InstaPay first" or "The store pays").
-- `requestReturn` with `forCustomer: true` checks the staff role instead of the owner and saves `startedByStaff`, `startedBy`, `startedByEmail` and `storePaysFee` (fee 0 when the store pays). A request started by staff sends no Request Sent or staff alert.
+- `requestReturn` with `forCustomer: true` checks the staff role instead of the owner and saves `startedByStaff`, `startedBy`, `startedByEmail` and `storePaysFee` (fee 0 when the store pays). The admin return page's history then says "Started by staff for the customer" with who did it (`returnHistory()`), not "Requested by the customer". A request started by staff sends no Request Sent or staff alert.
 - The page then approves it straight away (`approveReturnRequest`), so the customer gets the usual Approved email (or its pay version); with a Wrong Item Sent item it opens `/admin/returns/:id` to pick the sent piece and approve there.
 
 ## Kinds

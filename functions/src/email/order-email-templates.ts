@@ -892,9 +892,13 @@ function cancelGroup(entry: ItemCancelEntry, ctx: OrderEmailContext, focus: bool
     right: joinParts([date, refundNote]).replace(/\n/g, ' · ') || null,
     style: focus ? 'focus' : 'muted',
     cards: [card],
-    text: `- ${card.name} (${card.details})${entry.amountOffEgp > 0 ? `: ${formatEgp(entry.amountOffEgp)} off` : ''}${
-      refundNote ? `, ${refundNote}` : ''
-    }`,
+    text: [
+      `- ${card.name} (${card.details})${entry.amountOffEgp > 0 ? `: ${formatEgp(entry.amountOffEgp)} off` : ''}${
+        refundNote ? `, ${refundNote}` : ''
+      }`,
+      // The free gifts that left with it, as the HTML card lists them.
+      ...entry.gifts.map((g) => `  + Free gift: ${g.name || 'Gift'} (${pieceDetails(g)})`),
+    ].join('\n'),
   };
 }
 

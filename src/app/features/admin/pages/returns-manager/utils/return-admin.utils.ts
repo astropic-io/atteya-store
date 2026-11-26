@@ -385,9 +385,9 @@ export function returnHistory(
   notes: ReturnStaffNotes | null,
 ): ReturnHistoryEntry[] {
   const sent: ReturnHistoryEntry = {
-    label: 'Requested by the customer',
+    label: request.startedByStaff ? 'Started by staff for the customer' : 'Requested by the customer',
     when: returnDate(request.createdAt),
-    by: null,
+    by: request.startedByStaff ? request.startedByEmail || null : null,
     reason: null,
   };
   const staff = (notes?.history ?? []).map((entry) => ({

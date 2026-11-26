@@ -1153,3 +1153,38 @@ describe('staff alert for orders abroad: customer currency, in pounds, price in 
     assert.ok(email.text.includes(formatEgp(2450)));
   });
 });
+
+describe('order-item-cancelled', () => {
+  it('lists the free gifts that left with the item in the plain text too', () => {
+    const doc = {
+      ...orderDoc({ status: 'confirmed', paymentMethod: 'instapay' }),
+      itemCancels: [
+        {
+          id: 'c1',
+          item: { productId: 'bag', selection: {}, name: 'Racket Bag', optionLabels: [], quantity: 1 },
+          gifts: [
+            {
+              productId: 'socks',
+              selection: { size: 'M' },
+              name: 'Sport Socks',
+              optionLabels: [{ label: 'Size', value: 'M' }],
+              quantity: 1,
+            },
+          ],
+          amountOffEgp: 500,
+          refundEgp: 500,
+          refundTo: '01012345678',
+          totalBeforeEgp: 2950,
+          totalAfterEgp: 2450,
+          statusAtCancel: 'confirmed',
+          stockReturned: true,
+          emailCustomer: true,
+          at: new Date('2026-11-26T08:00:00Z'),
+        },
+      ],
+    };
+    const email = renderOrderEmail('order-item-cancelled', read(doc), withPay);
+    assert.ok(email.text.includes('Free gift: Sport Socks (Size M · Qty 1)'), email.text);
+    assert.ok(email.text.includes('01012345678'));
+  });
+});

@@ -119,6 +119,7 @@ Moved here word for word from AGENTS.md so that file stays small (<KEY>-282). Th
 ## Cancel one item (<KEY>-342)
 
 - Staff and admins cancel some pieces of one item on `/admin/orders/:id` with **Cancel Item** (`app-order-items` with `order` and `afterChange`, dialog `cancel-item-dialog`); the Orders list panel shows cancelled pieces but no button.
+- The order's **Every Change** list shows each item cancel (with the reason) and each Refund Sent from `orderStaffNotes` next to the status changes, by time (`statusHistory()` in `order-admin.utils.ts`). After a paid order's item refund, the shopper page's money band shows **Order total** plus **Refund to you** instead of **Paid**.
 - Allowed only for Waiting for Payment or Confirmed orders shipped in Egypt and paid by Cash on Delivery or InstaPay (`itemCancelRefusal()` in `functions/src/store/order-item-cancel.ts`, copied by `npm run sync:engine`); Card, abroad, Shipped, Delivered and Cancelled orders are refused. Cancelling every piece left is refused: use Cancel Order.
 - The amount off defaults to the paid share of those pieces (`paidShareEgp()`); staff may lower it to the price of the pieces left without the full offer (`planItemCancel()` min and max). Shipping never changes. A free gift goes with its item.
 - A refund is owed only for a Confirmed InstaPay order (`itemCancelOwesRefund()`); staff type where to send it (`refundTo`, prefilled with the phone), and an admin presses **Refund Sent** (`markItemRefundSent`, idempotent).

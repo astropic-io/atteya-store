@@ -371,6 +371,13 @@ export class CheckoutConfirmationPageComponent implements OnInit {
     const box = (label: string, value: string, now = false) => ({ label, value, now });
     const payNow = this.#payNow();
     const cash = this.#cash();
+    // Paid in full, then an item was cancelled: the total went down and the difference comes back
+    // by InstaPay, so "Paid" with the new total would understate what they paid (ATS-342).
+    const refunded = readItemCancels(this.order()?.itemCancels).reduce((sum, e) => sum + e.refundEgp, 0);
+    const paid = () =>
+      refunded > 0
+        ? [box('Order total', total), box('Refund to you', formatMoney(refunded, 'EGP', 0))]
+        : [box('Paid', total)];
     switch (stage) {
       case 'instapay-fee-due':
         return [
@@ -387,7 +394,7 @@ export class CheckoutConfirmationPageComponent implements OnInit {
       case 'cod-confirmed':
         // Shipped card and InstaPay orders are paid; Cash on Delivery still pays at the door.
         if (stage === 'shipped' && this.order()?.paymentMethod !== 'cash-on-delivery') {
-          return [box('Paid', total)];
+          return paid();
         }
         // With free shipping the cash at the door is the total: one box.
         return cash && cash !== total
@@ -409,7 +416,7 @@ export class CheckoutConfirmationPageComponent implements OnInit {
       case 'paid':
       case 'paid-needs-review':
       case 'delivered':
-        return [box('Paid', total)];
+        return paid();
       default:
         return [box('Order total', total)];
     }

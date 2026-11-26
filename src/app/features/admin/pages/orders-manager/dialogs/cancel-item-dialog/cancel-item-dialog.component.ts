@@ -132,12 +132,14 @@ const egp = (amount: number) => formatMoney(amount, 'EGP', 0);
                 </p>
               }
               @if (p.gifts.length) {
-                <p class="admin-order-muted">Its free gift is cancelled with it.</p>
+                <p class="admin-order-muted">
+                  {{ giftLine() }}
+                </p>
               }
               @if (p.inGroupDeal && p.minAmountOffEgp < p.maxAmountOffEgp) {
                 <p class="p-3 border border-dashed border-outline border-shape font-body-sm">
                   {{ quantity() === 1 ? 'This piece was' : 'These pieces were' }} part of an offer. The
-                  {{ p.refundOwed ? 'refund' : 'amount off' }} is what the customer paid for
+                  {{ p.refundOwed ? 'refund is what the customer paid' : 'amount off is their price' }} for
                   {{ quantity() === 1 ? 'it' : 'them' }}. The pieces left cost more without the full offer, so
                   you can lower it to {{ money(p.minAmountOffEgp) }} if you agreed that with the customer.
                 </p>
@@ -253,8 +255,10 @@ export class CancelItemDialogComponent {
   readonly amountHint = computed(() => {
     const base = this.#basePlan();
     if (!base.ok) return '';
-    const { minAmountOffEgp: min, maxAmountOffEgp: max } = base.plan;
-    return min < max ? `What they paid: ${egp(max)}. Lowest: ${egp(min)}.` : `What they paid: ${egp(max)}.`;
+    const { minAmountOffEgp: min, maxAmountOffEgp: max, refundOwed } = base.plan;
+    // Only a Confirmed InstaPay order was paid already; otherwise it's what those pieces cost them.
+    const full = `${refundOwed ? 'What they paid' : 'Their price for these pieces'}: ${egp(max)}.`;
+    return min < max ? `${full} Lowest: ${egp(min)}.` : full;
   });
 
   /** The preview with the typed amount when it's valid, else the default. */
@@ -277,9 +281,18 @@ export class CancelItemDialogComponent {
   });
 
   readonly stockLine = computed(() => {
-    const q = this.quantity();
     if (!this.#stockTaken) return "Nothing was taken out of stock yet, so there's nothing to put back.";
+    // The free gifts that drop with the item go back too.
+    const q = this.quantity() + this.giftPieces();
     return `${q === 1 ? '1 piece goes' : `${q} pieces go`} back into stock`;
+  });
+
+  /** Free gift pieces that drop with this cancel. */
+  readonly giftPieces = computed(() => (this.plan()?.gifts ?? []).reduce((sum, g) => sum + g.quantity, 0));
+
+  readonly giftLine = computed(() => {
+    const n = this.giftPieces();
+    return n === 1 ? 'Its free gift is cancelled with it.' : `Its ${n} free gifts are cancelled with it.`;
   });
 
   readonly canSave = computed(
