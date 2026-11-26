@@ -141,9 +141,14 @@
             <mat-optgroup [label]="group.label">
               @for (option of group.options; track optionKey(option)) {
                 <mat-option [value]="option">
-                  <span>{{ option.name }}</span>
-                  @if (option.note) {
-                    <span class="text-on-surface-variant"> · {{ option.note }}</span>
+                  <span class="offer-option-name">{{ option.name }}</span>
+                  @if (option.also) {
+                    <span class="text-on-surface-variant"> · also "{{ option.also }}"</span>
+                  }
+                  @if (option.detail) {
+                    <span class="offer-option-detail font-body-sm text-on-surface-variant">{{
+                      option.detail
+                    }}</span>
                   }
                 </mat-option>
               }

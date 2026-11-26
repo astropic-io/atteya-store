@@ -104,10 +104,14 @@ import {
 import {
   colourChoiceValues,
   groupOfferProducts,
+  matchedOtherName,
+  matchesAllWords,
+  nameHasWholeQuery,
   newProductPick,
   nextColourChoice,
   productPickLabel,
   readProductPicks,
+  searchQueryWords,
   writeProductPicks,
 } from '../src/app/features/admin/pages/offers-manager/models/offer-product-picks.ts';
 import {
@@ -1619,6 +1623,80 @@ describe('offer product picker: one product, then its colours (ATS-270)', () => 
     assert.deepEqual(saved, { modelGroups: [], productIds: ['nox-b', 'nox-w', 'nox-g'] });
     const picks = readProductPicks(saved, models, true);
     assert.equal(productPickLabel(picks[0]), 'Nox Padel Shorts · All colours');
+  });
+});
+
+describe('offer product picker search (ATS-331)', () => {
+  const info = (id) => ({ label: id[0].toUpperCase() + id.slice(1), swatch: null });
+  const catalog = {
+    brandName: (id) => ({ siux: 'Siux', agustin: 'Agustín' })[id] ?? null,
+    category: (id) =>
+      ({ accessories: { name: 'Accessories', depth: 0 }, socks: { name: 'Socks', depth: 1 } })[id] ?? null,
+  };
+  const [siux, agustin, plain] = groupOfferProducts(
+    [
+      {
+        id: 'a',
+        name: 'Siux Ball Edition Socks',
+        modelGroup: 'siux-socks',
+        colors: ['white'],
+        brandId: 'siux',
+        categoryId: 'socks',
+        categoryIds: ['accessories', 'socks'],
+      },
+      {
+        id: 'b',
+        name: 'Siux Socks',
+        modelGroup: 'siux-socks',
+        colors: ['black'],
+        brandId: 'siux',
+        categoryId: 'socks',
+        categoryIds: ['accessories', 'socks'],
+      },
+      {
+        id: 'c',
+        name: 'Pro Cap',
+        modelGroup: null,
+        colors: ['black'],
+        brandId: 'agustin',
+        categoryId: 'accessories',
+        categoryIds: ['accessories'],
+      },
+      { id: 'd', name: 'Plain Thing', modelGroup: null },
+    ],
+    info,
+    catalog,
+  );
+  const find = (model, query) => matchesAllWords(model.searchText, searchQueryWords(query));
+
+  it('finds a product by any typed words in any order, from any colour name', () => {
+    for (const query of ['siux socks', 'socks siux', 'Siux Socks', 'ball edition', 'SIUX']) {
+      assert.equal(find(siux, query), true, query);
+    }
+    assert.equal(find(siux, 'siux shirt'), false);
+  });
+
+  it('matches the brand and category names and ignores accents', () => {
+    assert.equal(find(agustin, 'agustin cap'), true);
+    assert.equal(find(agustin, 'accessories'), true);
+    assert.equal(find(siux, 'accessories'), true);
+  });
+
+  it('writes the second line from brand, most specific category and colours', () => {
+    assert.equal(siux.detail, 'Siux · Socks · 2 colours: White, Black');
+    assert.equal(agustin.detail, 'Agustín · Accessories · Black');
+    assert.equal(plain.detail, '');
+  });
+
+  it("names the colour's own name that matched when it differs from the product's name", () => {
+    assert.equal(matchedOtherName(siux, searchQueryWords('siux socks')), 'Siux Socks');
+    assert.equal(matchedOtherName(siux, searchQueryWords('ball edition')), null);
+    assert.equal(matchedOtherName(siux, []), null);
+  });
+
+  it('puts products whose own name holds the whole typed text first', () => {
+    assert.equal(nameHasWholeQuery('Siux Ball Edition Socks', searchQueryWords('ball edition')), true);
+    assert.equal(nameHasWholeQuery('Siux Ball Edition Socks', searchQueryWords('siux socks')), false);
   });
 });
 
