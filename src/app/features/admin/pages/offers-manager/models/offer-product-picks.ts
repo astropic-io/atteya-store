@@ -156,7 +156,10 @@ function mostSpecificCategory(product: PickerProduct, catalog?: PickerCatalog): 
   return best?.name ?? null;
 }
 
-/** "Siux · Socks · 2 colours: Black, White" or "Siux · Socks · Black"; a missing part is left out. */
+/**
+ * "Siux · Socks · 2 colours: Black, White", "Siux · Socks · Black" or, from 3 colours up, just the
+ * count ("adidas · T-shirts & polos · 5 colours") so the line stays on one row; a missing part is left out.
+ */
 function modelDetail(
   brand: string | null,
   category: string | null,
@@ -165,7 +168,8 @@ function modelDetail(
   // A colour with no colour set has only a placeholder name ("Colour 1"): not worth showing.
   const named = colours.filter((colour) => colour.colorId !== null);
   const labels = named.map((colour) => colour.label).join(', ');
-  const colourPart = named.length >= 2 ? `${named.length} colours: ${labels}` : labels;
+  const colourPart =
+    named.length >= 3 ? `${named.length} colours` : named.length === 2 ? `2 colours: ${labels}` : labels;
   return [brand, category, colourPart].filter((part) => part).join(' · ');
 }
 
