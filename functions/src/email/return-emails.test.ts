@@ -497,6 +497,8 @@ describe('pieces from earlier returns in the item list (ATS-345)', () => {
       { ...request({ items: [one] }), order, otherReturned: new Map([[1, 1]]) },
       ctx,
     );
-    assert.doesNotMatch(after.text, /Club Hoodie/);
+    const delivered = after.text.slice(after.text.indexOf('Delivered'), after.text.indexOf('Returning'));
+    assert.doesNotMatch(delivered, /Club Hoodie/);
+    assert.match(after.text, /In another return · 1[\s\S]*Club Hoodie/);
   });
 });

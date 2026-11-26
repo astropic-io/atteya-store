@@ -18,6 +18,8 @@ export type OrderEmailPaymentMethod = 'paymob' | 'cash-on-delivery' | 'instapay'
 export type OrderEmailStatus = 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled' | 'failed';
 
 export interface OrderEmailLine {
+  /** Index in the saved `pricing.lines` (unreadable lines are skipped, so it can differ from the position here). */
+  readonly lineIndex?: number;
   readonly productId: string;
   readonly name: string;
   readonly optionLabels: readonly { readonly label: string; readonly value: string }[];
@@ -234,6 +236,7 @@ export function readOrderForEmail(
     moneyLines.push({ lineEgp, wasEgp: discountEgp > 0 ? fullEgp : null });
     kept.push(index);
     lines.push({
+      lineIndex: index,
       productId,
       name: text(raw['name']),
       optionLabels: readOptionLabels(raw['optionLabels']),
