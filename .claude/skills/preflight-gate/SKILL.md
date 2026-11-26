@@ -34,7 +34,7 @@ Before approving any task, completing a feature, or declaring code ready:
 4. **Step 4: Review your own diff before opening the PR.** Catching a bug here costs one edit; after the push it costs a Claude review, a Claude Fix round and another CI run.
    - Claude Code: run the built-in `/code-review` (at `high` for money, stock, auth, rules, functions or checkout changes; `medium` otherwise) on the branch against `develop`, and fix every real finding.
    - Claude Code: then run the built-in `/security-review` on the same branch and fix every real high or medium finding. It diffs against `origin/HEAD`, so run `git remote set-head origin develop` once in a fresh clone or cloud session, or it stops with "ambiguous argument 'origin/HEAD...'".
-   - The ticket routine (`.claude/routines/ticket-pickup.md`, step 4.5) runs both reviews before every build push and lists what they found in the PR's "Self-review" section.
+   - Projects threads run both reviews before every build push and list what they found in the PR's "Self-review" section (the `linear-board` skill).
    - Cursor: run its review on the branch diff the same way.
    - Check the diff against `REVIEW.md` (repo root), the short list of what breaks production here. The Claude code review and security review on every push use the same file, read from `develop`.
 
