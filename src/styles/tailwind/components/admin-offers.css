@@ -178,16 +178,27 @@
     @apply border border-dashed border-outline border-shape px-4 py-2 font-label-lg font-bold! cursor-pointer bg-surface-container-lowest;
   }
 
-  /* A product in the search list: its name, then brand · category · colours on a second line that wraps. */
+  /* A product in the search list: its name on one line, then brand · category · colours on one more
+     line; a line that doesn't fit is cut with "…". The panel is as wide as the picker's row, and each
+     product row has 8px of space above and below it with a hairline between rows. */
+  .offer-option-panel .mat-mdc-option .mdc-list-item__primary-text {
+    @apply min-w-0 flex-1;
+  }
+
+  .offer-option {
+    @apply block w-full min-w-0 py-2 border-b border-outline-variant;
+  }
+
+  .offer-option-panel .mat-mdc-option:last-of-type .offer-option {
+    @apply border-b-0;
+  }
+
   .offer-option-name {
-    @apply font-body-md;
-    white-space: normal;
+    @apply block font-body-md truncate;
   }
 
   .offer-option-detail {
-    @apply block;
-    white-space: normal;
-    overflow-wrap: anywhere;
+    @apply block truncate;
   }
 
   /* A picked product with several colours: a card with its name, count and remove button, then the

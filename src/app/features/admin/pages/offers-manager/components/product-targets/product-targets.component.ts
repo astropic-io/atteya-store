@@ -254,6 +254,13 @@ export class ProductTargetsComponent {
     return (pick.model?.colours ?? []).filter((colour) => ticked.has(colour.productId));
   }
 
+  /** The whole result as one line, shown on hover when a long name or detail is cut with "…". */
+  optionTitle(option: TargetOption): string {
+    return [option.name, option.also ? `also "${option.also}"` : null, option.detail]
+      .filter((part) => part)
+      .join(' · ');
+  }
+
   /** "All 4 colours" or "2 of 4 colours", next to the product's name. */
   colourCount(pick: ProductPick): string {
     const total = pick.model?.colours.length ?? 0;

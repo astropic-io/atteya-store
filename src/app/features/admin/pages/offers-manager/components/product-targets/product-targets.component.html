@@ -117,7 +117,11 @@
   </div>
 
   @if (picking()) {
-    <div class="elements-start items-center! flex-wrap gap-2 w-full">
+    <div
+      class="elements-start items-center! flex-wrap gap-2 w-full"
+      matAutocompleteOrigin
+      #pickerRow="matAutocompleteOrigin"
+    >
       <mat-form-field class="w-full @3xl:w-96" appearance="outline" subscriptSizing="dynamic">
         <mat-label>{{ searchLabel() }}</mat-label>
         <mat-icon matPrefix name="search" />
@@ -127,6 +131,7 @@
           type="search"
           autocomplete="off"
           [matAutocomplete]="auto"
+          [matAutocompleteConnectedTo]="pickerRow"
           [value]="query()"
           (input)="query.set($any($event.target).value)"
           (keydown.escape)="closePicker()"
@@ -134,6 +139,7 @@
         <mat-autocomplete
           #auto="matAutocomplete"
           [autoActiveFirstOption]="true"
+          class="offer-option-panel"
           [displayWith]="emptyDisplay"
           (optionSelected)="onPicked($event)"
         >
@@ -141,15 +147,19 @@
             <mat-optgroup [label]="group.label">
               @for (option of group.options; track optionKey(option)) {
                 <mat-option [value]="option">
-                  <span class="offer-option-name">{{ option.name }}</span>
-                  @if (option.also) {
-                    <span class="text-on-surface-variant"> · also "{{ option.also }}"</span>
-                  }
-                  @if (option.detail) {
-                    <span class="offer-option-detail font-body-sm text-on-surface-variant">{{
-                      option.detail
-                    }}</span>
-                  }
+                  <span class="offer-option" [title]="optionTitle(option)">
+                    <span class="offer-option-name">
+                      {{ option.name }}
+                      @if (option.also) {
+                        <span class="text-on-surface-variant"> · also "{{ option.also }}"</span>
+                      }
+                    </span>
+                    @if (option.detail) {
+                      <span class="offer-option-detail font-body-sm text-on-surface-variant">{{
+                        option.detail
+                      }}</span>
+                    }
+                  </span>
                 </mat-option>
               }
             </mat-optgroup>
