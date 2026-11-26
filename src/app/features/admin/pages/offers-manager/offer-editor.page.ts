@@ -57,6 +57,7 @@ import { RewardEditorComponent } from './components/reward-editor/reward-editor.
 import { ScheduleEditorComponent } from './components/schedule-editor/schedule-editor.component';
 import {
   affectedStats,
+  saleSkipWarning,
   autoOfferTitle,
   autoTeamName,
   brandKindsHint,
@@ -359,7 +360,11 @@ export class OfferEditorPageComponent implements OnInit {
   readonly goodToKnow = computed(() => {
     const lines = this.validation().warnings.map((issue) => issue.message);
     const onSale = this.stats().onSale;
-    if (onSale > 0) {
+    const { total } = this.stats();
+    if (onSale > 0 && onSale >= total && this.draft().saleItems === 'exclude') {
+      const nothing = saleSkipWarning('exclude', { total, onSale });
+      if (nothing) lines.push(nothing);
+    } else if (onSale > 0) {
       const lead = `${productCountLabel(onSale)} ${onSale === 1 ? 'is' : 'are'} already on sale.`;
       lines.push(
         this.draft().saleItems === 'exclude'
