@@ -86,6 +86,11 @@ describe('itemCancelRefusal', () => {
     assert.match(itemCancelRefusal(order({ status: 'delivered' }))!, /Start Return for Customer/);
     assert.match(itemCancelRefusal(order({ status: 'cancelled' }))!, /cancelled/);
   });
+  it('refuses an order whose total is missing, so a cancel never saves a negative total', () => {
+    const { totalEgp: _t, ...noTotal } = order().pricing;
+    assert.match(itemCancelRefusal(order({ pricing: noTotal }))!, /total can't be read/);
+    assert.match(itemCancelRefusal(order({ pricing: { ...order().pricing, subtotalEgp: -5 } }))!, /total/);
+  });
 });
 
 describe('planItemCancel', () => {

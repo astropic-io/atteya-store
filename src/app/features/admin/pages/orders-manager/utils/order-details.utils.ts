@@ -451,7 +451,7 @@ export function orderDetails(
     stage,
     nextStep:
       refundToSend > 0
-        ? `Send the customer ${egp(refundToSend)} back by InstaPay, then press Refund Sent on the cancelled item.${step ? ` ${step}` : ''}`
+        ? `Send the customer ${egp(refundToSend)} back by InstaPay. Then an admin presses Refund Sent on the cancelled item.${step ? ` ${step}` : ''}`
         : step,
     // Paid from abroad for delivery in Egypt: the customer is the payer, the address the recipient's.
     customer: {

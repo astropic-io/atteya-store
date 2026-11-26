@@ -92,6 +92,9 @@ export function itemCancelRefusal(order: ItemCancelOrderFacts): string | null {
   if (!pricing || readLines(pricing['lines']) === null) {
     return "This order's items can't be read, so they can't change here.";
   }
+  if (!isAmount(pricing['totalEgp']) || !isAmount(pricing['subtotalEgp'])) {
+    return "This order's total can't be read, so its items can't change here.";
+  }
   if (readItemCancels(order.itemCancels).length >= ITEM_CANCELS_PER_ORDER_MAX) {
     return 'This order has had too many items cancelled. Message the customer on WhatsApp.';
   }
@@ -581,6 +584,11 @@ function timeMs(raw: unknown): number | null {
   if (typeof r['toMillis'] === 'function') return (r['toMillis'] as () => number)();
   const seconds = r['seconds'] ?? r['_seconds'];
   return typeof seconds === 'number' ? seconds * 1000 : null;
+}
+
+/** A saved amount in pounds: a real number, never missing or negative. */
+function isAmount(raw: unknown): raw is number {
+  return typeof raw === 'number' && Number.isFinite(raw) && raw >= 0;
 }
 
 function num(raw: unknown): number {
