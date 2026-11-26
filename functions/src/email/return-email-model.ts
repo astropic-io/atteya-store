@@ -5,6 +5,8 @@
 import {
   isReturnKind,
   isReturnStatus,
+  heldReturnItems,
+  readReturnSummaries,
   readCourierFeePaid,
   timestampMs,
   waitingForPaymentStartMs,
@@ -94,6 +96,29 @@ export interface ReturnEmailRequest {
    * Cancelled, ATS-342). Filled by the trigger; null in tests and when it can't be read.
    */
   readonly order?: OrderEmailOrder | null;
+  /**
+   * Pieces per `pricing.lines` index that other requests on the same order hold (`heldReturnItems`),
+   * so the item list shows them as "In another return" instead of "yours to keep".
+   * Filled by the trigger from the order's `returns` summary; empty when absent.
+   */
+  readonly otherReturned?: ReadonlyMap<number, number>;
+}
+
+/**
+ * Pieces per `pricing.lines` index held by the order's other return requests (every request but
+ * `requestId`), by the same rule as `piecesLeft()` (`heldReturnItems`).
+ */
+export function piecesHeldByOtherReturns(
+  rawReturns: unknown,
+  requestId: string,
+): ReadonlyMap<number, number> {
+  const held = new Map<number, number>();
+  for (const entry of readReturnSummaries(rawReturns)) {
+    if (entry.id === requestId) continue;
+    for (const item of heldReturnItems(entry))
+      held.set(item.lineIndex, (held.get(item.lineIndex) ?? 0) + item.quantity);
+  }
+  return held;
 }
 
 /** Null when the document can't be described (no items or unknown status). */

@@ -688,7 +688,8 @@ function refundPart(request: ReturnEmailRequest, ctx: OrderEmailContext, padTop 
 
 /**
  * Every item in the order by state (ATS-342): Delivered (yours to keep), Returning (this request,
- * in black), Cancelled before delivery. Nothing when the order couldn't be read.
+ * in black), In another return (pieces the order's other requests hold, `otherReturned`), and
+ * Cancelled before delivery. Nothing when the order couldn't be read.
  */
 function orderItemsPart(request: ReturnEmailRequest, ctx: OrderEmailContext): EmailPart[] {
   const order = request.order;
@@ -696,8 +697,23 @@ function orderItemsPart(request: ReturnEmailRequest, ctx: OrderEmailContext): Em
   const returning = new Map<number, number>();
   for (const item of request.items)
     returning.set(item.lineIndex, (returning.get(item.lineIndex) ?? 0) + item.quantity);
+  // Keyed by the saved line index, which `lineIndex` keeps even when a line was skipped.
+  const at = (line: (typeof order.lines)[number], position: number) => line.lineIndex ?? position;
   const kept = order.lines
-    .map((line, index) => ({ ...line, quantity: line.quantity - (returning.get(index) ?? 0) }))
+    .map((line, position) => ({
+      ...line,
+      quantity:
+        line.quantity -
+        (returning.get(at(line, position)) ?? 0) -
+        (request.otherReturned?.get(at(line, position)) ?? 0),
+    }))
+    .filter((line) => line.quantity > 0)
+    .map((line) => ({ ...line, shopperAmount: null }));
+  const elsewhere = order.lines
+    .map((line, position) => ({
+      ...line,
+      quantity: Math.min(line.quantity, request.otherReturned?.get(at(line, position)) ?? 0),
+    }))
     .filter((line) => line.quantity > 0)
     .map((line) => ({ ...line, shopperAmount: null }));
   const groups = itemStateGroups(order, ctx, kept, '');
@@ -708,8 +724,21 @@ function orderItemsPart(request: ReturnEmailRequest, ctx: OrderEmailContext): Em
     cards: itemCards(request, ctx, false, 'hand-back'),
     text: itemsText(request, false, 'hand-back'),
   };
+  // Pieces in the order's other return requests: still part of the order, never "yours to keep".
+  const [elsewhereGroup] = elsewhere.length ? itemStateGroups(order, ctx, elsewhere, '') : [];
+  const other: ItemStateGroup[] = elsewhereGroup
+    ? [
+        {
+          ...elsewhereGroup,
+          label: `↩ In another return · ${elsewhere.reduce((sum, l) => sum + (l.giftName === null ? l.quantity : 0), 0)}`,
+          right: null,
+          style: 'muted',
+        },
+      ]
+    : [];
   const [first, ...rest] = groups;
-  const ordered = first && !first.label.startsWith('✕') ? [first, back, ...rest] : [back, ...groups];
+  const ordered =
+    first && !first.label.startsWith('✕') ? [first, back, ...other, ...rest] : [back, ...other, ...groups];
   return [itemStatesHtml('Every Item in This Order', ordered)];
 }
 

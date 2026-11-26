@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { returnClaimId, returnEmailsForWrite } from '../../lib/email/return-email-events.js';
-import { readReturnForEmail } from '../../lib/email/return-email-model.js';
+import { piecesHeldByOtherReturns, readReturnForEmail } from '../../lib/email/return-email-model.js';
+import { readOrderForEmail } from '../../lib/email/order-email-model.js';
 import { renderReturnEmail } from '../../lib/email/return-email-templates.js';
 
 /** Shopper emails for each staff step of a return or exchange request (ATS-294). */
@@ -448,5 +449,56 @@ describe('returns started by staff for the customer (ATS-342)', () => {
     assert.match(email.text, /send it by InstaPay to 010 1234 5678/);
     assert.match(email.text, /Not yours\? Message us on WhatsApp/);
     assert.match(email.text, /As we agreed, your return of 2 items is approved\./);
+  });
+});
+
+describe('pieces from earlier returns in the item list (ATS-345)', () => {
+  const returns = [
+    { id: 'k7q2m9abc', status: 'approved', items: [{ lineIndex: 0, quantity: 1 }] },
+    { id: 'earlier', status: 'received', items: [{ lineIndex: 1, quantity: 1 }] },
+    { id: 'gone', status: 'cancelled', items: [{ lineIndex: 0, quantity: 1 }] },
+    {
+      id: 'kept',
+      status: 'rejected',
+      items: [{ lineIndex: 0, quantity: 1 }],
+      keptItems: [{ lineIndex: 0, quantity: 1 }],
+    },
+  ];
+
+  it('counts pieces held by every other request, not this one or a cancelled one', () => {
+    const held = piecesHeldByOtherReturns(returns, 'k7q2m9abc');
+    assert.deepEqual([...held.entries()].sort(), [
+      [0, 1],
+      [1, 1],
+    ]);
+    assert.equal(piecesHeldByOtherReturns(undefined, 'x').size, 0);
+  });
+
+  it("doesn't list a piece an earlier request sent back as yours to keep", () => {
+    const order = readOrderForEmail('a1b2c3xyz', {
+      paymentMethod: 'instapay',
+      status: 'delivered',
+      shipping: { country: 'EG', fullName: 'Mariam Hassan' },
+      pricing: {
+        lines: [
+          { productId: 'tee', name: 'Club Tee', quantity: 2, unitEgp: 300 },
+          { productId: 'hoodie', name: 'Club Hoodie', quantity: 1, unitEgp: 900 },
+        ],
+        subtotalEgp: 1500,
+        totalEgp: 1500,
+      },
+    });
+    assert.ok(order);
+    const one = { ...RETURNED, lineIndex: 0, quantity: 1 };
+    const before = renderReturnEmail('return-approved', { ...request({ items: [one] }), order }, ctx);
+    assert.match(before.text, /Club Hoodie/);
+    const after = renderReturnEmail(
+      'return-approved',
+      { ...request({ items: [one] }), order, otherReturned: new Map([[1, 1]]) },
+      ctx,
+    );
+    const delivered = after.text.slice(after.text.indexOf('Delivered'), after.text.indexOf('Returning'));
+    assert.doesNotMatch(delivered, /Club Hoodie/);
+    assert.match(after.text, /In another return · 1[\s\S]*Club Hoodie/);
   });
 });
