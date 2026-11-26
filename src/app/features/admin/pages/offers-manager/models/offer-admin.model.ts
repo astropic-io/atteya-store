@@ -1145,6 +1145,31 @@ export function affectedStats(
   return { total: matched.length, inStock, soldOut: matched.length - inStock, onSale };
 }
 
+/** Under the "Skip products already on sale" warning: how to include those products. */
+export const SALE_SKIP_FIX_LINE =
+  'Choose Best discount wins to include them. Shoppers then get whichever price is lower.';
+
+/**
+ * The warning under "Products already on sale" when Skip would leave out more than half of the
+ * offer's products (onSale × 2 > total). Null when Best discount wins is chosen, the offer reaches
+ * no products, half or fewer are on sale, or the deal is Free shipping (the engine's free shipping
+ * check never reads `saleItems`, so Skip changes nothing there).
+ */
+export function saleSkipWarning(
+  draft: Pick<OfferDraft, 'saleItems' | 'reward'>,
+  stats: Pick<AffectedStats, 'total' | 'onSale'>,
+): string | null {
+  const { total, onSale } = stats;
+  if (draft.saleItems !== 'exclude' || draft.reward.kind === 'freeShipping') return null;
+  if (total === 0 || onSale * 2 <= total) return null;
+  if (onSale >= total) {
+    return total === 1
+      ? 'The only product in this offer is already on sale, so this offer would give nothing.'
+      : `All ${total.toLocaleString('en-US')} products are already on sale, so this offer would give nothing.`;
+  }
+  return `${onSale.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} products are already on sale, so this offer skips them.`;
+}
+
 /** One chip under the Affected products count: a category (or "Other") and how many products. */
 export interface CategoryCount {
   /** The category id, or "other"; unique, so a list can track by it. */

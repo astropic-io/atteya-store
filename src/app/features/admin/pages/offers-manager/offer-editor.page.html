@@ -442,7 +442,7 @@
                   </button>
                 </div>
                 @if (moreOpen()) {
-                  <app-offer-settings [(draft)]="draft" />
+                  <app-offer-settings [(draft)]="draft" [total]="stats().total" [onSale]="stats().onSale" />
                 }
               </div>
 

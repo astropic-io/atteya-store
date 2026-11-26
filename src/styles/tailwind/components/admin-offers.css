@@ -224,6 +224,17 @@
     @apply w-full bg-surface-container border-shape p-4 font-body-md elements-start-col items-stretch! gap-2;
   }
 
+  /* Step 3 → More settings: "Skip products already on sale" would leave most products out.
+     Black 1.5px border, no colour; the bottom margin keeps 24px to the next field with the grid gap. */
+  .offer-sale-warning {
+    @apply w-full border-[1.5px] border-primary border-shape p-4 mb-3 elements-start-col items-stretch! gap-3;
+  }
+
+  /* The Use Best Discount Wins button: full width on phone, its own width from @3xl up. */
+  .offer-sale-warning-action {
+    @apply elements-start-col items-stretch! @3xl:flex-row;
+  }
+
   /* An Extras row: title and hint on the left, a switch or button on the right. */
   .offer-extra {
     @apply elements-between gap-4 w-full;
