@@ -144,8 +144,12 @@ export function orderActions(
 > {
   const input = orderMessageInput(order);
   const stage = orderStage(input);
-  const shopperNumber = shopperWhatsappNumber(order.shipping.phone, order.shipping.country);
-  const text = staffWhatsappText(stage, input, order.shipping.fullName);
+  // Paid from abroad for delivery in Egypt: we message the payer, not the recipient.
+  const payer = order.payer ?? null;
+  const shopperNumber = payer
+    ? shopperWhatsappNumber(payer.phone, payer.country)
+    : shopperWhatsappNumber(order.shipping.phone, order.shipping.country);
+  const text = staffWhatsappText(stage, input, payer?.fullName ?? order.shipping.fullName);
   const due = paymentDue(stage, input);
   const open = order.status === 'pending';
   // A delivery fee agreed later: Egypt large orders (Cash on Delivery, InstaPay) and Bank Transfer
@@ -295,7 +299,7 @@ export function toOrderLineAdminRows(
     const abroad = abroadPrices(order);
     const orderTotalLabel = formatOrderTotal(order, abroad);
     const egyptTotalLabel = abroad ? `${formatMoney(abroad.egyptTotal, 'EGP', 0)} in Egypt` : null;
-    const abroadTagLabel = abroad ? abroadTag(abroad) : null;
+    const abroadTagLabel = abroad ? abroadTag(abroad, order.pricing.paidFromCountry !== undefined) : null;
     const actions = orderActions(order, notesById.get(order.id) ?? null);
 
     order.pricing.lines.forEach((line, index) => {
@@ -309,8 +313,8 @@ export function toOrderLineAdminRows(
         orderRef: shortOrderRef(order.id),
         placedAtLabel,
         updatedAtLabel,
-        customerName: order.shipping.fullName,
-        country: order.shipping.country,
+        customerName: order.payer?.fullName ?? order.shipping.fullName,
+        country: order.payer?.country ?? order.shipping.country,
         status: order.status,
         paymentMethod: order.paymentMethod,
         paymentLabel: payLabel,
@@ -328,7 +332,7 @@ export function toOrderLineAdminRows(
         orderTotalLabel,
         egyptTotalLabel,
         abroadTag: abroadTagLabel,
-        phone: order.shipping.phone,
+        phone: order.payer?.phone ?? order.shipping.phone,
         isFirstLine: index === 0,
         ...actions,
       });

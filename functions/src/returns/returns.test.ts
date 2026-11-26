@@ -470,6 +470,17 @@ describe('requestReturn input and building', () => {
       nowMs: NOW,
     });
 
+  it('refuses a return on an order paid from abroad for delivery in Egypt (asked on WhatsApp)', () => {
+    assert.throws(
+      () =>
+        build(
+          { items: [{ lineIndex: 0, quantity: 1, kind: 'return', reason: 'didnt-fit' }] },
+          { pricing: { ...order.pricing, paidFromCountry: 'US' } },
+        ),
+      ReturnRequestError,
+    );
+  });
+
   it('builds the design example: size exchange plus a return with its gift', () => {
     const built = build({
       items: [

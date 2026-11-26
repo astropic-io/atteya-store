@@ -49,12 +49,31 @@ import type { OrderDetails } from '../../models/order-admin.model';
           Copy
         </button>
       </div>
+      @if (d.customer.paysFrom; as paysFrom) {
+        <p class="admin-order-muted">{{ paysFrom }} · sending to someone in Egypt</p>
+      }
       <p class="admin-order-muted">{{ d.customer.account }}</p>
     </section>
 
     <section class="admin-order-box" aria-label="Delivery address">
       <h3 class="admin-order-box__title">Delivery Address</h3>
-      <p class="font-bold! break-words">{{ d.customer.name }}</p>
+      @if (d.recipient; as recipient) {
+        <p class="admin-order-muted">Recipient</p>
+        <p class="font-bold! break-words">{{ recipient.name }}</p>
+        <div class="admin-order-copy">
+          <span class="break-all" dir="ltr">{{ recipient.phone }}</span>
+          <button
+            matButton
+            type="button"
+            [attr.aria-label]="'Copy recipient phone number ' + recipient.phone"
+            (click)="copy(recipient.phone, 'Phone number')"
+          >
+            Copy
+          </button>
+        </div>
+      } @else {
+        <p class="font-bold! break-words">{{ d.customer.name }}</p>
+      }
       <address class="not-italic elements-start-col gap-0.5">
         @for (line of d.address.lines; track $index) {
           <span class="break-words">{{ line }}</span>

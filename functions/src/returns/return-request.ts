@@ -288,7 +288,8 @@ export function buildReturnRequest(build: BuildReturnInput): BuiltReturnRequest 
     {
       status: order['status'],
       deliveredAtMs,
-      isInternational: pricing['isInternational'] === true,
+      // Paid from abroad (delivered in Egypt) is handled on WhatsApp like an order shipped abroad.
+      isInternational: pricing['isInternational'] === true || typeof pricing['paidFromCountry'] === 'string',
       returns,
     },
     build.nowMs,

@@ -219,7 +219,8 @@ export function takeStock(data: DocumentData | null, demand: ProductStockDemand)
   return nextStockAfterDemand(stockSnapshot(data), demand);
 }
 
-function assertConfirmable(order: DocumentData): void {
+/** Exported for tests. */
+export function assertConfirmable(order: DocumentData): void {
   if (!isManualPayment(order['paymentMethod'])) {
     throw new HttpsError(
       'failed-precondition',
@@ -231,11 +232,13 @@ function assertConfirmable(order: DocumentData): void {
   const pricing = isRecord(order['pricing']) ? order['pricing'] : null;
   const fulfilment = pricing && typeof pricing['fulfilment'] === 'string' ? pricing['fulfilment'] : '';
   if (order['paymentMethod'] === 'bank-transfer') {
-    // Bank Transfer is for orders shipped outside Egypt only.
-    if (country === 'EG' || fulfilment !== 'international-bank-transfer') {
+    // Bank Transfer is for orders paid from abroad: shipped outside Egypt, or delivered to
+    // someone in Egypt and paid from abroad (`pricing.paidFromCountry`).
+    const paidFromAbroad = typeof pricing?.['paidFromCountry'] === 'string';
+    if ((country === 'EG' && !paidFromAbroad) || fulfilment !== 'international-bank-transfer') {
       throw new HttpsError(
         'failed-precondition',
-        'Only Bank Transfer orders shipped abroad are confirmed here.',
+        'Only Bank Transfer orders paid from abroad are confirmed here.',
       );
     }
   } else if (country !== 'EG' && fulfilment !== 'domestic-cod' && fulfilment !== 'domestic-instapay') {

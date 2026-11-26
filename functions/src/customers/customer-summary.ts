@@ -35,6 +35,7 @@ export const CUSTOMER_ORDER_FIELDS = [
   'shipping.phone',
   'shipping.city',
   'shipping.country',
+  'payer',
 ] as const;
 
 /** Statuses whose pounds received (`receivedEgp()`) count toward `spentEgp`. */
@@ -127,6 +128,21 @@ export function customerOrderFrom(
 ): CustomerOrderInput {
   const shipping = (data['shipping'] ?? {}) as Record<string, unknown>;
   const pricing = (data['pricing'] ?? {}) as Record<string, unknown>;
+  // Paid from abroad for delivery to someone in Egypt: the customer is the payer, not the recipient.
+  const payer = data['payer'];
+  if (payer && typeof payer === 'object' && !Array.isArray(payer)) {
+    const p = payer as Record<string, unknown>;
+    return {
+      id,
+      status: text(data['status']),
+      totalEgp: receivedEgp(pricing as ReceivedEgpPricing),
+      createdAtMs,
+      fullName: text(p['fullName']),
+      phone: text(p['phone']),
+      city: '',
+      country: text(p['country']).toUpperCase(),
+    };
+  }
   return {
     id,
     status: text(data['status']),

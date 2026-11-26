@@ -121,6 +121,8 @@ export const OrderPricingSnapshotSchema = v.object({
   ),
   /** Card orders shipped abroad (ATS-311): whole pounds Paymob charges. `totalEgp` stays the Egypt price. */
   chargeEgp: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
+  /** Paid from abroad, delivered to someone in Egypt: the country the shopper pays from. */
+  paidFromCountry: v.optional(country),
 });
 
 export const OrderPaymobSchema = v.object({
@@ -131,6 +133,18 @@ export const OrderPaymobSchema = v.object({
   transactionId: v.nullable(v.number(), null),
   paidAt: v.nullable(timestampSchema, null),
 });
+
+/**
+ * Paid from abroad, delivered to someone in Egypt: the shopper who pays (`shipping` is the
+ * recipient). Missing on every other order.
+ */
+export const OrderPayerSchema = v.object({
+  fullName: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(120)),
+  phone: v.pipe(v.string(), v.trim(), v.minLength(6), v.maxLength(20)),
+  country,
+});
+
+export type OrderPayer = v.InferOutput<typeof OrderPayerSchema>;
 
 /** Legacy international bank-transfer snapshot (read-only for admin / confirmation). */
 export const OrderBankTransferSchema = v.object({
@@ -193,6 +207,8 @@ const OrderBaseFields = {
   customerId: v.nullable(v.string(), null),
   customerEmail: v.nullable(v.string(), null),
   shipping: OrderShippingSchema,
+  /** A bad payer block is dropped rather than hiding the order. */
+  payer: v.optional(v.fallback(v.nullable(OrderPayerSchema), null), null),
   pricing: OrderPricingSnapshotSchema,
   confirmedAt: v.nullable(timestampSchema, null),
   confirmedBy: v.nullable(v.string(), null),
@@ -288,6 +304,8 @@ export function orderFromView(view: OrderViewDoc): StoreOrderDoc {
     customerId: null,
     customerEmail: null,
     shipping: view.shipping,
+    // The view never holds who pays (the order page doesn't show it).
+    payer: null,
     pricing: view.pricing,
     confirmedAt: view.confirmedAt,
     confirmedBy: null,

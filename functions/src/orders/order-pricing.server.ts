@@ -163,6 +163,13 @@ export function isAgreedShippingKind(kind: unknown): kind is 'domestic-agreed' |
   return kind === 'domestic-agreed' || kind === 'international-agreed';
 }
 
+/**
+ * Paid from abroad, delivered in Egypt: an order heavier than every Egypt box can't be placed this
+ * way (its fee would be agreed later, and the shopper pays once, by Bank Transfer).
+ */
+export const PAID_FROM_ABROAD_TOO_HEAVY_MESSAGE =
+  "This order is too large to send to someone in Egypt from here. Message us on WhatsApp and we'll help you order.";
+
 /** Card is never offered while delivery and the fee are agreed on WhatsApp first (ATS-314). */
 export const CARD_AGREED_ABROAD_MESSAGE = "Card isn't available when we agree delivery with you first.";
 
@@ -182,8 +189,15 @@ export interface OrderPricingSnapshot {
   readonly totalEgp: number;
   readonly fulfilment: OrderFulfilment;
   /**
-   * Orders shipped abroad (Bank Transfer, and Card from ATS-311): the amount in the shopper's
-   * currency. `totalEgp` stays the Egypt price.
+   * Paid from abroad, delivered to someone in Egypt: the country the shopper pays from (never
+   * `EG`). The order is an Egypt delivery (`isInternational` false, Egypt delivery fee) paid like
+   * an order abroad: Bank Transfer, `payIn` in that country's currency at abroad prices. Missing
+   * on every other order.
+   */
+  readonly paidFromCountry?: string;
+  /**
+   * Orders shipped abroad (Bank Transfer, and Card from ATS-311), and orders paid from abroad
+   * (`paidFromCountry`): the amount in the shopper's currency. `totalEgp` stays the Egypt price.
    */
   readonly payIn?: OrderPayIn;
   /**
@@ -733,6 +747,7 @@ async function priceWithOffers(
     totalDisplay: totalEgp,
     totalEgp,
     fulfilment,
+    ...(input.payer ? { paidFromCountry: input.payer.country } : {}),
   };
 
   return { pricing, usedOffers: Array.from(usedOffers.values()) };
@@ -982,6 +997,10 @@ export function quoteShippingLine(
 ): { line: OrderShippingLine; freeShippingOfferId: string | null } {
   switch (plan.kind) {
     case 'to-be-agreed':
+      // Bank Transfer to an Egypt address is only paid from abroad: the fee is never agreed later.
+      if (c.paymentMethod === 'bank-transfer' && !c.isInternational) {
+        throw new HttpsError('failed-precondition', PAID_FROM_ABROAD_TOO_HEAVY_MESSAGE);
+      }
       if (c.paymentMethod === 'paymob') {
         throw new HttpsError(
           'failed-precondition',
