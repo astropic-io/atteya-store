@@ -236,9 +236,10 @@
   }
 
   /* Step 3 → More settings: "Skip products already on sale" would leave most products out.
-     Black 1.5px border, no colour; the bottom margin keeps 24px to the next field with the grid gap. */
+     Black 1.5px border, no colour. The dropdown above grows to its hint's real height while this box shows;
+     the top margin keeps 16px or more below the hint, the bottom margin keeps 24px to the next field with the grid gap. */
   .offer-sale-warning {
-    @apply w-full border-[1.5px] border-primary border-shape p-4 mb-3 elements-start-col items-stretch! gap-3;
+    @apply w-full border-[1.5px] border-primary border-shape p-4 mt-4 mb-3 elements-start-col items-stretch! gap-3;
   }
 
   /* The Use Best Discount Wins button: full width on phone, its own width from @3xl up. */
