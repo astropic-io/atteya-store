@@ -86,6 +86,16 @@ describe('itemCancelRefusal', () => {
     assert.match(itemCancelRefusal(order({ status: 'delivered' }))!, /Start Return for Customer/);
     assert.match(itemCancelRefusal(order({ status: 'cancelled' }))!, /cancelled/);
   });
+  it('refuses an order whose total is missing, so a cancel never saves a negative total', () => {
+    const { totalEgp: _t, ...noTotal } = order().pricing;
+    assert.match(itemCancelRefusal(order({ pricing: noTotal }))!, /total can't be read/);
+    const cant = /total can't be read/;
+    assert.match(itemCancelRefusal(order({ pricing: { ...order().pricing, subtotalEgp: -5 } }))!, cant);
+    assert.match(itemCancelRefusal(order({ pricing: { ...order().pricing, totalEgp: null } }))!, cant);
+    assert.match(itemCancelRefusal(order({ pricing: { ...order().pricing, totalEgp: 1135.5 } }))!, cant);
+    const { subtotalEgp: _s, ...noSubtotal } = order().pricing;
+    assert.match(itemCancelRefusal(order({ pricing: noSubtotal }))!, cant);
+  });
 });
 
 describe('planItemCancel', () => {
@@ -139,6 +149,13 @@ describe('planItemCancel', () => {
     assert.deepEqual(r, { ok: false, message: ITEM_CANCEL_LAST_PIECES_MESSAGE });
     assert.equal(planItemCancel(order(), { lineIndex: 2, quantity: 1, amountOffEgp: null }).ok, false);
     assert.equal(planItemCancel(order(), { lineIndex: 0, quantity: 4, amountOffEgp: null }).ok, false);
+  });
+
+  it('refuses an amount off bigger than the saved total', () => {
+    const o = order({ pricing: { ...order().pricing, totalEgp: 0, subtotalEgp: 0 } });
+    const r = planItemCancel(o, { lineIndex: 0, quantity: 1, amountOffEgp: null });
+    assert.equal(r.ok, false);
+    assert.match((r as { message: string }).message, /more than this order's total/);
   });
 
   it('refuses when the line at that place is not the one staff saw', () => {
