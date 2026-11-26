@@ -147,7 +147,7 @@
             <mat-optgroup [label]="group.label">
               @for (option of group.options; track optionKey(option)) {
                 <mat-option [value]="option">
-                  <span class="offer-option">
+                  <span class="offer-option" [title]="optionTitle(option)">
                     <span class="offer-option-name">
                       {{ option.name }}
                       @if (option.also) {
