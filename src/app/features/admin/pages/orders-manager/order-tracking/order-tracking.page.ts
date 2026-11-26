@@ -1,8 +1,21 @@
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, input, OnInit, PLATFORM_ID, resource } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Component, computed, inject, input, OnInit, PLATFORM_ID, resource, signal } from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
+import { MatDialog } from '@angular/material/dialog';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { firstValueFrom } from 'rxjs';
+import { returnEntry } from '@core/services/orders/order-returns';
 import { SeoService } from '@core/services/seo';
+import { SnackbarService } from '@core/services/snack-bar/snack-bar.service';
+import {
+  RETURN_REQUEST_DIALOG_CONFIG,
+  ReturnRequestDialogComponent,
+  type ReturnRequestDialogData,
+  type ReturnRequestDialogResult,
+} from '../../../../returns/dialogs/return-request-dialog/return-request-dialog.component';
+import { ReturnsAdminService } from '../../returns-manager/services/returns-admin.service';
+import { orderActionError } from '../utils/order-action-error';
 import { SharedIconModule } from '@shared/ui/mat-icon';
 import { SkeletonComponent } from '@shared/ui/skeleton';
 import { StatusBadgeComponent } from '@shared/ui/status-badge/status-badge.component';
@@ -28,6 +41,7 @@ import { trackingSteps } from '../utils/order-tracking.utils';
   imports: [
     RouterLink,
     MatButtonModule,
+    MatProgressSpinnerModule,
     SharedIconModule,
     SkeletonComponent,
     StatusBadgeComponent,
@@ -42,6 +56,13 @@ export class OrderTrackingPageComponent implements OnInit {
   readonly #ordersAdmin = inject(OrdersAdminService);
   readonly #seo = inject(SeoService);
   readonly #platformId = inject(PLATFORM_ID);
+  readonly #dialog = inject(MatDialog);
+  readonly #snackbar = inject(SnackbarService);
+  readonly #returnsAdmin = inject(ReturnsAdminService);
+  readonly #router = inject(Router);
+
+  /** True while Start Return for Customer sends and approves the request. */
+  readonly startingReturn = signal(false);
 
   /** From the `:orderId` route segment. */
   readonly orderId = input.required<string>();
@@ -72,6 +93,14 @@ export class OrderTrackingPageComponent implements OnInit {
     return data ? (toOrderLineAdminRows([data.order], data.productsById, data.notesById)[0] ?? null) : null;
   });
 
+  readonly order = computed(() => this.dataResource.value()?.order ?? null);
+
+  /** Delivered in Egypt, inside the 14 days, no request open (ATS-342): Start Return for Customer shows. */
+  readonly returnEntry = computed(() => {
+    const order = this.order();
+    return order ? returnEntry(order, Date.now()) : ({ kind: 'none' } as const);
+  });
+
   readonly details = computed(() => {
     const data = this.dataResource.value();
     return data
@@ -90,6 +119,52 @@ export class OrderTrackingPageComponent implements OnInit {
       description: 'Everything about one order: customer, delivery address, items, payment and progress.',
       noindex: true,
     });
+  }
+
+  /**
+   * Start Return for Customer (ATS-342): the shopper's Return or Exchange screen in staff mode.
+   * Once sent it is approved straight away (the customer gets the usual Approved email), unless a
+   * Wrong Item Sent item needs the piece that was sent: then the request page opens to approve it.
+   */
+  async startReturn(): Promise<void> {
+    const order = this.order();
+    const entry = this.returnEntry();
+    if (!order || entry.kind !== 'open' || this.startingReturn()) return;
+    const ref = this.#dialog.open<
+      ReturnRequestDialogComponent,
+      ReturnRequestDialogData,
+      ReturnRequestDialogResult
+    >(ReturnRequestDialogComponent, {
+      ...RETURN_REQUEST_DIALOG_CONFIG,
+      data: {
+        orderId: order.id,
+        viewKey: null,
+        order,
+        until: entry.until,
+        forCustomer: { name: order.shipping.fullName || 'the customer' },
+      },
+    });
+    const result = await firstValueFrom(ref.afterClosed());
+    if (!result) return;
+    if (result.wrongItem) {
+      this.#snackbar.info(
+        `Request ${result.ref} sent. Pick the piece that was sent, then approve it.`,
+        'Close',
+        8000,
+      );
+      await this.#router.navigate(['/admin/returns', result.requestId]);
+      return;
+    }
+    this.startingReturn.set(true);
+    try {
+      await this.#returnsAdmin.approve(result.requestId, []);
+      this.#snackbar.success(`Request ${result.ref} approved. The customer gets the Approved email.`);
+    } catch (error: unknown) {
+      this.#snackbar.error(`Request ${result.ref} was sent but not approved. ${orderActionError(error)}`);
+    } finally {
+      this.startingReturn.set(false);
+    }
+    await this.#router.navigate(['/admin/returns', result.requestId]);
   }
 
   /** Passed to `app-order-actions`, which calls it after a save. */

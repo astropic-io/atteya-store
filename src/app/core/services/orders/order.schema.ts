@@ -169,6 +169,27 @@ export const OrderStatusChangeSchema = v.object({
 
 export type OrderStatusChange = v.InferOutput<typeof OrderStatusChangeSchema>;
 
+/** One item cancel's staff-only row (`orderStaffNotes/{id}.itemCancels`, ATS-342). */
+export const OrderItemCancelNoteSchema = v.object({
+  id: v.string(),
+  label: v.optional(v.string(), ''),
+  at: v.optional(v.nullable(timestampSchema), null),
+  by: v.optional(v.nullable(v.string()), null),
+  byEmail: v.optional(v.nullable(v.string()), null),
+  reason: v.optional(v.nullable(v.string()), null),
+  amountOffEgp: v.optional(v.number(), 0),
+  refundEgp: v.optional(v.number(), 0),
+});
+
+/** One item refund marked sent (`orderStaffNotes/{id}.itemRefunds`, ATS-342). */
+export const OrderItemRefundNoteSchema = v.object({
+  id: v.string(),
+  at: v.optional(v.nullable(timestampSchema), null),
+  by: v.optional(v.nullable(v.string()), null),
+  byEmail: v.optional(v.nullable(v.string()), null),
+  reference: v.optional(v.nullable(v.string()), null),
+});
+
 /**
  * `orderStaffNotes/{orderId}`: the staff-only side of an order (admin read, Admin SDK write), kept
  * off `orders/{id}` because the shopper who owns the order can read that doc.
@@ -178,6 +199,10 @@ export const OrderStaffNotesSchema = v.object({
   statusHistory: v.optional(v.fallback(v.array(OrderStatusChangeSchema), []), []),
   /** Typed when cancelling; never shown to the shopper. */
   cancelReason: v.optional(v.nullable(v.string()), null),
+  /** Who cancelled each item and why (ATS-342), matched to `orders.itemCancels` by `id`. */
+  itemCancels: v.optional(v.fallback(v.array(OrderItemCancelNoteSchema), []), []),
+  /** Who marked each item refund as sent (ATS-342), by cancel `id`. */
+  itemRefunds: v.optional(v.fallback(v.array(OrderItemRefundNoteSchema), []), []),
   /**
    * Bank Transfer paid in another currency (ATS-304): the abroad markup and the rate before it
    * (shopper currency per 1 EGP) behind `pricing.payIn.factor`. Staff-only. Unreadable: null.
@@ -219,6 +244,11 @@ const OrderBaseFields = {
    * `readReturnSummaries()` from `@core/config/returns`.
    */
   returns: v.optional(v.fallback(v.array(v.unknown()), []), []),
+  /**
+   * Pieces staff cancelled from the order (server-written, ATS-342), kept raw: read it with
+   * `readItemCancels()` from `@core/config/order-item-cancel`.
+   */
+  itemCancels: v.optional(v.fallback(v.array(v.unknown()), []), []),
 };
 
 export const StoreOrderSchema = v.object({
@@ -282,6 +312,8 @@ export const OrderViewSchema = v.object({
   deliveredAt: v.optional(v.nullable(timestampSchema), null),
   /** The order's return and exchange summary, copied by `orderViewFields()`. */
   returns: v.optional(v.fallback(v.array(v.unknown()), []), []),
+  /** Pieces staff cancelled (ATS-342), copied without the refund number. */
+  itemCancels: v.optional(v.fallback(v.array(v.unknown()), []), []),
 });
 
 export type OrderViewDoc = v.InferOutput<typeof OrderViewSchema>;
@@ -328,5 +360,6 @@ export function orderFromView(view: OrderViewDoc): StoreOrderDoc {
     shippedAt: view.shippedAt,
     deliveredAt: view.deliveredAt,
     returns: view.returns,
+    itemCancels: view.itemCancels,
   };
 }

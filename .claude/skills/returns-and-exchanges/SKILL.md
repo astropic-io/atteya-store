@@ -27,6 +27,9 @@ Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292
 - At most 10 requests per order, cancelled and rejected ones included (`RETURN_REQUESTS_PER_ORDER_MAX`), so a cancel and resend loop can't flood the staff inbox.
 - The signed-in owner is matched by uid (`customerId`); a guest by the order's secret `viewKey` from the emailed order link (`isOrderShopper()` in `functions/src/returns/return-access.ts`, constant-time compare).
 - Every refusal has a plain message (`returnRefusalMessage()` and `ReturnRequestError` in `return-request.ts`, turned into an `HttpsError` by the callable).
+- **Start Return for Customer (<KEY>-342)**: on `/admin/orders/:id`, while the shopper could send a request (`returnEntry()` open), staff open the same Return or Exchange screen with `forCustomer` (title "Return or Exchange for <name>", the refund number prefilled with the phone, a Courier fee choice "Customer pays … by InstaPay first" or "The store pays").
+- `requestReturn` with `forCustomer: true` checks the staff role instead of the owner and saves `startedByStaff`, `startedBy`, `startedByEmail` and `storePaysFee` (fee 0 when the store pays). A request started by staff sends no Request Sent or staff alert.
+- The page then approves it straight away (`approveReturnRequest`), so the customer gets the usual Approved email (or its pay version); with a Wrong Item Sent item it opens `/admin/returns/:id` to pick the sent piece and approve there.
 
 ## Kinds
 
@@ -154,7 +157,8 @@ Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292
 - Approved (`REQUEST APPROVED`): "Our courier will come to your delivery address.", Hand Over (every piece, free gifts going back included), You Get (new pieces, then the InstaPay refund), and a grey box with the courier fee (free / cash at your door / taken off your refund).
 - Rejected (`WE CAN'T TAKE IT BACK`): staff's `rejectReason` in a grey box, a full-width **Message Us on WhatsApp** button (no second one in the footer), and the items with gifts marked "Stays with the …".
 - Received (`ITEMS RECEIVED`): exchange-only says "Your exchange is done."; with a refund it says "We got your items. Your refund of EGP 850 is on its way by InstaPay."
-- Refund Sent (`REFUND SENT`): the amount staff sent (`refundSentEgp`), "Sent by InstaPay to …5678" (only the last 4 characters of `refundTo`, spaces left out) and the reference when staff gave one, then only the refunded items.
+- Refund Sent (`REFUND SENT`): the amount staff sent (`refundSentEgp`), "Sent by InstaPay to 0100 123 5678" (the full `refundTo`, so the shopper can spot a wrong number, <KEY>-342) and the reference when staff gave one, then only the refunded items.
+- Approved, its pay version and Payment Received show the refund with the full `refundTo` and a "Not yours? Message us" note, and every item of the order by state (Delivered, ↩ Returning, ✕ Cancelled) from `readOrderForEmail()` (<KEY>-342).
 - Tests for which email each status change sends and the four templates: `functions/src/email/return-emails.test.ts` (in `npm test --prefix functions`).
 
 ## Staff steps (admin Returns)

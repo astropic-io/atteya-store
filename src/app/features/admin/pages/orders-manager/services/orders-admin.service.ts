@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import * as v from 'valibot';
 import type { ReopenStatus, StaffOrderStatus } from '@core/config/order-status';
+import type { ItemCancelRequest } from '@core/config/order-item-cancel';
 import { callableFrom, injectFirestore, injectFunctionsAsync } from '@core/firebase';
 import {
   ORDER_STAFF_NOTES_COLLECTION,
@@ -84,6 +85,23 @@ export interface SetDeliveryFeeResult {
   readonly orderId: string;
   readonly feeEgp: number;
   readonly totalEgp: number;
+}
+
+export interface CancelOrderItemResult {
+  readonly orderId: string;
+  readonly cancelId: string;
+  readonly amountOffEgp: number;
+  readonly refundEgp: number;
+  readonly totalEgp: number;
+  /** Pieces that couldn't go back into stock (size or product gone). */
+  readonly notReturned: number;
+}
+
+export interface MarkItemRefundSentResult {
+  readonly orderId: string;
+  readonly cancelId: string;
+  /** False when it was already marked sent. */
+  readonly changed: boolean;
 }
 
 @Service()
@@ -221,5 +239,32 @@ export class OrdersAdminService {
   async deleteOrder(orderId: string): Promise<void> {
     const call = await callableFrom<{ orderId: string }, unknown>(this.#functions(), 'deleteOrder');
     await call({ orderId });
+  }
+
+  /**
+   * Staff and admins: cancel some pieces of one item (ATS-342). The server checks the rules on the
+   * live order, changes the total, puts the pieces back into stock and emails the shopper.
+   */
+  async cancelOrderItem(req: ItemCancelRequest): Promise<CancelOrderItemResult> {
+    const call = await callableFrom<ItemCancelRequest, CancelOrderItemResult>(
+      this.#functions(),
+      'cancelOrderItem',
+    );
+    const response = await call(req);
+    return response.data;
+  }
+
+  /** Admin only: the refund of a cancelled item went out by InstaPay (ATS-342). */
+  async markItemRefundSent(
+    orderId: string,
+    cancelId: string,
+    reference: string | null = null,
+  ): Promise<MarkItemRefundSentResult> {
+    const call = await callableFrom<
+      { orderId: string; cancelId: string; reference: string | null },
+      MarkItemRefundSentResult
+    >(this.#functions(), 'markItemRefundSent');
+    const response = await call({ orderId, cancelId, reference });
+    return response.data;
   }
 }

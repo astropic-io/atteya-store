@@ -27,6 +27,7 @@ import {
   infoBoxes,
   INK,
   itemGrid,
+  stateGroup,
   type ItemGift,
   mainButton,
   nextStepBox,
@@ -50,6 +51,7 @@ import {
   type ItemCard,
 } from './email-blocks.js';
 import type { OrderEmailKind } from './order-email-events.js';
+import type { ItemCancelEntry, ItemCancelPiece } from '../store/order-item-cancel.js';
 import { orderConfirmationUrl, type OrderEmailLine, type OrderEmailOrder } from './order-email-model.js';
 
 export { escapeHtml, type EmailButton } from './email-blocks.js';
@@ -165,6 +167,8 @@ export function renderOrderEmail(
       return orderDelivered(order, ctx);
     case 'order-reopened':
       return orderReopened(order, ctx);
+    case 'order-item-cancelled':
+      return itemCancelled(order, ctx);
     case 'store-new-order':
       return storeNewOrder(order, ctx);
   }
@@ -728,6 +732,195 @@ function orderDelivered(order: OrderEmailOrder, ctx: OrderEmailContext): Rendere
       view ? linkRow(view) : null,
     ],
   });
+}
+
+/**
+ * Staff cancelled some pieces of an item before it shipped (ATS-342). Says what was cancelled,
+ * the refund with the customer's whole InstaPay number (so they can tell us if it's wrong), then
+ * every item in the order by state: Still Coming and Cancelled, and the new total.
+ */
+function itemCancelled(order: OrderEmailOrder, ctx: OrderEmailContext): RenderedEmail {
+  const entry = order.itemCancels.at(-1)!;
+  const date = shortDate(entry.atMs);
+  const pieces = entry.item.quantity;
+  const pieceWord = pieces === 1 ? '1 item' : `${pieces} items`;
+  const waLink = whatsappChatUrl(ctx.whatsappNumber.trim());
+  const refund = entry.refundEgp > 0;
+  const cod = order.paymentMethod === 'cash-on-delivery';
+  const due = order.status === 'pending' && !cod;
+  const notYours = waLink
+    ? 'This is the number you gave us. Not yours? Message us on WhatsApp before we send it.'
+    : 'This is the number you gave us. Not yours? Reply to this email before we send it.';
+  const money: Block = refund
+    ? {
+        html: refundBox(entry.refundEgp, entry.refundTo ?? '', "We'll send it by InstaPay to", notYours),
+        text: `Your refund: ${formatEgp(entry.refundEgp)}\nWe'll send it by InstaPay to ${entry.refundTo ?? ''}\n${notYours}`,
+      }
+    : amountRow([
+        cod
+          ? {
+              label: 'Cash at your door now',
+              amount: formatEgp(cashOnDeliveryEgp(order)),
+              note: 'Pay the courier when your order arrives.',
+            }
+          : due
+            ? {
+                label: 'New amount to pay',
+                amount: formatEgp(order.totalEgp),
+                note: "Send this amount by InstaPay. Already paid more? We'll send the difference back.",
+              }
+            : { label: 'New order total', amount: formatEgp(order.totalEgp), note: null },
+      ]);
+  const view = orderButton(order, ctx);
+  const sentence = `As you asked, we took ${pieceWord} out of your order ${order.ref}. The rest is still on its way.`;
+  return renderShopper(order, ctx, {
+    subject: `We cancelled ${pieceWord} from your order ${order.ref}`,
+    kicker: date ? `Order updated · ${date}` : 'Order updated',
+    status: ['Item', 'Cancelled'],
+    sentence,
+    blocks: [
+      money,
+      itemStatesRow(order, ctx, null),
+      {
+        html: section(
+          totals(
+            [
+              ['Subtotal', formatEgp(order.subtotalEgp)],
+              [shippingLabel(order), order.shippingEgp > 0 ? formatEgp(order.shippingEgp) : 'Free'],
+              ['New total', formatEgp(order.totalEgp)],
+            ],
+            refund ? [['Coming back to you', formatEgp(entry.refundEgp)]] : [],
+          ),
+          8,
+        ),
+        text: [
+          `Subtotal: ${formatEgp(order.subtotalEgp)}`,
+          `${shippingLabel(order)}: ${order.shippingEgp > 0 ? formatEgp(order.shippingEgp) : 'Free'}`,
+          `New total: ${formatEgp(order.totalEgp)} (was ${formatEgp(entry.totalBeforeEgp)})`,
+          ...(refund ? [`Coming back to you: ${formatEgp(entry.refundEgp)}`] : []),
+        ].join('\n'),
+      },
+      view ? buttonRow(view) : null,
+    ],
+  });
+}
+
+/**
+ * The refund under the header: the amount, then the customer's whole InstaPay number large, so
+ * they can tell us before we send it if it's wrong (ATS-342).
+ */
+export function refundBox(amountEgp: number, refundTo: string, lead: string, note: string): string {
+  const font = "font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;";
+  return `<tr><td class="px" style="padding:28px 40px;border-bottom:1px solid ${GREY_LINE_HEX};">
+<p style="margin:0 0 6px;${font}font-size:11px;font-weight:600;letter-spacing:2px;color:${TEXT_MUTED};">YOUR REFUND</p>
+<p class="amount" style="margin:0 0 14px;${font}font-size:40px;line-height:1.1;font-weight:800;letter-spacing:-1px;color:${INK};">${escapeHtml(formatEgp(amountEgp))}</p>
+<p style="margin:0 0 4px;${font}font-size:15px;line-height:1.5;color:${INK};">${escapeHtml(lead)}</p>
+<p style="margin:0 0 10px;${font}font-size:22px;line-height:1.3;font-weight:800;letter-spacing:1px;color:${INK};word-break:break-word;">${escapeHtml(refundTo)}</p>
+<p style="margin:0;${font}font-size:13px;line-height:1.5;color:${TEXT_MUTED};">${escapeHtml(note)}</p>
+</td></tr>`;
+}
+
+const GREY_LINE_HEX = '#e5e5e5';
+
+/** One group of `itemStatesRow()`: its bar, style and items. */
+export interface ItemStateGroup {
+  readonly label: string;
+  readonly right: string | null;
+  readonly style: 'focus' | 'plain' | 'muted';
+  readonly cards: readonly ItemCard[];
+  readonly text: string;
+}
+
+/**
+ * Every item in the order by what happened to it (ATS-342): the order's lines under the state of
+ * the order ("Still coming", "Delivered · yours to keep"), and each cancel as "Cancelled". Return
+ * emails add their own groups with `extra` (the pieces coming back) before the cancelled ones.
+ */
+export function itemStateGroups(
+  order: OrderEmailOrder,
+  ctx: OrderEmailContext,
+  lines: readonly OrderEmailLine[],
+  focusCancelId: string | null,
+): ItemStateGroup[] {
+  const groups: ItemStateGroup[] = [];
+  const bought = lines.reduce((sum, line) => sum + (line.giftName === null ? line.quantity : 0), 0);
+  if (lines.length) {
+    const delivered = order.status === 'delivered';
+    const shipped = order.status === 'shipped';
+    groups.push({
+      label: delivered
+        ? `✓ Delivered · ${bought}`
+        : shipped
+          ? `On its way · ${bought}`
+          : `Still coming · ${bought}`,
+      right: delivered
+        ? joinParts([shortDate(order.deliveredAtMs), 'yours to keep']).replace(/\n/g, ' · ')
+        : shipped
+          ? shortDate(order.shippedAtMs)
+          : order.status === 'confirmed'
+            ? 'Confirmed'
+            : null,
+      style: 'plain',
+      cards: itemCards(order, lines, ctx, true, 128),
+      text: itemsText(order, lines, true),
+    });
+  }
+  const latest = order.itemCancels.at(-1)?.id ?? null;
+  for (const entry of order.itemCancels) {
+    const focus = focusCancelId === null ? entry.id === latest : entry.id === focusCancelId;
+    groups.push(cancelGroup(entry, ctx, focus));
+  }
+  return groups;
+}
+
+function cancelGroup(entry: ItemCancelEntry, ctx: OrderEmailContext, focus: boolean): ItemStateGroup {
+  const date = shortDate(entry.atMs);
+  const refundNote =
+    entry.refundEgp > 0 ? (entry.refundSentAtMs !== null ? 'refund sent' : 'refund on its way') : null;
+  const card: ItemCard = {
+    name: entry.item.name || 'Item',
+    details: pieceDetails(entry.item),
+    price: entry.amountOffEgp > 0 ? `−${formatEgp(entry.amountOffEgp)}` : null,
+    imageSrc: imageUrl(entry.item.imagePath, ctx, 128),
+    tags: ['Cancelled'],
+    ...(entry.gifts.length
+      ? { gifts: entry.gifts.map((g) => ({ name: g.name || 'Gift', details: pieceDetails(g) })) }
+      : {}),
+  };
+  return {
+    label: `✕ Cancelled · ${entry.item.quantity}`,
+    right: joinParts([date, refundNote]).replace(/\n/g, ' · ') || null,
+    style: focus ? 'focus' : 'muted',
+    cards: [card],
+    text: `- ${card.name} (${card.details})${entry.amountOffEgp > 0 ? `: ${formatEgp(entry.amountOffEgp)} off` : ''}${
+      refundNote ? `, ${refundNote}` : ''
+    }`,
+  };
+}
+
+function pieceDetails(piece: ItemCancelPiece): string {
+  const tags = piece.optionLabels
+    .map((opt) => (opt.label.trim().toLowerCase() === 'size' ? `Size ${opt.value}` : opt.value))
+    .filter((tag) => tag.trim().length > 0);
+  return [...tags, `Qty ${piece.quantity}`].join(' · ');
+}
+
+/** "Your Order Now": every item grouped by state, with `extra` groups first (a return's pieces). */
+export function itemStatesHtml(
+  title: string,
+  groups: readonly ItemStateGroup[],
+): { html: string; text: string } {
+  return {
+    html: section(
+      `${sectionTitle(title)}${groups.map((g) => stateGroup(g.label, g.right, g.style, g.cards)).join('\n')}`,
+      36,
+    ),
+    text: `${title}:\n${groups.map((g) => `${g.label}${g.right ? ` (${g.right})` : ''}\n${g.text}`).join('\n\n')}`,
+  };
+}
+
+function itemStatesRow(order: OrderEmailOrder, ctx: OrderEmailContext, focusCancelId: string | null): Block {
+  return itemStatesHtml('Your Order Now', itemStateGroups(order, ctx, order.lines, focusCancelId));
 }
 
 function paymentFailed(order: OrderEmailOrder, ctx: OrderEmailContext): RenderedEmail {

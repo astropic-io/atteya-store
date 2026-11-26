@@ -29,7 +29,24 @@
         </p>
         <p class="admin-order-muted">Updated {{ row.updatedAtLabel }}</p>
       </div>
-      <app-order-actions [row]="row" [afterChange]="reloadFn" />
+      <div class="flex flex-wrap items-center gap-2">
+        @if (returnEntry().kind === 'open') {
+          <button
+            matButton="outlined"
+            type="button"
+            [disabled]="startingReturn()"
+            [attr.aria-label]="startingReturn() ? 'Starting the return…' : null"
+            (click)="startReturn()"
+          >
+            @if (startingReturn()) {
+              <mat-progress-spinner mode="indeterminate" diameter="18" />
+            } @else {
+              <span>Start Return for Customer</span>
+            }
+          </button>
+        }
+        <app-order-actions [row]="row" [afterChange]="reloadFn" />
+      </div>
     </section>
 
     @if (d.nextStep; as step) {
@@ -52,7 +69,7 @@
       </aside>
 
       <div class="elements-start-col items-stretch! gap-4 min-w-0">
-        <app-order-items [details]="d" />
+        <app-order-items [details]="d" [order]="order()" [orderRef]="row.orderRef" [afterChange]="reloadFn" />
 
         <section class="admin-order-box" aria-label="Order progress">
           <h2 class="admin-order-box__title">Order Progress</h2>

@@ -57,6 +57,10 @@ export function orderViewFields(
     deliveryFeeSetAt: data['deliveryFeeSetAt'] ?? null,
     // Return and exchange requests (id, ref, status, items): the order page shows their status.
     returns: Array.isArray(data['returns']) ? data['returns'] : [],
+    // Items staff cancelled (ATS-342), without where the refund goes.
+    itemCancels: Array.isArray(data['itemCancels'])
+      ? data['itemCancels'].map((entry: unknown) => (isRecord(entry) ? { ...entry, refundTo: null } : entry))
+      : [],
   };
 }
 

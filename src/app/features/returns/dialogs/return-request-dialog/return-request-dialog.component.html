@@ -3,13 +3,21 @@
     <mat-icon name="close" />
   </button>
   <div class="elements-start-col min-w-0">
-    <h2 id="return-request-title" class="font-title-lg font-bold!">Return or Exchange</h2>
+    <h2 id="return-request-title" class="font-title-lg font-bold! break-words">
+      {{ staff ? 'Return or Exchange for ' + staff.name : 'Return or Exchange' }}
+    </h2>
     <p class="font-body-sm text-on-surface-variant">Order {{ orderRef }} · until {{ data.until }}</p>
   </div>
 </header>
 
 <mat-dialog-content>
   <div class="elements-start-col items-stretch! gap-6">
+    @if (staff) {
+      <p class="bg-primary text-on-primary border-shape px-4 py-3 font-body-md">
+        You're sending this for the customer. It goes straight to Approved, and they get the usual Approved
+        email.
+      </p>
+    }
     <section class="elements-start-col items-stretch! gap-6" aria-labelledby="return-pick-heading">
       <h3 id="return-pick-heading" class="font-title-md font-bold!">Pick the items</h3>
 
@@ -243,9 +251,15 @@
     @if (needsRefundTo()) {
       <section class="elements-start-col items-stretch! gap-6" aria-labelledby="return-refund-heading">
         <div class="elements-start-col gap-1">
-          <h3 id="return-refund-heading" class="font-title-md font-bold!">Your refund</h3>
+          <h3 id="return-refund-heading" class="font-title-md font-bold!">
+            {{ staff ? 'Their refund' : 'Your refund' }}
+          </h3>
           <p id="return-refund-to-hint" class="font-body-sm text-on-surface-variant">
-            We send your refund here once the items are back with us.
+            {{
+              staff
+                ? 'We send the refund here once the items are back. The customer sees this number in the email.'
+                : 'We send your refund here once the items are back with us.'
+            }}
           </p>
         </div>
         <mat-form-field class="w-full" appearance="outline">
@@ -275,6 +289,23 @@
       <mat-hint align="end">{{ note().length }} / {{ noteMax }}</mat-hint>
     </mat-form-field>
 
+    @if (staff && feeChoice()) {
+      <section class="elements-start-col items-stretch! gap-2" aria-labelledby="return-fee-heading">
+        <h3 id="return-fee-heading" class="font-title-md font-bold!">Courier fee</h3>
+        <mat-radio-group
+          class="elements-start-col gap-1"
+          aria-labelledby="return-fee-heading"
+          [value]="storePaysFee() ? 'store' : 'customer'"
+          (change)="storePaysFee.set($event.value === 'store')"
+        >
+          <mat-radio-button value="customer"
+            >Customer pays {{ feeChoice() }} by InstaPay first</mat-radio-button
+          >
+          <mat-radio-button value="store">The store pays</mat-radio-button>
+        </mat-radio-group>
+      </section>
+    }
+
     @if (summary(); as sum) {
       <section
         class="bg-surface-container-low border-shape p-4 elements-start-col items-stretch! gap-2"
@@ -301,13 +332,17 @@
           }
           @if (sum.refund; as refund) {
             <div class="elements-between items-baseline! gap-4 border-t border-outline-variant pt-2">
-              <dt class="font-title-md font-bold!">Your refund</dt>
+              <dt class="font-title-md font-bold!">{{ staff ? 'Refund after pickup' : 'Your refund' }}</dt>
               <dd class="font-title-md font-bold! whitespace-nowrap">{{ refund }}</dd>
             </div>
           }
         </dl>
         <p class="font-body-sm text-on-surface-variant">
-          Our courier will collect from your delivery address.
+          {{
+            staff
+              ? 'Our courier collects from the delivery address on the order.'
+              : 'Our courier will collect from your delivery address.'
+          }}
         </p>
       </section>
     }
@@ -387,7 +422,11 @@
       }
     </mat-button-toggle-group>
     <p class="font-body-sm text-on-surface-variant">
-      After you send this, please send us a photo on WhatsApp. The courier visit is on us.
+      {{
+        staff
+          ? 'Ask the customer for a photo on WhatsApp. The courier visit is on us.'
+          : 'After you send this, please send us a photo on WhatsApp. The courier visit is on us.'
+      }}
     </p>
   </div>
 </ng-template>
