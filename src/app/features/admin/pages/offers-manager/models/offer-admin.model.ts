@@ -1146,14 +1146,16 @@ export const SALE_SKIP_FIX_LINE =
 /**
  * The warning under "Products already on sale" when Skip would leave out more than half of the
  * offer's products (onSale × 2 > total). Null when Best discount wins is chosen, the offer reaches
- * no products, or half or fewer are on sale.
+ * no products, half or fewer are on sale, or the deal is Free shipping (the engine's free shipping
+ * check never reads `saleItems`, so Skip changes nothing there).
  */
 export function saleSkipWarning(
-  saleItems: OfferDraft['saleItems'],
+  draft: Pick<OfferDraft, 'saleItems' | 'reward'>,
   stats: Pick<AffectedStats, 'total' | 'onSale'>,
 ): string | null {
   const { total, onSale } = stats;
-  if (saleItems !== 'exclude' || total === 0 || onSale * 2 <= total) return null;
+  if (draft.saleItems !== 'exclude' || draft.reward.kind === 'freeShipping') return null;
+  if (total === 0 || onSale * 2 <= total) return null;
   if (onSale >= total) {
     return total === 1
       ? 'The only product in this offer is already on sale, so this offer would give nothing.'

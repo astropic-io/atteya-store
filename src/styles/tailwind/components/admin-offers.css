@@ -232,7 +232,7 @@
 
   /* The Use Best Discount Wins button: full width on phone, its own width from @3xl up. */
   .offer-sale-warning-action {
-    @apply flex flex-col @3xl:flex-row;
+    @apply elements-start-col items-stretch! @3xl:flex-row;
   }
 
   /* An Extras row: title and hint on the left, a switch or button on the right. */

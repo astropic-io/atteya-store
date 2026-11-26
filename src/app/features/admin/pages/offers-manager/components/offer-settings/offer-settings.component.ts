@@ -1,8 +1,8 @@
-import { Component, computed, input, model } from '@angular/core';
+import { Component, computed, input, model, viewChild } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
-import { MatSelectModule } from '@angular/material/select';
+import { MatSelect, MatSelectModule } from '@angular/material/select';
 import type { OfferDraft, OfferSaleItemsPolicy } from '@core/services/offers/engine';
 import { SharedIconModule } from '@shared/ui/mat-icon';
 import { SALE_SKIP_FIX_LINE, saleSkipWarning } from '../../models/offer-admin.model';
@@ -22,9 +22,11 @@ export class OfferSettingsComponent {
   readonly onSale = input(0);
 
   readonly saleSkipWarning = computed(() =>
-    saleSkipWarning(this.draft().saleItems, { total: this.total(), onSale: this.onSale() }),
+    saleSkipWarning(this.draft(), { total: this.total(), onSale: this.onSale() }),
   );
   readonly saleSkipFixLine = SALE_SKIP_FIX_LINE;
+
+  private readonly saleItemsSelect = viewChild<MatSelect>('saleItemsSelect');
 
   readonly saleItemsExplanation = computed(() =>
     this.draft().saleItems === 'exclude'
@@ -39,6 +41,12 @@ export class OfferSettingsComponent {
 
   onSaleItemsChange(value: OfferSaleItemsPolicy): void {
     this.draft.update((prev) => ({ ...prev, saleItems: value === 'exclude' ? 'exclude' : 'bestOf' }));
+  }
+
+  /** Use Best Discount Wins: switch the setting; the warning (and its button) goes away, so focus the dropdown. */
+  useBestOf(): void {
+    this.onSaleItemsChange('bestOf');
+    this.saleItemsSelect()?.focus();
   }
 
   onPriorityChange(event: Event): void {
