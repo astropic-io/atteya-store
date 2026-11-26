@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 // Runs against the compiled code (`npm test` builds first).
 import {
   ITEM_CANCEL_LAST_PIECES_MESSAGE,
+  ITEM_CANCEL_LINE_CHANGED_MESSAGE,
   itemCancelRefusal,
   itemRefundsToSendEgp,
   parseItemCancelRequest,
@@ -140,6 +141,33 @@ describe('planItemCancel', () => {
     assert.equal(planItemCancel(order(), { lineIndex: 0, quantity: 4, amountOffEgp: null }).ok, false);
   });
 
+  it('refuses when the line at that place is not the one staff saw', () => {
+    // A stale page still shows [socks, shirt, gift]; the live order lost socks already.
+    const movedGift = { ...gift, gift: { ...gift.gift, forLine: 0 } };
+    const live = order({ pricing: { ...order().pricing, lines: [shirt, movedGift] } });
+    const stale = planItemCancel(live, {
+      lineIndex: 0,
+      quantity: 1,
+      amountOffEgp: null,
+      expected: { productId: 'socks', selection: { size: 's40' }, lineQuantity: 3 },
+    });
+    assert.deepEqual(stale, { ok: false, message: ITEM_CANCEL_LINE_CHANGED_MESSAGE });
+    const fewer = planItemCancel(order(), {
+      lineIndex: 0,
+      quantity: 1,
+      amountOffEgp: null,
+      expected: { productId: 'socks', selection: { size: 's40' }, lineQuantity: 2 },
+    });
+    assert.equal(fewer.ok, false);
+    const same = planItemCancel(order(), {
+      lineIndex: 0,
+      quantity: 1,
+      amountOffEgp: null,
+      expected: { productId: 'socks', selection: { size: 's40' }, lineQuantity: 3 },
+    });
+    assert.ok(same.ok);
+  });
+
   it('owes no refund before payment or on Cash on Delivery', () => {
     for (const over of [{ status: 'pending' }, { paymentMethod: 'cash-on-delivery' }]) {
       const r = planItemCancel(order(over), { lineIndex: 0, quantity: 1, amountOffEgp: null });
@@ -161,7 +189,21 @@ describe('parseItemCancelRequest', () => {
         refundTo: '0100',
         reason: null,
         emailCustomer: true,
+        expected: null,
       },
+    );
+    assert.deepEqual(
+      parseItemCancelRequest({
+        orderId: 'o1',
+        lineIndex: 1,
+        quantity: 1,
+        expected: { productId: 'p2', selection: { size: 'M' }, lineQuantity: 2 },
+      })?.expected,
+      { productId: 'p2', selection: { size: 'M' }, lineQuantity: 2 },
+    );
+    assert.equal(
+      parseItemCancelRequest({ orderId: 'o', lineIndex: 0, quantity: 1, expected: { productId: 'p' } }),
+      null,
     );
     assert.equal(parseItemCancelRequest({ orderId: 'a/b', lineIndex: 0, quantity: 1 }), null);
     assert.equal(parseItemCancelRequest({ orderId: 'o', lineIndex: 0, quantity: 0 }), null);

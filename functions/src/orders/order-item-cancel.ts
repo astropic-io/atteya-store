@@ -47,6 +47,7 @@ export async function cancelOrderItem(
       lineIndex: req.lineIndex,
       quantity: req.quantity,
       amountOffEgp: req.amountOffEgp,
+      expected: req.expected ?? null,
     });
     if (!result.ok) throw new HttpsError('failed-precondition', result.message);
     const plan = result.plan;

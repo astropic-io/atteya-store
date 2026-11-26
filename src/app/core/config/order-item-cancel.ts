@@ -132,7 +132,21 @@ export interface ItemCancelInput {
   readonly quantity: number;
   /** Whole EGP off the order; null = the default (what was paid for those pieces). */
   readonly amountOffEgp: number | null;
+  /**
+   * What staff saw at `lineIndex` (product, options and pieces). When given, the live line must
+   * still match, so a stale page can't cancel the item that moved into that place.
+   */
+  readonly expected?: ItemCancelExpectedLine | null;
 }
+
+/** The line as the dialog showed it. */
+export interface ItemCancelExpectedLine {
+  readonly productId: string;
+  readonly selection: Readonly<Record<string, string>>;
+  readonly lineQuantity: number;
+}
+
+export const ITEM_CANCEL_LINE_CHANGED_MESSAGE = 'That item changed. Refresh and try again.';
 
 export interface ItemCancelGift {
   /** Index in the order's `pricing.lines` before this cancel. */
@@ -174,6 +188,9 @@ export function planItemCancel(order: ItemCancelOrderFacts, input: ItemCancelInp
   const lines = readLines(pricing['lines'])!;
   const line = lines[input.lineIndex];
   if (!line) return { ok: false, message: "That item isn't in this order any more. Refresh and try again." };
+  if (input.expected && !lineMatches(line, input.expected)) {
+    return { ok: false, message: ITEM_CANCEL_LINE_CHANGED_MESSAGE };
+  }
   if (line.gift) {
     return { ok: false, message: 'A free gift goes with its item. Cancel the item it came with.' };
   }
@@ -258,6 +275,26 @@ export function planItemCancel(order: ItemCancelOrderFacts, input: ItemCancelInp
       piecesLeft,
     },
   };
+}
+
+/** The live line is still the one staff saw: same product, options and pieces. */
+function lineMatches(line: ItemCancelLine, expected: ItemCancelExpectedLine): boolean {
+  return (
+    line.productId === expected.productId &&
+    line.quantity === expected.lineQuantity &&
+    selectionKey(line['selection']) === selectionKey(expected.selection)
+  );
+}
+
+/** A selection as one stable string (keys sorted), for comparing. */
+function selectionKey(raw: unknown): string {
+  const sel = record(raw);
+  if (!sel) return '';
+  return Object.keys(sel)
+    .filter((k) => typeof sel[k] === 'string')
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${JSON.stringify(sel[k])}`)
+    .join(',');
 }
 
 /** The line with `keep` pieces that now cost `lineDisplay` in all. */
@@ -376,6 +413,8 @@ export interface ItemCancelRequest {
   readonly refundTo: string | null;
   readonly reason: string | null;
   readonly emailCustomer: boolean;
+  /** The line as the dialog showed it; the server refuses when the live line differs. */
+  readonly expected?: ItemCancelExpectedLine | null;
 }
 
 /** Checks the callable's input shape; the order rules run on the live order in the transaction. */
@@ -394,6 +433,8 @@ export function parseItemCancelRequest(raw: unknown): ItemCancelRequest | null {
   const refundTo = cleanText(r['refundTo'], ITEM_CANCEL_REFUND_TO_MAX);
   const reason = cleanText(r['reason'], ITEM_CANCEL_REASON_MAX);
   if (refundTo === undefined || reason === undefined) return null;
+  const expected = parseExpectedLine(r['expected']);
+  if (expected === undefined) return null;
   return {
     orderId,
     lineIndex: lineIndex as number,
@@ -402,7 +443,33 @@ export function parseItemCancelRequest(raw: unknown): ItemCancelRequest | null {
     refundTo,
     reason,
     emailCustomer: r['emailCustomer'] !== false,
+    expected,
   };
+}
+
+/** The expected line, null when not sent, undefined when it's the wrong shape. */
+function parseExpectedLine(raw: unknown): ItemCancelExpectedLine | null | undefined {
+  if (raw === undefined || raw === null) return null;
+  const e = record(raw);
+  if (!e) return undefined;
+  const productId = e['productId'];
+  const lineQuantity = e['lineQuantity'];
+  if (typeof productId !== 'string' || !productId || productId.length > 128) return undefined;
+  if (!Number.isInteger(lineQuantity) || (lineQuantity as number) < 1 || (lineQuantity as number) > 1000)
+    return undefined;
+  const rawSel = e['selection'];
+  const selection: Record<string, string> = {};
+  if (rawSel !== undefined && rawSel !== null) {
+    const sel = record(rawSel);
+    if (!sel) return undefined;
+    const entries = Object.entries(sel);
+    if (entries.length > 20) return undefined;
+    for (const [k, v] of entries) {
+      if (typeof v !== 'string' || k.length > 64 || v.length > 200) return undefined;
+      selection[k] = v;
+    }
+  }
+  return { productId, selection, lineQuantity: lineQuantity as number };
 }
 
 export interface ItemRefundSentRequest {

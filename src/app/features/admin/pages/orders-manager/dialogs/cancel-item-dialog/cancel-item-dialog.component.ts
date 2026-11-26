@@ -299,6 +299,8 @@ export class CancelItemDialogComponent {
     const typed = this.#typedAmount();
     const reason = this.reason().trim().slice(0, ITEM_CANCEL_REASON_MAX);
     const refundTo = this.refundTo().trim().slice(0, ITEM_CANCEL_REFUND_TO_MAX);
+    // What this page showed at that place, so the server refuses if the order changed meanwhile.
+    const shown = this.data.order.pricing.lines[this.data.item.lineIndex];
     this.#ref.close({
       orderId: this.data.order.id,
       lineIndex: this.data.item.lineIndex,
@@ -307,6 +309,13 @@ export class CancelItemDialogComponent {
       refundTo: this.showRefundTo() ? refundTo : null,
       reason: reason || null,
       emailCustomer: this.emailCustomer(),
+      expected: shown
+        ? {
+            productId: shown.productId,
+            selection: { ...(shown.selection ?? {}) },
+            lineQuantity: shown.quantity,
+          }
+        : null,
     });
   }
 }
