@@ -8,6 +8,8 @@ export interface AdminNavSubItem {
   readonly description?: string;
   /** Only admins see it (staff don't). */
   readonly adminOnly?: boolean;
+  /** The Overview page (ATS-340): hidden where `environment.adminOverview` is off. */
+  readonly overview?: boolean;
 }
 
 export interface AdminNavCategory {
