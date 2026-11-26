@@ -122,6 +122,8 @@ export async function cancelOrderItem(
       'pricing.totalEgp': plan.totalEgp,
       'pricing.totalDisplay': plan.totalEgp,
       itemCancels: FieldValue.arrayUnion(entry),
+      // How many item refunds are still to send, so the admin Overview can count them.
+      itemRefundsToSend: refundsToSend(order['itemCancels']) + (refundEgp > 0 ? 1 : 0),
       ...(notReturned > 0 ? { stockNotReturned: FieldValue.increment(notReturned) } : {}),
       updatedAt: now,
     });
@@ -202,7 +204,11 @@ export async function markItemRefundSent(
     const next = list.map((e, i) =>
       i === index ? { ...e, refundSentEgp: entry['refundEgp'], refundSentAt: at } : e,
     );
-    tx.update(orderRef, { itemCancels: next, updatedAt: FieldValue.serverTimestamp() });
+    tx.update(orderRef, {
+      itemCancels: next,
+      itemRefundsToSend: refundsToSend(next),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
     tx.set(
       orderStaffNotesRef(db, req.orderId),
       {
@@ -219,4 +225,12 @@ export async function markItemRefundSent(
     );
     return { orderId: req.orderId, cancelId: req.cancelId, changed: true };
   });
+}
+
+/** Item cancels on the order whose refund is owed and not sent yet (`itemRefundsToSend`). */
+export function refundsToSend(rawItemCancels: unknown): number {
+  if (!Array.isArray(rawItemCancels)) return 0;
+  return rawItemCancels.filter(
+    (e) => e && typeof e['refundEgp'] === 'number' && e['refundEgp'] > 0 && !e['refundSentAt'],
+  ).length;
 }

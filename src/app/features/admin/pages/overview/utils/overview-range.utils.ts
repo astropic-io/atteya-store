@@ -15,10 +15,10 @@ export interface OverviewRangeOption {
 
 export const OVERVIEW_RANGES: readonly OverviewRangeOption[] = [
   { id: 'today', label: 'Today' },
-  { id: 'week', label: 'This week' },
-  { id: 'd14', label: 'Last 14 days' },
-  { id: 'month', label: 'This month' },
-  { id: 'm3', label: 'Last 3 months' },
+  { id: 'week', label: 'This Week' },
+  { id: 'd14', label: 'Last 14 Days' },
+  { id: 'month', label: 'This Month' },
+  { id: 'm3', label: 'Last 3 Months' },
   { id: 'custom', label: 'Custom' },
 ];
 

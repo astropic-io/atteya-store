@@ -101,12 +101,7 @@ export class OverviewPageComponent implements OnInit {
     }),
     loader: async ({ params }): Promise<OverviewDays | null> => {
       if (!this.#browser) return null;
-      try {
-        return await this.#overview.days({ from: params.from, to: params.to }, params.money);
-      } catch (error: unknown) {
-        console.error('[admin/overview] days failed', error);
-        throw error;
-      }
+      return this.#overview.days({ from: params.from, to: params.to }, params.money);
     },
   });
 

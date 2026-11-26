@@ -267,6 +267,7 @@ describe('cancelOrderItem', () => {
     assert.deepEqual((product.data['stockBySize'] as Record<string, number>)['s40'], 5);
     const orderWrite = writes.find((w) => w.path === 'orders/o1')!;
     assert.equal(orderWrite.data['pricing.totalEgp'], 1060);
+    assert.equal(orderWrite.data['itemRefundsToSend'], 1);
     assert.ok(writes.some((w) => w.path.startsWith('auditLogs/')));
     assert.ok(writes.some((w) => w.path === 'orderStaffNotes/o1'));
   });
@@ -325,6 +326,7 @@ describe('itemCancels list', () => {
     assert.equal(res.changed, true);
     const list = writes.find((w) => w.path === 'orders/o1')!.data['itemCancels'] as Record<string, unknown>[];
     assert.equal(list[0]!['refundSentEgp'], 75);
+    assert.equal(writes.find((w) => w.path === 'orders/o1')!.data['itemRefundsToSend'], 0);
   });
 });
 
