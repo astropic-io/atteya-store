@@ -271,17 +271,52 @@ const HISTORY_FORMAT = new Intl.DateTimeFormat('en-GB', {
   hour12: true,
 });
 
+/** Status changes, item cancels and item refunds sent (ATS-342), oldest first. */
 function statusHistory(notes: OrderStaffNotes | null): OrderHistoryEntry[] {
   if (!notes) return [];
-  return notes.statusHistory.map((entry) => {
-    const date = orderDate(entry.at);
-    return {
-      label: orderStatusLabel(entry.status),
-      when: date ? HISTORY_FORMAT.format(date) : '',
-      by: entry.byEmail || entry.by || '',
-      reason: entry.reason?.trim() || null,
-    };
+  const egp = (n: number) => formatMoney(n, 'EGP', 0);
+  const rows: { ms: number; entry: OrderHistoryEntry }[] = [];
+  const add = (at: unknown, label: string, by: string, reason: string | null) => {
+    const date = orderDate(at as Parameters<typeof orderDate>[0]);
+    rows.push({
+      ms: date?.getTime() ?? 0,
+      entry: { label, when: date ? HISTORY_FORMAT.format(date) : '', by, reason },
+    });
+  };
+  notes.statusHistory.forEach((entry) =>
+    add(
+      entry.at,
+      orderStatusLabel(entry.status),
+      entry.byEmail || entry.by || '',
+      entry.reason?.trim() || null,
+    ),
+  );
+  const cancels = new Map(notes.itemCancels.map((entry) => [entry.id, entry]));
+  notes.itemCancels.forEach((entry) => {
+    const money =
+      entry.refundEgp > 0
+        ? `, refund ${egp(entry.refundEgp)}`
+        : entry.amountOffEgp > 0
+          ? `, ${egp(entry.amountOffEgp)} off`
+          : '';
+    add(
+      entry.at,
+      `Item cancelled: ${entry.label || 'item'}${money}`,
+      entry.byEmail || entry.by || '',
+      entry.reason?.trim() || null,
+    );
   });
+  notes.itemRefunds.forEach((entry) => {
+    const cancel = cancels.get(entry.id);
+    add(
+      entry.at,
+      `Refund sent${cancel ? `: ${cancel.label || 'item'}, ${egp(cancel.refundEgp)}` : ''}`,
+      entry.byEmail || entry.by || '',
+      entry.reference?.trim() ? `Reference: ${entry.reference.trim()}` : null,
+    );
+  });
+  // Stable sort: same-time rows keep their order (status changes first).
+  return rows.sort((a, b) => a.ms - b.ms).map((row) => row.entry);
 }
 
 /** One table row per order line, with live stock from product docs. */
