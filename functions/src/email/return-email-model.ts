@@ -13,6 +13,8 @@ import {
   type ReturnStatus,
 } from '../store/returns.js';
 
+import type { OrderEmailOrder } from './order-email-model.js';
+
 export interface ReturnEmailItem {
   readonly lineIndex: number;
   readonly quantity: number;
@@ -85,6 +87,13 @@ export interface ReturnEmailRequest {
   readonly deliveredAtMs: number | null;
   /** The order's secret view key, for a guest's "View Your Order" link; null for signed-in orders. */
   readonly viewKey: string | null;
+  /** Staff started it for the customer after a call (ATS-342): no Request Sent email or staff alert. */
+  readonly startedByStaff: boolean;
+  /**
+   * The order, so the shopper emails can list every item by state (Delivered, Returning,
+   * Cancelled, ATS-342). Filled by the trigger; null in tests and when it can't be read.
+   */
+  readonly order?: OrderEmailOrder | null;
 }
 
 /** Null when the document can't be described (no items or unknown status). */
@@ -154,6 +163,7 @@ export function readReturnForEmail(
     feeBackEgp: whole(data['feeBackEgp']),
     feeSentBack: Boolean(data['feeSentBackAt']),
     feeSentBackEgp: whole(data['feeSentBackEgp']),
+    startedByStaff: data['startedByStaff'] === true,
     feeSentBackTo: text(data['feeSentBackTo']) || null,
     feeSentBackReference: text(data['feeSentBackReference']) || null,
     feeReminderSent: Boolean(data['feeReminderSentAt']),

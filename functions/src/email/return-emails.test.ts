@@ -200,7 +200,7 @@ describe('return status emails', () => {
     assert.doesNotMatch(refund.html, /Please hand it back/);
   });
 
-  it('Refund Sent: the amount, only the last 4 of the InstaPay number, and the reference', () => {
+  it('Refund Sent: the amount, the whole InstaPay number the customer gave (ATS-342), and the reference', () => {
     const email = renderReturnEmail(
       'return-refund-sent',
       request({ status: 'refund-sent', refundSentEgp: 580, refundReference: '88213' }),
@@ -208,10 +208,8 @@ describe('return status emails', () => {
     );
     assert.match(email.subject, /^Refund Sent: EGP\s?580 for #R-K7Q2M9$/);
     assert.match(email.html, /REFUND<br>SENT/);
-    assert.match(email.text, /Amount: EGP\s?580\nSent by InstaPay to …5678 · Reference 88213/);
-    for (const body of [email.html, email.text]) {
-      assert.doesNotMatch(body, /010 1234 5678|01012345678|1234 ?5678/);
-    }
+    assert.match(email.text, /Amount: EGP\s?580\nSent by InstaPay to 010 1234 5678 · Reference 88213/);
+    assert.match(email.html, /010 1234 5678/);
   });
 
   it('Rejected: the reason has a label and the gift stays, in both versions', () => {
@@ -260,14 +258,13 @@ describe('return status emails', () => {
     assert.match(email.text, /You Get: The right Padel Shorts, and 2 new Padel Shorts/);
   });
 
-  it('Refund Sent to an InstaPay address shows only the end of the name', () => {
+  it('Refund Sent to an InstaPay address shows the whole address', () => {
     const email = renderReturnEmail(
       'return-refund-sent',
       request({ status: 'refund-sent', refundSentEgp: 580, refundTo: 'mariamhassan@instapay' }),
       ctx,
     );
-    assert.match(email.text, /Sent by InstaPay to …ssan@instapay/);
-    assert.doesNotMatch(email.text, /mariamhassan/);
+    assert.match(email.text, /Sent by InstaPay to mariamhassan@instapay/);
   });
 
   it('every status email has a plain-text version with the same facts in the same order', () => {
@@ -433,5 +430,23 @@ describe('courier fee sent back, reminder and automatic cancel (ATS-307)', () =>
     assert.match(email.text, /We'll send your EGP\s?70 courier fee back by InstaPay\./);
     const none = renderReturnEmail('return-rejected', at('rejected', payFirst), ctx);
     assert.doesNotMatch(none.text, /courier fee back/);
+  });
+});
+
+describe('returns started by staff for the customer (ATS-342)', () => {
+  it('send no Request Sent or staff alert, then Approved as usual', () => {
+    const started = request({ status: 'requested', startedByStaff: true });
+    assert.deepEqual(returnEmailsForWrite(null, started), []);
+    assert.deepEqual(returnEmailsForWrite(started, request({ status: 'approved', startedByStaff: true })), [
+      'return-approved',
+    ]);
+  });
+
+  it('Approved shows the refund with the whole InstaPay number', () => {
+    const email = renderReturnEmail('return-approved', request({ startedByStaff: true }), ctx);
+    assert.match(email.text, /Your refund: EGP\s?580/);
+    assert.match(email.text, /send it by InstaPay to 010 1234 5678/);
+    assert.match(email.text, /Not yours\? Message us on WhatsApp/);
+    assert.match(email.text, /As we agreed, your return of 2 items is approved\./);
   });
 });

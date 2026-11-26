@@ -12,6 +12,7 @@
 import { dealTag } from '../offers/engine/buy-x-get-y.js';
 import { shopperMoney, type ShopperMoney, type ShopperMoneyLine } from '../offers/engine/shopper-money.js';
 import { isDeliveryFeeToBeAgreed, readPayIn, type PayIn } from '../store/order-messages.js';
+import { readItemCancels, type ItemCancelEntry } from '../store/order-item-cancel.js';
 
 export type OrderEmailPaymentMethod = 'paymob' | 'cash-on-delivery' | 'instapay' | 'bank-transfer';
 export type OrderEmailStatus = 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled' | 'failed';
@@ -114,6 +115,8 @@ export interface OrderEmailOrder {
   readonly shippingAtPlainRate: boolean;
   /** Staff alert only: `orderStaffNotes.payInRate` (filled by the trigger), or null when not read or saved. */
   readonly staffRate: OrderEmailStaffRate | null;
+  /** Pieces staff cancelled before delivery (ATS-342), oldest first. */
+  readonly itemCancels: readonly ItemCancelEntry[];
 }
 
 /** `orderStaffNotes.payInRate` as the staff alert needs it, or null when missing or unreadable. */
@@ -306,6 +309,7 @@ export function readOrderForEmail(
     shippingAtPlainRate:
       payIn !== null && typeof payIn['shippingFactor'] === 'number' && payIn['shippingFactor'] > 0,
     staffRate: null,
+    itemCancels: readItemCancels(data['itemCancels']),
   };
 }
 

@@ -37,7 +37,12 @@ export type ReturnEmailState = Pick<ReturnEmailRequest, 'status'> &
   Partial<
     Pick<
       ReturnEmailRequest,
-      'refundSentEgp' | 'feeReminderSent' | 'feeSentBack' | 'feeSentBackEgp' | 'cancelledBy'
+      | 'refundSentEgp'
+      | 'feeReminderSent'
+      | 'feeSentBack'
+      | 'feeSentBackEgp'
+      | 'cancelledBy'
+      | 'startedByStaff'
     >
   >;
 
@@ -74,6 +79,8 @@ export function returnEmailsForWrite(
 ): ReturnEmailKind[] {
   if (!after) return [];
   if (before === null) {
+    // Started by staff for the customer (ATS-342): staff approve it straight away, which sends Approved.
+    if (after.startedByStaff === true) return [];
     return after.status === 'requested' ? ['store-return-request', 'return-requested'] : [];
   }
   if (after.feeSentBack === true && before.feeSentBack !== true && (after.feeSentBackEgp ?? 0) > 0) {

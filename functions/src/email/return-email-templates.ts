@@ -46,7 +46,16 @@ import {
   type ItemCard,
 } from './email-blocks.js';
 import { orderConfirmationUrl } from './order-email-model.js';
-import { formatEgp, imageUrl, type OrderEmailContext, type RenderedEmail } from './order-email-templates.js';
+import {
+  formatEgp,
+  imageUrl,
+  itemStateGroups,
+  itemStatesHtml,
+  refundBox,
+  type ItemStateGroup,
+  type OrderEmailContext,
+  type RenderedEmail,
+} from './order-email-templates.js';
 import type { ReturnEmailKind } from './return-email-events.js';
 import type { ReturnEmailItem, ReturnEmailRequest } from './return-email-model.js';
 
@@ -350,11 +359,13 @@ function returnApproved(request: ReturnEmailRequest, ctx: OrderEmailContext): Re
   return shopperStatusEmail(request, ctx, {
     subject: `Your return or exchange ${request.ref} is approved`,
     status: ['Request', 'Approved'],
-    sentence: 'Our courier will come to your delivery address.',
+    sentence: approvedSentence(request),
     body: [
+      ...refundPart(request, ctx),
       labelled('Hand Over', handOverText(request)),
       labelled('You Get', youGetText(request), 20),
       greyBox(approvedFeeLine(request), null),
+      ...orderItemsPart(request, ctx),
     ],
   });
 }
@@ -370,6 +381,8 @@ function returnApprovedPay(request: ReturnEmailRequest, ctx: OrderEmailContext):
     ...pay.body,
     labelled('Hand Over', handOverText(request)),
     labelled('You Get', youGetText(request), 20),
+    ...refundPart(request, ctx, 32),
+    ...orderItemsPart(request, ctx),
   ];
   return shopperStatusEmail(request, ctx, {
     subject: `Your return or exchange ${request.ref} is approved: please pay the courier fee`,
@@ -579,7 +592,11 @@ function returnPaymentReceived(request: ReturnEmailRequest, ctx: OrderEmailConte
     subject: `We got your payment for ${request.ref}`,
     status: ['Payment', 'Received'],
     sentence: `We got your ${fee}. Our courier will come to your delivery address.`,
-    body: [labelled('Hand Over', handOverText(request)), labelled('You Get', youGetText(request), 20)],
+    body: [
+      labelled('Hand Over', handOverText(request)),
+      labelled('You Get', youGetText(request), 20),
+      ...orderItemsPart(request, ctx),
+    ],
   });
 }
 
@@ -638,6 +655,63 @@ function approvedFeeLine(request: ReturnEmailRequest): string {
   return `Courier fee ${fee}, taken off your refund.${cash}`;
 }
 
+/** "Your return of 1 item is approved." plus the courier line. */
+function approvedSentence(request: ReturnEmailRequest): string {
+  if (!request.startedByStaff) return 'Our courier will come to your delivery address.';
+  const pieces = request.items.filter((item) => !item.autoGift).reduce((sum, item) => sum + item.quantity, 0);
+  const what = pieces === 1 ? '1 item' : `${pieces} items`;
+  return `As we agreed, your return of ${what} is approved. Our courier will come to your delivery address.`;
+}
+
+/**
+ * The refund and the customer's whole InstaPay number (ATS-342), so they can tell us before the
+ * courier comes if it's wrong. Nothing when the request has no refund.
+ */
+function refundPart(request: ReturnEmailRequest, ctx: OrderEmailContext, padTop = 0): EmailPart[] {
+  if (!request.hasRefund || request.refundEgp <= 0 || !request.refundTo) return [];
+  const waLink = whatsappChatUrl(ctx.whatsappNumber.trim());
+  const note = waLink
+    ? 'This is the number you gave us. Not yours? Message us on WhatsApp before the courier comes.'
+    : 'This is the number you gave us. Not yours? Reply to this email before the courier comes.';
+  const lead = "The price you paid. Once we pick it up, we'll send it by InstaPay to";
+  const box = refundBox(request.refundEgp, request.refundTo, lead, note);
+  return [
+    {
+      html: padTop
+        ? `<tr><td style="height:${padTop}px;font-size:0;line-height:0;">&nbsp;</td></tr>${box}`
+        : box,
+      text: `Your refund: ${formatEgp(request.refundEgp)}\n${lead} ${request.refundTo}\n${note}`,
+    },
+  ];
+}
+
+/**
+ * Every item in the order by state (ATS-342): Delivered (yours to keep), Returning (this request,
+ * in black), Cancelled before delivery. Nothing when the order couldn't be read.
+ */
+function orderItemsPart(request: ReturnEmailRequest, ctx: OrderEmailContext): EmailPart[] {
+  const order = request.order;
+  if (!order) return [];
+  const returning = new Map<number, number>();
+  for (const item of request.items)
+    returning.set(item.lineIndex, (returning.get(item.lineIndex) ?? 0) + item.quantity);
+  const kept = order.lines
+    .map((line, index) => ({ ...line, quantity: line.quantity - (returning.get(index) ?? 0) }))
+    .filter((line) => line.quantity > 0)
+    .map((line) => ({ ...line, shopperAmount: null }));
+  const groups = itemStateGroups(order, ctx, kept, '');
+  const back: ItemStateGroup = {
+    label: `↩ Returning · ${request.items.filter((i) => !i.autoGift).reduce((sum, i) => sum + i.quantity, 0)}`,
+    right: request.status === 'waiting-for-payment' ? 'Waiting for the courier fee' : 'Approved',
+    style: 'focus',
+    cards: itemCards(request, ctx, false, 'hand-back'),
+    text: itemsText(request, false, 'hand-back'),
+  };
+  const [first, ...rest] = groups;
+  const ordered = first && !first.label.startsWith('✕') ? [first, back, ...rest] : [back, ...groups];
+  return [itemStatesHtml('Every Item in This Order', ordered)];
+}
+
 // Rejected
 
 function returnRejected(request: ReturnEmailRequest, ctx: OrderEmailContext): RenderedEmail {
@@ -688,10 +762,11 @@ function returnReceived(request: ReturnEmailRequest, ctx: OrderEmailContext): Re
 
 function returnRefundSent(request: ReturnEmailRequest, ctx: OrderEmailContext): RenderedEmail {
   const amount = formatEgp(request.refundSentEgp);
-  const to = lastFour(request.refundTo);
+  // The whole number the customer gave, so they know exactly where it went (ATS-342).
+  const to = request.refundTo?.trim() || null;
   const sentLine = joinWith(
     [
-      to ? `Sent by InstaPay to …${to}` : 'Sent by InstaPay',
+      to ? `Sent by InstaPay to ${to}` : 'Sent by InstaPay',
       request.refundReference ? `Reference ${request.refundReference}` : null,
     ],
     ' · ',

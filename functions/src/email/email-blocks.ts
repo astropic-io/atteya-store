@@ -456,6 +456,45 @@ ${rows}
 </table>`;
 }
 
+/** How a group of items in `stateGroup()` is drawn: the one this email is about is black. */
+export type StateGroupStyle = 'focus' | 'plain' | 'muted';
+
+/**
+ * One group of an order's items by what happened to them (ATS-342): a bar with the state in
+ * capitals ("✓ DELIVERED · 3") and a date or note on the right, then the items as a compact list.
+ * `focus` (black bar and border) is the change this email is about, `plain` a grey bar, `muted` a
+ * dashed border for pieces no longer in the order.
+ */
+export function stateGroup(
+  label: string,
+  right: string | null,
+  style: StateGroupStyle,
+  cards: readonly ItemCard[],
+): string {
+  const bar =
+    style === 'focus'
+      ? `background:${INK};color:${WHITE};`
+      : style === 'plain'
+        ? `background:${GREY_BOX};color:${INK};`
+        : `background:${WHITE};color:${TEXT_MUTED};`;
+  const border =
+    style === 'focus'
+      ? `border:2px solid ${INK};`
+      : style === 'plain'
+        ? `border:1px solid ${GREY_LINE};`
+        : `border:1px dashed #9e9e9e;`;
+  const rightCell = right
+    ? `<td align="right" valign="top" style="padding:10px 14px 10px 0;${FONT}font-size:12px;font-weight:600;line-height:1.4;${bar}">${escapeHtml(right)}</td>`
+    : `<td style="${bar}">&nbsp;</td>`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px;${border}">
+<tr><td style="padding:0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+<td valign="top" style="padding:10px 14px;${FONT}font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.4;white-space:nowrap;${bar}">${escapeHtml(label.toUpperCase())}</td>
+${rightCell}
+</tr></table></td></tr>
+<tr><td style="padding:0 14px;">${itemList(cards).replace('style="margin-bottom:24px;"', 'style="margin-bottom:0;"')}</td></tr>
+</table>`;
+}
+
 /** A row of photos edge to edge across the card, with a grey line of names under it. */
 export function photoStrip(cards: readonly ItemCard[], captions: string): string {
   const shown = cards.slice(0, 2);
