@@ -5,6 +5,7 @@ import {
   ITEM_CANCEL_LAST_PIECES_MESSAGE,
   ITEM_CANCEL_LINE_CHANGED_MESSAGE,
   itemCancelRefusal,
+  itemRefundsToSendCount,
   itemRefundsToSendEgp,
   parseItemCancelRequest,
   planItemCancel,
@@ -315,6 +316,8 @@ describe('itemCancels list', () => {
     assert.equal(readItemCancels([entry, { bad: true }]).length, 1);
     assert.equal(itemRefundsToSendEgp([entry]), 75);
     assert.equal(itemRefundsToSendEgp([{ ...entry, refundSentAt: { seconds: 20 } }]), 0);
+    assert.equal(itemRefundsToSendCount([entry, { ...entry, id: 'c2' }, { bad: true }]), 2);
+    assert.equal(itemRefundsToSendCount([{ ...entry, refundSentAt: { seconds: 20 } }]), 0);
   });
   it('marks a refund sent once', async () => {
     const { db, writes } = fakeDb({ 'orders/o1': { itemCancels: [entry] } });

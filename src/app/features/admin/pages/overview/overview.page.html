@@ -94,6 +94,13 @@
           }
         </span>
       </a>
+      @if ((liveBoxes?.itemRefundsToSend ?? 0) > 0) {
+        <a routerLink="/admin/orders" class="overview-tile overview-alert overview-alert--warn">
+          <span class="overview-tile__label">Item refunds to send</span>
+          <span class="overview-tile__value">{{ liveBoxes?.itemRefundsToSend }}</span>
+          <span class="overview-tile__note">For items cancelled before delivery, sent by InstaPay</span>
+        </a>
+      }
       <a routerLink="/admin/products" class="overview-tile overview-alert overview-alert--bad">
         <span class="overview-tile__label">Out of stock</span>
         <span class="overview-tile__value">

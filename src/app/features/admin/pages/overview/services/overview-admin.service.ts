@@ -2,10 +2,12 @@ import { Service } from '@angular/core';
 import {
   collection,
   documentId,
+  getAggregateFromServer,
   getCountFromServer,
   getDocs,
   limit,
   query,
+  sum,
   Timestamp,
   where,
   type Query,
@@ -43,6 +45,8 @@ export interface OverviewLive {
   readonly confirmedLate: number | null;
   readonly openReturns: number | null;
   readonly refundsToSend: number | null;
+  /** Refunds owed for items staff cancelled before delivery, summed over orders (<KEY>-345). */
+  readonly itemRefundsToSend: number | null;
   readonly productsLive: number | null;
   readonly productsHidden: number | null;
   readonly outOfStock: number | null;
@@ -112,8 +116,12 @@ export class OverviewAdminService {
       count(query(orders, where('status', '==', 'confirmed'), where('confirmedAt', '<', lateBefore))),
       count(query(returns, where('status', 'in', ['requested', 'waiting-for-payment', 'approved']))),
       count(query(returns, where('status', '==', 'received'), where('hasRefund', '==', true))),
-      // Refunds owed for items staff cancelled before delivery (ATS-342), counted per order.
-      count(query(orders, where('itemRefundsToSend', '>', 0))),
+      // Refunds owed for items staff cancelled before delivery: the sum, since one order can owe several.
+      settled(
+        getAggregateFromServer(query(orders, where('itemRefundsToSend', '>', 0)), {
+          n: sum('itemRefundsToSend'),
+        }).then((snap) => snap.data().n ?? 0),
+      ),
       count(query(products, where('published', '==', true))),
       count(query(products, where('published', '==', false))),
       count(query(products, where('published', '==', true), where('stock', '<=', 0))),
@@ -135,10 +143,8 @@ export class OverviewAdminService {
         openReturns === null || returnRefundsToSend === null
           ? openReturns
           : openReturns + returnRefundsToSend,
-      refundsToSend:
-        returnRefundsToSend === null || itemRefundsToSend === null
-          ? (returnRefundsToSend ?? itemRefundsToSend)
-          : returnRefundsToSend + itemRefundsToSend,
+      refundsToSend: returnRefundsToSend,
+      itemRefundsToSend,
       productsLive,
       productsHidden,
       outOfStock,

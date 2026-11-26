@@ -3,6 +3,7 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import type { RequiredCaller } from '../auth/require-role.js';
 import {
   itemCancelLabel,
+  itemRefundsToSendCount,
   pieceFromLine,
   planItemCancel,
   type ItemCancelRequest,
@@ -123,7 +124,7 @@ export async function cancelOrderItem(
       'pricing.totalDisplay': plan.totalEgp,
       itemCancels: FieldValue.arrayUnion(entry),
       // How many item refunds are still to send, so the admin Overview can count them.
-      itemRefundsToSend: refundsToSend(order['itemCancels']) + (refundEgp > 0 ? 1 : 0),
+      itemRefundsToSend: itemRefundsToSendCount(order['itemCancels']) + (refundEgp > 0 ? 1 : 0),
       ...(notReturned > 0 ? { stockNotReturned: FieldValue.increment(notReturned) } : {}),
       updatedAt: now,
     });
@@ -206,7 +207,7 @@ export async function markItemRefundSent(
     );
     tx.update(orderRef, {
       itemCancels: next,
-      itemRefundsToSend: refundsToSend(next),
+      itemRefundsToSend: itemRefundsToSendCount(next),
       updatedAt: FieldValue.serverTimestamp(),
     });
     tx.set(
@@ -225,12 +226,4 @@ export async function markItemRefundSent(
     );
     return { orderId: req.orderId, cancelId: req.cancelId, changed: true };
   });
-}
-
-/** Item cancels on the order whose refund is owed and not sent yet (`itemRefundsToSend`). */
-export function refundsToSend(rawItemCancels: unknown): number {
-  if (!Array.isArray(rawItemCancels)) return 0;
-  return rawItemCancels.filter(
-    (e) => e && typeof e['refundEgp'] === 'number' && e['refundEgp'] > 0 && !e['refundSentAt'],
-  ).length;
 }
