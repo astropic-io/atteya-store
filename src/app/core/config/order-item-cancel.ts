@@ -221,6 +221,10 @@ export function planItemCancel(order: ItemCancelOrderFacts, input: ItemCancelInp
     };
   }
 
+  if (num(pricing['subtotalEgp']) - amountOff < 0 || num(pricing['totalEgp']) - amountOff < 0) {
+    return { ok: false, message: "The amount off is more than this order's total, so it can't change here." };
+  }
+
   const gifts: ItemCancelGift[] = [];
   const removed = new Set<number>();
   const changed = new Map<number, ItemCancelLine>();
@@ -589,7 +593,7 @@ function timeMs(raw: unknown): number | null {
 
 /** A saved amount in pounds: a real number, never missing or negative. */
 function isAmount(raw: unknown): raw is number {
-  return typeof raw === 'number' && Number.isFinite(raw) && raw >= 0;
+  return typeof raw === 'number' && Number.isInteger(raw) && raw >= 0;
 }
 
 function num(raw: unknown): number {

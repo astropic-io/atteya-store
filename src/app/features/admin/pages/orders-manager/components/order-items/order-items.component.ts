@@ -344,7 +344,11 @@ export class OrderItemsComponent {
       const result = await this.#ordersAdmin.cancelOrderItem(request);
       const pieces = request.quantity === 1 ? 'Item' : `${request.quantity} items`;
       let done = `${pieces} cancelled. New total ${egp(result.totalEgp)}.`;
-      if (result.refundEgp > 0) done += ` Send ${egp(result.refundEgp)} back, then press Refund Sent.`;
+      if (result.refundEgp > 0) {
+        done += this.isAdmin()
+          ? ` Send ${egp(result.refundEgp)} back, then press Refund Sent.`
+          : ` Send ${egp(result.refundEgp)} back, then ask an admin to press Refund Sent.`;
+      }
       if (result.notReturned > 0) {
         this.#snackbar.info(
           `${done} ${result.notReturned === 1 ? '1 piece' : `${result.notReturned} pieces`} couldn't go back into stock because the size or product is gone.`,
