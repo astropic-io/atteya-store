@@ -23,7 +23,8 @@ export function orderMessageInput(order: OrderDoc): OrderMessageInput {
     ref: shortOrderRef(order.id),
     paymentMethod: order.paymentMethod,
     status: order.status,
-    country: order.shipping.country,
+    // Paid from abroad for delivery in Egypt: messages follow where the money comes from.
+    country: order.pricing.paidFromCountry ?? order.shipping.country,
     shippingEgp,
     totalEgp,
     needsReview: 'needsReview' in order ? order.needsReview === true : false,

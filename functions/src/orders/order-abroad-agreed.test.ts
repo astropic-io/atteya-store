@@ -21,7 +21,8 @@ const HEAVY = [{ weightGrams: 10_001, quantity: 1 }];
 
 function line(country: string, parcel: typeof TEE, paymentMethod: string, settings = SETTINGS) {
   const isInternational = country !== 'EG';
-  return quoteShippingLine(planOrderDelivery(settings, country, parcel), {
+  const plan = planOrderDelivery(settings, country, parcel);
+  return quoteShippingLine(plan, {
     settings,
     region: isInternational ? 'international' : 'egypt',
     isInternational,
@@ -31,7 +32,9 @@ function line(country: string, parcel: typeof TEE, paymentMethod: string, settin
     offers: [],
     ctx: CTX,
     governorateExtraEgp: 0,
-    countryExtraEgp: countryExtraFee(settings, country),
+    // As in `priceStoreOrder`: the country's extra for the box picked (ATS-338).
+    countryExtraEgp:
+      isInternational && plan.kind === 'box' ? countryExtraFee(settings, country, plan.box.id) : 0,
   }).line;
 }
 
@@ -64,6 +67,27 @@ describe('orders from any country (ATS-314)', () => {
       freeOver: { active: true, threshold: 100 },
     }).settings;
     assert.equal(line('AE', TEE, 'bank-transfer', free).priceEgp, 0);
+  });
+
+  it("each abroad box adds the country's own extra for that box (ATS-338)", () => {
+    const settings = parseCheckoutShippingConfig({
+      deliveryCountryFees: { AE: { box1: 150, box2: 250, box3: 400 }, SA: { box1: 100 } },
+    }).settings;
+    // Placeholder abroad boxes: 450 (1 kg), 750 (5 kg), 1,100 (10 kg).
+    assert.equal(line('AE', TEE, 'bank-transfer', settings).priceEgp, 600);
+    assert.equal(
+      line('AE', [{ weightGrams: 3_000, quantity: 1 }], 'bank-transfer', settings).priceEgp,
+      1_000,
+    );
+    assert.equal(
+      line('AE', [{ weightGrams: 8_000, quantity: 1 }], 'bank-transfer', settings).priceEgp,
+      1_500,
+    );
+    // A box with no saved extra for the country pays the box fee only.
+    assert.equal(line('SA', [{ weightGrams: 3_000, quantity: 1 }], 'bank-transfer', settings).priceEgp, 750);
+    // A fee saved as one number before ATS-338 still counts for every box.
+    const old = parseCheckoutShippingConfig({ deliveryCountryFees: { AE: 200 } }).settings;
+    assert.equal(line('AE', [{ weightGrams: 8_000, quantity: 1 }], 'bank-transfer', old).priceEgp, 1_300);
   });
 
   it('a country not on the list is placed with delivery and the fee to be agreed', () => {

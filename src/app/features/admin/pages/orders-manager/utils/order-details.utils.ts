@@ -407,6 +407,7 @@ export function orderDetails(
   const egp = (amount: number) => formatMoney(amount, 'EGP', 0);
   const stage = orderStage(orderMessageInput(order));
   const shipping = order.shipping;
+  const payer = order.payer ?? null;
   const feeToBeAgreed = isDeliveryFeeToBeAgreed(pricing.shipping);
 
   const cityLine = [shipping.city, shipping.region].filter(Boolean).join(', ');
@@ -448,12 +449,15 @@ export function orderDetails(
       refundToSend > 0
         ? `Send the customer ${egp(refundToSend)} back by InstaPay, then press Refund Sent on the cancelled item.${step ? ` ${step}` : ''}`
         : step,
+    // Paid from abroad for delivery in Egypt: the customer is the payer, the address the recipient's.
     customer: {
-      name: shipping.fullName,
+      name: payer?.fullName ?? shipping.fullName,
       email: order.customerEmail?.trim() || null,
-      phone: shipping.phone,
+      phone: payer?.phone ?? shipping.phone,
       account: order.customerId ? 'Has an account' : 'Guest',
+      paysFrom: payer ? `Pays from ${countryName(payer.country)}` : null,
     },
+    recipient: payer ? { name: shipping.fullName, phone: shipping.phone } : null,
     city: shipping.country === 'EG' ? shipping.city : `${shipping.city}, ${countryName(shipping.country)}`,
     address: {
       lines: addressLines,

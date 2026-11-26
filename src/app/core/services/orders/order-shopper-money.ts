@@ -4,12 +4,15 @@ import type { OrderDoc } from './order.schema';
 
 /**
  * What the shopper sees for a saved order (order page, Account → Orders; ATS-309): EGP for an
- * Egypt order, and only the currency they pay in for an order shipped abroad (`pricing.payIn`),
+ * Egypt order, and only the currency they pay in for an order shipped abroad or paid from abroad
+ * (`pricing.payIn`),
  * never EGP or the Egypt price. Staff pages keep EGP and never use this.
  */
 export function orderShopperMoney(pricing: OrderDoc['pricing']): ShopperMoney {
   return shopperMoney({
-    abroad: pricing.isInternational || pricing.shippingCountry !== 'EG',
+    // Shipped abroad, or paid from abroad for delivery in Egypt: the shopper's currency.
+    abroad:
+      pricing.isInternational || pricing.shippingCountry !== 'EG' || pricing.paidFromCountry !== undefined,
     lines: pricing.lines.map((line) => ({
       lineEgp: line.lineDisplay,
       wasEgp: (line.discountEgp ?? 0) > 0 ? (line.fullEgp ?? line.unitDisplay * line.quantity) : null,

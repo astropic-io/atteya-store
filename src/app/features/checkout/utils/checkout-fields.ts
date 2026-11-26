@@ -3,18 +3,54 @@ import {
   DELIVERY_FIELD_MESSAGES,
   EGYPT_PHONE_MESSAGE,
   isEgyptMobile,
+  PAYER_FIELD_MESSAGES,
   shopperWhatsappNumber,
 } from '@core/config/order-messages';
-import type { CheckoutShippingInput } from '@core/services/orders/checkout-order.service';
+import type { CheckoutPayerInput, CheckoutShippingInput } from '@core/services/orders/checkout-order.service';
+import { isCheckoutCountry } from './checkout-countries';
 
-/** Checkout fields that must be filled in before Place Order (the governorate has its own picker). */
-export type CheckoutField = 'email' | 'fullName' | 'line1' | 'city' | 'phone';
+/**
+ * Checkout fields that must be filled in before Place Order (the governorate has its own picker).
+ * `payer…`: the shopper's own details when they pay from abroad for delivery to someone in Egypt.
+ */
+export type CheckoutField =
+  'email' | 'payerName' | 'payerPhone' | 'payerCountry' | 'fullName' | 'line1' | 'city' | 'phone';
 
 /** Page order: the first field with an error gets the cursor. */
-export const CHECKOUT_FIELD_ORDER: readonly CheckoutField[] = ['email', 'fullName', 'line1', 'city', 'phone'];
+export const CHECKOUT_FIELD_ORDER: readonly CheckoutField[] = [
+  'email',
+  'payerName',
+  'payerPhone',
+  'payerCountry',
+  'fullName',
+  'line1',
+  'city',
+  'phone',
+];
 
 /** Fields shown above the Egypt Governorate field. */
-export const FIELDS_ABOVE_GOVERNORATE: ReadonlySet<CheckoutField> = new Set(['email', 'fullName']);
+export const FIELDS_ABOVE_GOVERNORATE: ReadonlySet<CheckoutField> = new Set([
+  'email',
+  'payerName',
+  'payerPhone',
+  'payerCountry',
+  'fullName',
+]);
+
+/**
+ * Paid from abroad for delivery to someone in Egypt: the message under each of the shopper's own
+ * fields that is empty or wrong (the same text the order callables send).
+ */
+export function payerFieldErrors(payer: CheckoutPayerInput): CheckoutFieldErrors {
+  const errors: CheckoutFieldErrors = {};
+  if (!payer.fullName.trim()) errors.payerName = PAYER_FIELD_MESSAGES.fullName;
+  const countryOk = isCheckoutCountry(payer.country) && payer.country !== 'EG';
+  if (!countryOk) errors.payerCountry = PAYER_FIELD_MESSAGES.country;
+  if (!payer.phone.trim() || shopperWhatsappNumber(payer.phone, countryOk ? payer.country : 'XX') === null) {
+    errors.payerPhone = ABROAD_PHONE_MESSAGE;
+  }
+  return errors;
+}
 
 export type CheckoutFieldErrors = Partial<Record<CheckoutField, string>>;
 

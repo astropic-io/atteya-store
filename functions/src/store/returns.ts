@@ -521,7 +521,10 @@ export interface ReturnOrderFacts {
   readonly status: unknown;
   /** `deliveredAt` in epoch ms, or null. */
   readonly deliveredAtMs: number | null;
-  /** `pricing.isInternational`: orders shipped outside Egypt can't send a request. */
+  /**
+   * `pricing.isInternational` (or paid from abroad, `pricing.paidFromCountry`): these orders can't
+   * send a request; they ask on WhatsApp.
+   */
   readonly isInternational: boolean;
   readonly returns: readonly ReturnSummary[];
 }

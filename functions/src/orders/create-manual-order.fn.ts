@@ -3,7 +3,7 @@ import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/
 import { adminCallableOptions } from '../auth/callable-options.js';
 import { orderSearchTokens } from '../store/order-search.js';
 import { identifyOrderCustomer, orderCustomerFields, requireCustomerTerms } from './order-customer.js';
-import { parseCreateStoreOrderRequest } from './order-request.js';
+import { parseCreateStoreOrderRequest, payInCountryOf } from './order-request.js';
 import { priceStoreOrder, type OrderPricingSnapshot } from './order-pricing.server.js';
 import { readOfferUses, savedOfferUses } from './offer-usage.js';
 import { utcDayKey } from './order-rate-limit.js';
@@ -85,7 +85,10 @@ async function createManualOrder<M extends ManualPaymentMethod>(
     ...(isRecord(request.data) ? request.data : {}),
     paymentMethod: method,
   });
-  if ((input.shipping.country === 'EG') !== EGYPT_ONLY[method]) {
+  // Paid from abroad for delivery in Egypt (`payer`): Bank Transfer to an Egypt address
+  // (`parseCreateStoreOrderRequest` already refuses any other method for it).
+  const paidFromAbroad = input.payer != null;
+  if (!paidFromAbroad && (input.shipping.country === 'EG') !== EGYPT_ONLY[method]) {
     throw new HttpsError('failed-precondition', WRONG_COUNTRY[method]);
   }
   if (method === 'bank-transfer' && !isBankTransferLive()) {
@@ -102,7 +105,7 @@ async function createManualOrder<M extends ManualPaymentMethod>(
       ? await withPayIn(
           db,
           priced.pricing,
-          currencyFromCountry(input.shipping.country),
+          currencyFromCountry(payInCountryOf(input)),
           'bank-transfer',
           input.shownPayIn,
         )
@@ -127,16 +130,20 @@ async function createManualOrder<M extends ManualPaymentMethod>(
       status: 'pending',
       paymentMethod: method,
       ...orderCustomerFields(customer, viewKey, now),
+      // Staff find the order by the recipient or, when paid from abroad, by the payer too.
       searchTokens: orderSearchTokens({
         orderId: orderRef.id,
-        fullName: input.shipping.fullName,
+        fullName: [input.shipping.fullName, input.payer?.fullName ?? ''].join(' '),
         phone: input.shipping.phone,
+        otherPhone: input.payer?.phone ?? null,
         email: customer.email,
       }),
       shipping: {
         ...input.shipping,
         boxId: priced.pricing.shipping?.boxId ?? null,
       },
+      // Who pays (and who we message about payment) when the order goes to someone in Egypt.
+      ...(input.payer ? { payer: input.payer } : {}),
       pricing,
       // What cancelOrder gives back if staff cancel this order (null: no offer counted).
       offerUses: savedOfferUses(customer.offerKeys, priced.usedOffers, switchedOffIds),

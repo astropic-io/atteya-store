@@ -102,7 +102,7 @@ function recipientFor(kind: OrderEmailKind, order: OrderEmailOrder): string | nu
  * say what the shopper's amount comes to in pounds (ATS-320). Shopper emails never read it.
  */
 async function withStaffRate(db: Firestore, order: OrderEmailOrder): Promise<OrderEmailOrder> {
-  if (!order.isInternational || order.shopper.currency === 'EGP') return order;
+  if (!order.paysInOtherCurrency || order.shopper.currency === 'EGP') return order;
   try {
     const snap = await orderStaffNotesRef(db, order.id).get();
     return { ...order, staffRate: snap.exists ? readStaffRate(snap.get('payInRate')) : null };
