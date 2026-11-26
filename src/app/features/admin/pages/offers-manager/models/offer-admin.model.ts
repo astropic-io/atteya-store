@@ -1141,6 +1141,8 @@ export function affectedStats(
 
 /** One chip under the Affected products count: a category (or "Other") and how many products. */
 export interface CategoryCount {
+  /** The category id, or "other"; unique, so a list can track by it. */
+  readonly key: string;
   readonly name: string;
   readonly count: number;
 }
@@ -1159,8 +1161,9 @@ function mostSpecificCategory(
   let best: string | null = null;
   let bestDepth = -1;
   for (const id of categoryIds) {
-    const depth = depthOf.get(id) ?? 0;
-    if (depth >= bestDepth) {
+    const depth = depthOf.get(id);
+    // A category that is no longer in the list can't win over one that is.
+    if (depth !== undefined && depth >= bestDepth) {
       best = id;
       bestDepth = depth;
     }
@@ -1189,7 +1192,7 @@ export function categoryBreakdown(
     else other += 1;
   }
   const named: CategoryCount[] = [...counts.entries()]
-    .map(([id, count]) => ({ name: info.get(id)?.name ?? 'Other', count }))
+    .map(([id, count]) => ({ key: id, name: info.get(id)?.name ?? 'Other', count }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   const kinds = named.length + (other > 0 ? 1 : 0);
   let shown = named;
@@ -1198,7 +1201,7 @@ export function categoryBreakdown(
     shown = named.slice(0, MAX_CATEGORY_CHIPS - 1);
     other += named.slice(MAX_CATEGORY_CHIPS - 1).reduce((sum, chip) => sum + chip.count, 0);
   }
-  const chips = other > 0 ? [...shown, { name: 'Other', count: other }] : shown;
+  const chips = other > 0 ? [...shown, { key: 'other', name: 'Other', count: other }] : shown;
   return { chips, kinds };
 }
 

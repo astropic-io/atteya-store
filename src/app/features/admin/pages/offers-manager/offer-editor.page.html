@@ -273,7 +273,7 @@
             </div>
             @if (categoryChips().chips.length > 0) {
               <ul class="offer-category-chips" aria-label="Included products by category">
-                @for (chip of categoryChips().chips; track chip.name) {
+                @for (chip of categoryChips().chips; track chip.key) {
                   <li class="offer-category-chip">
                     {{ chip.name }} {{ chip.count.toLocaleString('en-US') }}
                   </li>

@@ -332,21 +332,23 @@ export class OfferEditorPageComponent implements OnInit {
   readonly affectedLabel = computed(() => productCountLabel(this.stats().total));
 
   /** The included products split by category, under the count (same match as the count). */
-  readonly categoryChips = computed(() =>
-    categoryBreakdown(
-      this.#matched(),
-      this.categories().map(({ id, name, depth }) => ({ id, name, depth })),
-    ),
+  readonly categoryChips = computed(() => categoryBreakdown(this.#matched(), this.#categoryList()));
+  readonly #categoryList = computed(() =>
+    this.categories().map(({ id, name, depth }) => ({ id, name, depth })),
   );
 
-  /** Shown when a Brand tag is picked and its products span 2 or more kinds. */
+  /** Shown when a Brand tag is picked and that brand's products in the offer span 2 or more kinds. */
   readonly brandKindsNote = computed(() => {
     const names = this.names();
-    const brands = readTargets(this.draft().conditions)
-      .tags.filter((tag) => tag.field === 'brandId')
+    const picked = readTargets(this.draft().conditions).tags.filter((tag) => tag.field === 'brandId');
+    const brandNames = picked
       .map((tag) => names.brands.get(tag.value))
       .filter((name): name is string => !!name);
-    return brandKindsHint(brands, this.categoryChips().kinds);
+    if (brandNames.length === 0) return null;
+    const ids = new Set(picked.map((tag) => tag.value));
+    const ofBrands = this.#matched().filter((entry) => ids.has(entry.priced.brandId));
+    const { kinds } = categoryBreakdown(ofBrands, this.#categoryList());
+    return brandKindsHint(brandNames, kinds);
   });
 
   readonly overlapWarnings = computed(() =>
