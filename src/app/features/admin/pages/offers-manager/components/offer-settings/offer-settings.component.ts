@@ -28,6 +28,11 @@ export class OfferSettingsComponent {
 
   private readonly saleItemsSelect = viewChild<MatSelect>('saleItemsSelect');
 
+  /** The closed dropdown shows the short name; the option list keeps "(recommended)". */
+  readonly saleItemsShortLabel = computed(() =>
+    this.draft().saleItems === 'exclude' ? 'Skip products already on sale' : 'Best discount wins',
+  );
+
   readonly saleItemsExplanation = computed(() =>
     this.draft().saleItems === 'exclude'
       ? 'Products that already have a sale price keep it and get nothing more.'
