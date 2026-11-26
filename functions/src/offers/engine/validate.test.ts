@@ -49,6 +49,7 @@ const REWARDS = {
     gifts: [{ id: 'gift-1', name: 'Free shirt', productIds: ['tee-1'] }],
   },
   freeShipping: { kind: 'freeShipping' },
+  bundlePrice: { kind: 'bundlePrice', rows: [{ quantity: 2, price: 175 }] },
 };
 
 function offer(id, kind, overrides = {}) {
@@ -114,6 +115,12 @@ describe('validateOffer overlap warnings', () => {
   it('two Buy X get Y offers: each item counts toward one of them', () => {
     assert.deepEqual(overlapLines(offer('draft', 'buyXGetY'), [offer('other', 'buyXGetY')]), [
       '2 products are also in "other". Each item counts toward one Buy X get Y offer only, the higher-priority one first.',
+    ]);
+  });
+
+  it('two Bundle price offers: they do not add up, add a row to the other one', () => {
+    assert.deepEqual(overlapLines(offer('draft', 'bundlePrice'), [offer('Socks 2 for 175', 'bundlePrice')]), [
+      '2 products are also in "Socks 2 for 175". Each item counts toward one Bundle price offer only, so the two prices won\'t add up. To add another price (like 3 for EGP 225), add a row to "Socks 2 for 175" instead.',
     ]);
   });
 

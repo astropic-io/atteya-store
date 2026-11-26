@@ -568,7 +568,13 @@ const ALL_DEAL_CARDS: readonly DealCard[] = [
   { id: 'percentOff', symbol: '%', icon: null, label: 'Percent off', example: '20% off rackets' },
   { id: 'amountOff', symbol: '−EGP', icon: null, label: 'Money off', example: 'EGP 200 off each bag' },
   { id: 'fixedPrice', symbol: '=EGP', icon: null, label: 'New price', example: 'All shirts at EGP 499' },
-  { id: 'bundlePrice', symbol: '2 for', icon: null, label: 'Bundle price', example: '2 socks for EGP 200' },
+  {
+    id: 'bundlePrice',
+    symbol: '2 for',
+    icon: null,
+    label: 'Bundle price',
+    example: '2 socks for EGP 175, 3 for EGP 225',
+  },
   {
     id: 'bundleSet',
     symbol: 'A+B',
