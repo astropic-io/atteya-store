@@ -198,6 +198,15 @@
     @apply inline-flex size-7 shrink-0 rounded-full border border-outline-variant bg-surface p-0.5;
   }
 
+  /* Step 2: the included products by category, as small grey chips that wrap. */
+  .offer-category-chips {
+    @apply elements-start flex-wrap gap-2 w-full list-none p-0 m-0;
+  }
+
+  .offer-category-chip {
+    @apply bg-surface-container border-shape px-3 py-1 font-label-lg;
+  }
+
   /* A grey note box (overlaps, the run line, Good to know). */
   .offer-note {
     @apply w-full bg-surface-container border-shape p-4 font-body-md elements-start-col items-stretch! gap-2;

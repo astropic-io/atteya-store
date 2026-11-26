@@ -59,8 +59,10 @@ import {
   affectedStats,
   autoOfferTitle,
   autoTeamName,
+  brandKindsHint,
   bundleGroupsPhrase,
   bundleSetIssueField,
+  categoryBreakdown,
   createEmptyOfferDraft,
   DEAL_CARDS,
   defaultDealFor,
@@ -73,6 +75,7 @@ import {
   offerRunLine,
   offerSentence,
   offerTargetPhrase,
+  readTargets,
   productCountLabel,
   rewardPickerKind,
   runDays,
@@ -327,6 +330,24 @@ export class OfferEditorPageComponent implements OnInit {
 
   readonly stats = computed(() => affectedStats(this.#matched()));
   readonly affectedLabel = computed(() => productCountLabel(this.stats().total));
+
+  /** The included products split by category, under the count (same match as the count). */
+  readonly categoryChips = computed(() =>
+    categoryBreakdown(
+      this.#matched(),
+      this.categories().map(({ id, name, depth }) => ({ id, name, depth })),
+    ),
+  );
+
+  /** Shown when a Brand tag is picked and its products span 2 or more kinds. */
+  readonly brandKindsNote = computed(() => {
+    const names = this.names();
+    const brands = readTargets(this.draft().conditions)
+      .tags.filter((tag) => tag.field === 'brandId')
+      .map((tag) => names.brands.get(tag.value))
+      .filter((name): name is string => !!name);
+    return brandKindsHint(brands, this.categoryChips().kinds);
+  });
 
   readonly overlapWarnings = computed(() =>
     this.validation().warnings.filter((issue) => issue.code.startsWith('overlap.')),

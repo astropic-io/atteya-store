@@ -1139,6 +1139,76 @@ export function affectedStats(
   return { total: matched.length, inStock, soldOut: matched.length - inStock, onSale };
 }
 
+/** One chip under the Affected products count: a category (or "Other") and how many products. */
+export interface CategoryCount {
+  readonly name: string;
+  readonly count: number;
+}
+
+/** Most chips shown under the count; the rest are added up into "Other". */
+export const MAX_CATEGORY_CHIPS = 6;
+
+/**
+ * The deepest category a product is in (a child beats its parent); when depths tie or are unknown,
+ * the last id in `categoryIds`. Null for a product with no category.
+ */
+function mostSpecificCategory(
+  categoryIds: readonly string[],
+  depthOf: ReadonlyMap<string, number>,
+): string | null {
+  let best: string | null = null;
+  let bestDepth = -1;
+  for (const id of categoryIds) {
+    const depth = depthOf.get(id) ?? 0;
+    if (depth >= bestDepth) {
+      best = id;
+      bestDepth = depth;
+    }
+  }
+  return best;
+}
+
+/**
+ * The products an offer reaches split by category, biggest first. Each product counts once, under
+ * its most specific category. A product with no category (or a category that is no longer in the
+ * list) counts under "Other". At most `MAX_CATEGORY_CHIPS` chips: the rest join one "Other" chip.
+ * `kinds` is how many different categories the products span before that cap ("Other" counts as one).
+ */
+export function categoryBreakdown(
+  matched: readonly { readonly priced: { readonly categoryIds: readonly string[] } }[],
+  categories: readonly { readonly id: string; readonly name: string; readonly depth: number }[],
+): { readonly chips: readonly CategoryCount[]; readonly kinds: number } {
+  const info = new Map(categories.map((category) => [category.id, category]));
+  const depthOf = new Map(categories.map((category) => [category.id, category.depth]));
+  const counts = new Map<string, number>();
+  let other = 0;
+  for (const { priced } of matched) {
+    const id = mostSpecificCategory(priced.categoryIds, depthOf);
+    const category = id === null ? undefined : info.get(id);
+    if (category) counts.set(category.id, (counts.get(category.id) ?? 0) + 1);
+    else other += 1;
+  }
+  const named: CategoryCount[] = [...counts.entries()]
+    .map(([id, count]) => ({ name: info.get(id)?.name ?? 'Other', count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const kinds = named.length + (other > 0 ? 1 : 0);
+  let shown = named;
+  if (kinds > MAX_CATEGORY_CHIPS) {
+    // One chip is kept for "Other", which also takes the smallest categories.
+    shown = named.slice(0, MAX_CATEGORY_CHIPS - 1);
+    other += named.slice(MAX_CATEGORY_CHIPS - 1).reduce((sum, chip) => sum + chip.count, 0);
+  }
+  const chips = other > 0 ? [...shown, { name: 'Other', count: other }] : shown;
+  return { chips, kinds };
+}
+
+/** The hint under the chips when a Brand tag pulls in 2 or more kinds of products; null otherwise. */
+export function brandKindsHint(brandNames: readonly string[], kinds: number): string | null {
+  if (brandNames.length === 0 || kinds < 2) return null;
+  const subject = brandNames.length === 1 ? `Brand ${brandNames[0]} includes` : 'These brands include';
+  return `${subject} ${kinds} kinds of products. To cover only one kind, pick its category instead.`;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Bundle & Save (ATS-253): groups, the deal in plain words and which form field an error is about.
 // ---------------------------------------------------------------------------------------------

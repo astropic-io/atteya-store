@@ -271,6 +271,21 @@
                 </button>
               </div>
             </div>
+            @if (categoryChips().chips.length > 0) {
+              <ul class="offer-category-chips" aria-label="Included products by category">
+                @for (chip of categoryChips().chips; track chip.name) {
+                  <li class="offer-category-chip">
+                    {{ chip.name }} {{ chip.count.toLocaleString('en-US') }}
+                  </li>
+                }
+              </ul>
+              @if (brandKindsNote(); as note) {
+                <p class="elements-start gap-2 font-body-md">
+                  <mat-icon name="info" size="lg" aria-hidden="true" />
+                  <span>{{ note }}</span>
+                </p>
+              }
+            }
             @if (showProducts()) {
               <app-offer-preview [draft]="offer()" [products]="products()" [match]="matchForEditor" />
             }
