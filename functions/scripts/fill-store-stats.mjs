@@ -9,8 +9,9 @@
  *   node scripts/fill-store-stats.mjs --project atteya-store-dev           (dry run)
  *   node scripts/fill-store-stats.mjs --project atteya-store-dev --apply   (writes)
  *
- * Prod needs --confirm-prod as well. Safe to run again: every day is rebuilt from scratch, and a
- * saved day that no longer has orders or returns is removed.
+ * Prod needs --confirm-prod as well. Safe to run again, even while orders come in: every day is
+ * rebuilt from scratch with the trigger's read-time check, and a saved day that no longer has
+ * orders or returns is set to zero (never deleted).
  */
 import { initializeApp, applicationDefault } from 'firebase-admin/app';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
@@ -118,7 +119,7 @@ for (const [day, entry] of [...days.entries()].sort(([a], [b]) => a.localeCompar
 console.log(`Orders read: ${ordersSnap.size} (${undated} with no date, left out)`);
 console.log(`Return requests read: ${returnsSnap.size}`);
 console.log(`Days to write: ${writes.length}, holding ${totalOrders} orders and EGP ${totalEgp} received`);
-console.log(`Saved days to remove (nothing left): ${stale.length}`);
+console.log(`Saved days to set to zero (nothing left): ${stale.length}`);
 for (const stats of writes.slice(-7)) {
   console.log(
     `  ${stats.counts.day}: ${stats.counts.orders} orders, ${stats.counts.pieces} pieces, EGP ${stats.money.receivedEgp}`,
@@ -131,25 +132,30 @@ if (dryRun) {
 }
 
 const stamp = { builtFromReadTime: readTime, updatedAt: FieldValue.serverTimestamp() };
-let batch = db.batch();
-let inBatch = 0;
-const flush = async () => {
-  if (inBatch === 0) return;
-  await batch.commit();
-  batch = db.batch();
-  inBatch = 0;
-};
-for (const stats of writes) {
-  batch.set(db.collection(STORE_STATS_COLLECTION).doc(stats.counts.day), { ...stats.counts, ...stamp });
-  batch.set(db.collection(STORE_STATS_MONEY_COLLECTION).doc(stats.money.day), { ...stats.money, ...stamp });
-  inBatch += 2;
-  if (inBatch >= 400) await flush();
-}
+/**
+ * Writes one day the way the trigger does: only when this read is newer than the one the saved day
+ * was built from, so a rebuild the trigger made while this script ran is never rolled back.
+ */
+let skipped = 0;
+const writeDay = (counts, money) =>
+  db.runTransaction(async (tx) => {
+    const countsRef = db.collection(STORE_STATS_COLLECTION).doc(counts.day);
+    const current = await tx.get(countsRef);
+    const builtFrom = current.get('builtFromReadTime');
+    if (builtFrom instanceof Timestamp && builtFrom.valueOf() > readTime.valueOf()) {
+      skipped += 1;
+      return;
+    }
+    tx.set(countsRef, { ...counts, ...stamp });
+    tx.set(db.collection(STORE_STATS_MONEY_COLLECTION).doc(money.day), { ...money, ...stamp });
+  });
+
+for (const stats of writes) await writeDay(stats.counts, stats.money);
+// A saved day with nothing left is written with zeros, never deleted, so the trigger's guard stays.
 for (const day of stale) {
-  batch.delete(db.collection(STORE_STATS_COLLECTION).doc(day));
-  batch.delete(db.collection(STORE_STATS_MONEY_COLLECTION).doc(day));
-  inBatch += 2;
-  if (inBatch >= 400) await flush();
+  const empty = buildDayStats(day, [], []);
+  await writeDay(empty.counts, empty.money);
 }
-await flush();
-console.log(`Done: wrote ${writes.length} days, removed ${stale.length}.`);
+console.log(
+  `Done: wrote ${writes.length} days, set ${stale.length} to zero, skipped ${skipped} the store had already updated.`,
+);
