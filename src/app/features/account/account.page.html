@@ -36,12 +36,6 @@
   }
 
   <div class="account-grid">
-    <div class="account-grid__main">
-      <app-orders-section id="orders" [uid]="uid()" />
-    </div>
-    <div class="account-grid__middle">
-      <app-address-section id="address" [uid]="uid()" [profile]="profile()" [loading]="profileLoading()" />
-    </div>
     <div class="account-grid__side">
       <app-profile-section
         id="profile"
@@ -69,6 +63,12 @@
       </section>
       <app-emails-section id="emails" [uid]="uid()" [profile]="profile()" [loading]="profileLoading()" />
       <app-delete-account-section id="delete-account" />
+    </div>
+    <div class="account-grid__middle">
+      <app-address-section id="address" [uid]="uid()" [profile]="profile()" [loading]="profileLoading()" />
+    </div>
+    <div class="account-grid__main">
+      <app-orders-section id="orders" [uid]="uid()" />
     </div>
   </div>
 </section>
