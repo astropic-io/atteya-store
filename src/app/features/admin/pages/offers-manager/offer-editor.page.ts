@@ -37,6 +37,7 @@ import {
   type OfferScope,
 } from '@core/services/offers/engine';
 import { toPricedProduct } from '@core/services/offers/offer.model';
+import { photoBadgeText } from '@core/services/offers/offer-shop';
 import { SeoService } from '@core/services/seo';
 import { SnackbarService } from '@core/services/snack-bar/snack-bar.service';
 import { SharedIconModule } from '@shared/ui/mat-icon';
@@ -59,8 +60,10 @@ import {
   affectedStats,
   autoOfferTitle,
   autoTeamName,
+  brandKindsHint,
   bundleGroupsPhrase,
   bundleSetIssueField,
+  categoryBreakdown,
   createEmptyOfferDraft,
   DEAL_CARDS,
   defaultDealFor,
@@ -73,9 +76,11 @@ import {
   offerRunLine,
   offerSentence,
   offerTargetPhrase,
+  readTargets,
   productCountLabel,
   rewardPickerKind,
   runDays,
+  saleSkipWarning,
   daysLabel,
   cairoShort,
   UNAVAILABLE_DEAL_MESSAGE,
@@ -304,7 +309,7 @@ export class OfferEditorPageComponent implements OnInit {
       const sample: SampleProduct = {
         name: product.name,
         imagePath: rawImage ? normalizeImageKitPath(rawImage) : null,
-        badge: res.badges[0]?.text ?? null,
+        badge: photoBadgeText(res.badges, [offer]),
         listPrice: Math.max(product.price, product.compareAtPrice ?? 0),
         offerPrice: res.fromPrice,
         partial: res.partial,
@@ -328,15 +333,41 @@ export class OfferEditorPageComponent implements OnInit {
   readonly stats = computed(() => affectedStats(this.#matched()));
   readonly affectedLabel = computed(() => productCountLabel(this.stats().total));
 
+  /** The included products split by category, under the count (same match as the count). */
+  readonly categoryChips = computed(() => categoryBreakdown(this.#matched(), this.#categoryList()));
+  readonly #categoryList = computed(() =>
+    this.categories().map(({ id, name, depth }) => ({ id, name, depth })),
+  );
+
+  /** Shown when a Brand tag is picked and that brand's products in the offer span 2 or more kinds. */
+  readonly brandKindsNote = computed(() => {
+    const names = this.names();
+    const picked = readTargets(this.draft().conditions).tags.filter((tag) => tag.field === 'brandId');
+    const brandNames = picked
+      .map((tag) => names.brands.get(tag.value))
+      .filter((name): name is string => !!name);
+    if (brandNames.length === 0) return null;
+    const ids = new Set(picked.map((tag) => tag.value));
+    const ofBrands = this.#matched().filter((entry) => ids.has(entry.priced.brandId));
+    const { kinds } = categoryBreakdown(ofBrands, this.#categoryList());
+    return brandKindsHint(brandNames, kinds);
+  });
+
+  /** Step 2 overlap lines, each with the other offer's id so staff can open it in a new tab. */
   readonly overlapWarnings = computed(() =>
-    this.validation().warnings.filter((issue) => issue.code.startsWith('overlap.')),
+    this.validation()
+      .warnings.filter((issue) => issue.code.startsWith('overlap.'))
+      .map((issue) => ({ ...issue, offerId: issue.code.slice('overlap.'.length) })),
   );
 
   /** Step 4 "Good to know": every warning, plus how products already on sale are treated. */
   readonly goodToKnow = computed(() => {
     const lines = this.validation().warnings.map((issue) => issue.message);
     const onSale = this.stats().onSale;
-    if (onSale > 0) {
+    const nothing = onSale >= this.stats().total ? saleSkipWarning(this.draft(), this.stats()) : null;
+    if (nothing) {
+      lines.push(nothing);
+    } else if (onSale > 0) {
       const lead = `${productCountLabel(onSale)} ${onSale === 1 ? 'is' : 'are'} already on sale.`;
       lines.push(
         this.draft().saleItems === 'exclude'

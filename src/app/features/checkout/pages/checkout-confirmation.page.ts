@@ -38,7 +38,8 @@ import { formatShopperAmount, orderShopperMoney } from '@core/services/orders/or
 import { shortOrderRef } from '@core/services/orders/order-ref';
 import { orderStatusName } from '@core/services/orders/order-status-name';
 import { orderDate } from '@core/services/orders/shopper-orders.service';
-import { returnEntry, type ReturnEntry } from '@core/services/orders/order-returns';
+import { returnEntry, shortDay, type ReturnEntry } from '@core/services/orders/order-returns';
+import { readItemCancels } from '@core/config/order-item-cancel';
 import { MetaPixelService } from '@core/services/analytics/meta-pixel.service';
 import {
   isOrderViewKey,
@@ -370,6 +371,13 @@ export class CheckoutConfirmationPageComponent implements OnInit {
     const box = (label: string, value: string, now = false) => ({ label, value, now });
     const payNow = this.#payNow();
     const cash = this.#cash();
+    // Paid in full, then an item was cancelled: the total went down and the difference comes back
+    // by InstaPay, so "Paid" with the new total would understate what they paid (ATS-342).
+    const refunded = readItemCancels(this.order()?.itemCancels).reduce((sum, e) => sum + e.refundEgp, 0);
+    const paid = () =>
+      refunded > 0
+        ? [box('Order total', total), box('Refund to you', formatMoney(refunded, 'EGP', 0))]
+        : [box('Paid', total)];
     switch (stage) {
       case 'instapay-fee-due':
         return [
@@ -386,7 +394,7 @@ export class CheckoutConfirmationPageComponent implements OnInit {
       case 'cod-confirmed':
         // Shipped card and InstaPay orders are paid; Cash on Delivery still pays at the door.
         if (stage === 'shipped' && this.order()?.paymentMethod !== 'cash-on-delivery') {
-          return [box('Paid', total)];
+          return paid();
         }
         // With free shipping the cash at the door is the total: one box.
         return cash && cash !== total
@@ -408,7 +416,7 @@ export class CheckoutConfirmationPageComponent implements OnInit {
       case 'paid':
       case 'paid-needs-review':
       case 'delivered':
-        return [box('Paid', total)];
+        return paid();
       default:
         return [box('Order total', total)];
     }
@@ -502,7 +510,7 @@ export class CheckoutConfirmationPageComponent implements OnInit {
         imageSrc: imagePath ? normalizeImageKitPath(imagePath) : '',
         // An older order shipped abroad saved only its total: its items show no price.
         price: formatShopperAmount(money, money.lines[index] ?? null) ?? '',
-        // Buy X Get Y: "Free" / "−50%" and the price before it.
+        // Buy X Get Y: "Free" / "Offer price" and the price before it.
         deal: line.deals?.length ? dealTag(line.deals, line.quantity) : '',
         was: formatShopperAmount(money, money.was[index] ?? null) ?? '',
         gifts: [],
@@ -511,6 +519,50 @@ export class CheckoutConfirmationPageComponent implements OnInit {
       byLine.set(index, item);
     });
     return items;
+  });
+
+  /** Pieces staff cancelled from the order (ATS-342), greyed out under the items. */
+  readonly cancelledItems = computed(() => {
+    const order = this.order();
+    if (!order) return [];
+    const isSize = (label: string) => label.trim().toLowerCase() === 'size';
+    return readItemCancels(order.itemCancels).map((entry) => {
+      const imagePath = entry.item.imagePath?.trim() || null;
+      return {
+        key: entry.id,
+        name: entry.item.name || 'Item',
+        details: entry.item.optionLabels
+          .map((opt) => (isSize(opt.label) ? `Size ${opt.value}` : opt.value))
+          .join(' · '),
+        quantity: entry.item.quantity,
+        gifts: entry.gifts.reduce((sum, g) => sum + g.quantity, 0),
+        imagePath,
+        imageSrc: imagePath ? normalizeImageKitPath(imagePath) : '',
+        amountOff: entry.amountOffEgp > 0 ? formatMoney(entry.amountOffEgp, 'EGP', 0) : '',
+      };
+    });
+  });
+
+  /** The money coming back for cancelled items: still to send, or sent (with the last date). */
+  readonly itemRefund = computed(() => {
+    const order = this.order();
+    if (!order) return null;
+    const owed = readItemCancels(order.itemCancels).filter((entry) => entry.refundEgp > 0);
+    if (owed.length === 0) return null;
+    const pending = owed.filter((entry) => entry.refundSentAtMs === null);
+    const amount = (pending.length ? pending : owed).reduce((sum, entry) => sum + entry.refundEgp, 0);
+    const to = (pending[0] ?? owed[0])?.refundTo ?? null;
+    if (pending.length) {
+      return {
+        title: `Refund: ${formatMoney(amount, 'EGP', 0)}`,
+        text: `We'll send it by InstaPay${to ? ` to ${to}` : ''}. This page updates once it's sent.`,
+      };
+    }
+    const lastMs = Math.max(...owed.map((entry) => entry.refundSentAtMs ?? 0));
+    return {
+      title: `Refund sent: ${formatMoney(amount, 'EGP', 0)}`,
+      text: `We sent it by InstaPay${to ? ` to ${to}` : ''} on ${shortDay(lastMs)}.`,
+    };
   });
 
   /** Return or Exchange: the button (while the 14 days are open), the "Returns closed" line, or nothing. */

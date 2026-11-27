@@ -1,6 +1,7 @@
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { adminCallableOptions, requireAppCheck } from '../auth/callable-options.js';
+import { requireRole, type RequiredCaller } from '../auth/require-role.js';
 import { parseCheckoutShippingConfig, SHIPPING_DOC_PATH } from '../shipping/shipping-settings.js';
 import { normalBoxFeeEgp } from '../store/returns.js';
 import { isOrderShopper, RETURN_REQUESTS_COLLECTION } from './return-access.js';
@@ -32,6 +33,8 @@ export const requestReturn = onCall(
   async (request): Promise<RequestReturnResponse> => {
     requireAppCheck(request);
     const input = run(() => parseRequestReturn(request.data));
+    // Staff starting it for the customer after a call (ATS-342) are checked as staff, not as the owner.
+    const staff: RequiredCaller | null = input.forCustomer ? await requireRole(request, 'staff') : null;
 
     const db = getFirestore();
     const orderRef = db.collection('orders').doc(input.orderId);
@@ -40,7 +43,7 @@ export const requestReturn = onCall(
     const built = await db.runTransaction(async (tx) => {
       const orderSnap = await tx.get(orderRef);
       const order = orderSnap.data();
-      if (!orderSnap.exists || !order || !isOrderShopper(order, request, input.viewKey)) {
+      if (!orderSnap.exists || !order || (!staff && !isOrderShopper(order, request, input.viewKey))) {
         throw new HttpsError('not-found', NOT_FOUND);
       }
       const ids = productIdsFor(order, input);
@@ -94,6 +97,14 @@ export const requestReturn = onCall(
         refundEgp: result.refundEgp,
         cashAtDoorEgp: result.cashAtDoorEgp,
         orderDeliveredAt: result.deliveredAtMs === null ? null : Timestamp.fromMillis(result.deliveredAtMs),
+        ...(staff
+          ? {
+              startedByStaff: true,
+              startedBy: staff.uid,
+              ...(staff.email ? { startedByEmail: staff.email } : {}),
+              storePaysFee: input.storePaysFee === true,
+            }
+          : {}),
         createdAt: now,
         updatedAt: now,
       });

@@ -15,6 +15,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AuthService } from '@core/services/auth/auth.service';
 import { AdminNavCategory } from './admin-nav.model';
 import { ADMIN_NAV_CATEGORIES } from './admin-nav.data';
+import { environment } from '@env/environment';
 import { ReturnsAdminService } from '../pages/returns-manager/services/returns-admin.service';
 
 const SIDEBAR_STORAGE_KEY = 'atteya_admin_sidebar_open';
@@ -67,7 +68,9 @@ export class AdminNavService {
     return ADMIN_NAV_CATEGORIES.map((category) => ({
       ...category,
       subItems: category.subItems
-        ?.filter((item) => isAdmin || !item.adminOnly)
+        ?.filter(
+          (item) => (isAdmin || !item.adminOnly) && (!item.overview || environment.adminOverview === true),
+        )
         .map((item) => (item.id === 'returns' && count > 0 ? { ...item, badge: String(count) } : item)),
     }));
   });
@@ -90,7 +93,7 @@ export class AdminNavService {
       );
       if (match) return match.label;
     }
-    return 'Navigation & Menus';
+    return environment.adminOverview === true ? 'Overview' : 'Orders';
   });
 
   constructor() {

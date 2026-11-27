@@ -28,9 +28,7 @@ import { HomeNavList, HomeNavListItem } from '../../models/home.model';
 import {
   pendingNavListImage,
   playNavListArrows,
-  playNavListSwap,
   settleNavListArrows,
-  settleNavListPhotos,
 } from '../../utils/navigation-list-motion';
 
 type GsapApi = typeof GsapNamespace;
@@ -107,8 +105,38 @@ export class NavigationListSectionComponent {
 
   readonly activeIndex = computed(() => this.#clamp(this.#activeIndex()));
 
-  /** Item 0 mounts with the desktop panel. The rest mount on the first pointer or focus. */
-  readonly #mounted = signal<ReadonlySet<number>>(new Set([0]));
+  /**
+   * Becomes true on the shopper's first hover or keyboard focus on a row (ATS-360). Until then
+   * no row shows the active line or arrow; the photo panel still shows the first category.
+   */
+  readonly #touched = signal(false);
+
+  /** The row that shows the active line and arrow, or -1 before the shopper touches the list. */
+  readonly highlightIndex = computed(() => (this.previewMode() || this.#touched() ? this.activeIndex() : -1));
+
+  /**
+   * The photo on top of the desktop stack (ATS-361). It follows `activeIndex()` once the
+   * incoming photo has downloaded (1.2 s at most), so the stack never brings an empty frame up.
+   */
+  readonly #shownIndex = signal(0);
+  readonly shownIndex = computed(() => this.#clamp(this.#shownIndex()));
+
+  /** "01 / 07" on the top photo. */
+  readonly position = computed(() => {
+    const pad = (value: number): string => String(value).padStart(2, '0');
+    return `${pad(this.shownIndex() + 1)} / ${pad(this.items().length)}`;
+  });
+
+  /**
+   * The top photo and the two behind it mount with the desktop panel (ATS-361), and the two
+   * behind any photo coming to the top mount before it moves. The rest mount on the first
+   * pointer or focus. Mounted photos stay, so they slide away instead of vanishing.
+   */
+  readonly #mounted = signal<ReadonlySet<number>>(new Set([0, 1, 2]));
+  /** Image paths that have finished downloading. Keyed by path, not row, so a new photo in a row waits for its own download. */
+  readonly #loaded = signal<ReadonlySet<string>>(new Set());
+  /** False until the stack shows its first photo; that first one goes up with no wait. */
+  #photosSettled = false;
   /**
    * Stays false until the browser confirms the lg layout. Starting false keeps
    * the photo out of the server HTML and the first client render, so a phone
@@ -125,9 +153,8 @@ export class NavigationListSectionComponent {
   #reduceQuery: MediaQueryList | null = null;
   #reduceMotion = false;
   #destroyed = false;
-  #lastAnimated = -1;
-  #animatedPhotoCount = 0;
   #lastArrow = -1;
+  #arrowsSettled = false;
   #cancelPhotoWait: (() => void) | null = null;
 
   constructor() {
@@ -136,19 +163,27 @@ export class NavigationListSectionComponent {
       this.#bootBrowser();
     });
 
+    // CSS moves the photos (no GSAP), so this runs before GSAP has loaded too.
     afterRenderEffect(() => {
       const index = this.activeIndex();
-      const ready = this.#motionReady();
       const photosEnabled = this.#desktopPhotos();
       const mounted = this.#mounted();
-      if (!ready || !photosEnabled || !mounted.has(index)) return;
+      if (!photosEnabled) return;
+      // The admin preview can pick a row whose photo is not in the page yet: add it and
+      // the two that will sit behind it, then come back.
+      const count = this.items().length;
+      const around = [index, (index + 1) % count, (index + 2) % count].filter((i) => i < count);
+      if (around.some((i) => !mounted.has(i))) {
+        untracked(() => around.forEach((i) => this.#mount(i)));
+        return;
+      }
       untracked(() => this.#syncPhotos(index));
     });
 
-    // The arrow follows the active row straight away, even while the photo
-    // waits for its download.
+    // The arrow follows the highlighted row straight away, even while the photo
+    // waits for its download. Before the first hover or focus it shows no arrow (ATS-360).
     afterRenderEffect(() => {
-      const index = this.activeIndex();
+      const index = this.highlightIndex();
       const ready = this.#motionReady();
       const desktop = this.#desktopPhotos();
       this.items();
@@ -169,6 +204,28 @@ export class NavigationListSectionComponent {
     return this.#mounted().has(index);
   }
 
+  /** True once this row's photo has downloaded; the photos behind the top one wait for it. */
+  isLoaded(item: HomeNavListItem): boolean {
+    const path = this.imagePath(item);
+    return path !== null && this.#loaded().has(path);
+  }
+
+  markLoaded(path: string): void {
+    this.#loaded.update((current) => {
+      if (current.has(path)) return current;
+      const next = new Set(current);
+      next.add(path);
+      return next;
+    });
+  }
+
+  /** Place in the desktop stack: 0 is the top photo, 1 and 2 peek out behind it, the rest are hidden. */
+  depthOf(index: number): number {
+    const count = this.items().length;
+    if (count <= 0) return 0;
+    return (index - this.shownIndex() + count) % count;
+  }
+
   isEdited(index: number): boolean {
     return this.previewMode() && this.activeItemIndex() === index;
   }
@@ -182,8 +239,13 @@ export class NavigationListSectionComponent {
     });
   }
 
-  activate(index: number): void {
+  /**
+   * `mark` is false for a touch or pen pointer, so a tap on a wide touch screen opens the link
+   * instead of first drawing the row's line and arrow (which iOS treats as a hover and eats the tap).
+   */
+  activate(index: number, mark = true): void {
     const next = this.#clamp(index);
+    if (mark) this.#touched.set(true);
     if (this.#desktopPhotos()) this.#mount(next);
     if (this.#activeIndex() === next) return;
     this.#activeIndex.set(next);
@@ -238,9 +300,8 @@ export class NavigationListSectionComponent {
     this.#desktopPhotos.set(event.matches);
     if (event.matches) return;
     this.#stopPhotoWait();
-    this.#lastAnimated = -1;
-    this.#animatedPhotoCount = 0;
-    this.#lastArrow = -1;
+    this.#photosSettled = false;
+    this.#arrowsSettled = false;
     this.#ctx?.revert();
     if (this.#gsap) {
       this.#ctx = this.#gsap.context(() => undefined, this.#host.nativeElement);
@@ -250,11 +311,8 @@ export class NavigationListSectionComponent {
   readonly #onReduceChange = (event: MediaQueryListEvent): void => {
     this.#reduceMotion = event.matches;
     if (!event.matches) return;
-    this.#lastAnimated = -1;
-    this.#animatedPhotoCount = 0;
-    this.#lastArrow = -1;
-    this.#syncPhotos(this.activeIndex());
-    this.#syncArrows(this.activeIndex());
+    this.#arrowsSettled = false;
+    this.#syncArrows(this.highlightIndex());
   };
 
   #syncArrows(index: number): void {
@@ -265,7 +323,8 @@ export class NavigationListSectionComponent {
     const arrows = [...this.#host.nativeElement.querySelectorAll<HTMLElement>('[data-nav-arrow]')];
     if (arrows.length === 0) return;
 
-    const first = this.#lastArrow < 0;
+    const first = !this.#arrowsSettled;
+    this.#arrowsSettled = true;
     if (!first && this.#lastArrow === index) {
       // Same row, but the list may have new rows (admin preview edits).
       ctx.add(() => settleNavListArrows(gsap, arrows, index));
@@ -281,42 +340,28 @@ export class NavigationListSectionComponent {
     });
   }
 
+  /**
+   * Brings photo `index` to the top of the stack. A photo that is still downloading
+   * waits (1.2 s at most), so the stack never slides an empty frame to the top.
+   */
   #syncPhotos(index: number, skipWait = false): void {
-    const gsap = this.#gsap;
-    const ctx = this.#ctx;
-    if (!gsap || !ctx || !this.#desktopPhotos()) return;
-
-    const photos = [...this.#host.nativeElement.querySelectorAll<HTMLElement>('[data-nav-photo]')];
-    if (photos.length === 0) return;
-    if (this.#lastAnimated === index && this.#animatedPhotoCount === photos.length) return;
-
+    if (!this.#desktopPhotos()) return;
+    const first = !this.#photosSettled;
+    this.#photosSettled = true;
+    if (this.shownIndex() === index) {
+      this.#stopPhotoWait();
+      return;
+    }
     this.#stopPhotoWait();
-    const first = this.#lastAnimated < 0;
-    const indexChanged = this.#lastAnimated !== index;
-
-    // Keep the current photo on screen until the next one has downloaded,
-    // so the change never fades through an empty frame.
-    if (!first && indexChanged && !skipWait) {
+    if (!skipWait && !first) {
+      const photos = [...this.#host.nativeElement.querySelectorAll<HTMLElement>('[data-nav-photo]')];
       const pending = pendingNavListImage(photos, index);
       if (pending) {
-        // The `is-active` class would show its loading shimmer on top meanwhile.
-        const incoming = pending.closest<HTMLElement>('[data-nav-photo]');
-        if (incoming) ctx.add(() => gsap.set(incoming, { opacity: 0, overwrite: 'auto' }));
         this.#waitForPhoto(pending, index);
         return;
       }
     }
-
-    this.#lastAnimated = index;
-    this.#animatedPhotoCount = photos.length;
-
-    ctx.add(() => {
-      if (first || !indexChanged) {
-        settleNavListPhotos(gsap, photos, index);
-        return;
-      }
-      playNavListSwap(gsap, photos, index, this.#reduceMotion);
-    });
+    this.#shownIndex.set(index);
   }
 
   #waitForPhoto(img: HTMLImageElement, index: number): void {

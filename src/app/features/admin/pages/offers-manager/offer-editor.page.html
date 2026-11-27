@@ -271,6 +271,21 @@
                 </button>
               </div>
             </div>
+            @if (categoryChips().chips.length > 0) {
+              <ul class="offer-category-chips" aria-label="Included products by category">
+                @for (chip of categoryChips().chips; track chip.key) {
+                  <li class="offer-category-chip">
+                    {{ chip.name }} {{ chip.count.toLocaleString('en-US') }}
+                  </li>
+                }
+              </ul>
+              @if (brandKindsNote(); as note) {
+                <p class="elements-start gap-2 font-body-md">
+                  <mat-icon name="info" size="lg" aria-hidden="true" />
+                  <span>{{ note }}</span>
+                </p>
+              }
+            }
             @if (showProducts()) {
               <app-offer-preview [draft]="offer()" [products]="products()" [match]="matchForEditor" />
             }
@@ -280,7 +295,16 @@
                 @for (warning of overlapWarnings(); track warning.code) {
                   <p class="elements-start gap-2">
                     <mat-icon name="info" size="lg" aria-hidden="true" />
-                    <span>{{ warning.message }}</span>
+                    <span>
+                      {{ warning.message }}
+                      <a
+                        class="font-bold! underline"
+                        [routerLink]="['/admin/offers', warning.offerId]"
+                        target="_blank"
+                        rel="noopener"
+                        >Open the Other Offer<span class="sr-only"> (opens in a new tab)</span></a
+                      >
+                    </span>
                   </p>
                 }
               </div>
@@ -418,7 +442,7 @@
                   </button>
                 </div>
                 @if (moreOpen()) {
-                  <app-offer-settings [(draft)]="draft" />
+                  <app-offer-settings [(draft)]="draft" [total]="stats().total" [onSale]="stats().onSale" />
                 }
               </div>
 

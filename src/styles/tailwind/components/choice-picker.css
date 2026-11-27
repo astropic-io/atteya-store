@@ -1,0 +1,158 @@
+@layer components {
+  /*! offer rows on the product page (Gift Box, Bundle price, Bundle & Save, ATS-355) and the choice panel (app-choice-picker; shell is .side-panel). The .pdp-gift-* row classes are shared by all three boxes. */
+
+  /* Gift Box header: white, the black "Free gift" tag, "Worth …" and the heading. */
+  .pdp-gift-box__head {
+    @apply elements-start-col items-stretch! gap-2 px-4 pt-4 pb-3 border-b border-outline-variant;
+  }
+
+  .pdp-gift-tag {
+    @apply elements-start gap-1 px-2 py-0.5 bg-primary text-on-primary border-shape font-label-sm font-bold! uppercase;
+  }
+
+  /* One gift. The gift Add to Bag asks for gets a red line on its left. */
+  .pdp-gift-line {
+    @apply w-full border-b border-outline-variant last:border-b-0;
+  }
+
+  .pdp-gift-line--prompt {
+    @apply border-s-2 border-s-error;
+  }
+
+  /* A gift row: photo, title and what is picked, then "Choose" / "Change" (a button) or "Included". */
+  .pdp-gift-item {
+    @apply w-full min-w-0 elements-start gap-3 px-4 py-3 text-start bg-surface;
+  }
+
+  button.pdp-gift-item {
+    @apply cursor-pointer transition-colors;
+  }
+
+  button.pdp-gift-item:enabled:hover {
+    @apply bg-surface-container-low;
+  }
+
+  button.pdp-gift-item:disabled {
+    @apply cursor-not-allowed opacity-60;
+  }
+
+  .pdp-gift-item__text {
+    @apply flex-1 min-w-0 elements-start-col items-stretch! gap-0.5;
+  }
+
+  .pdp-gift-item__detail {
+    @apply font-body-sm truncate;
+  }
+
+  .pdp-gift-item__action {
+    @apply shrink-0 elements-start gap-0.5 font-label-lg font-bold! underline underline-offset-4;
+  }
+
+  .pdp-gift-item__action--plain {
+    @apply no-underline;
+  }
+
+  .pdp-gift-thumb {
+    @apply relative shrink-0 size-14 overflow-hidden border border-outline-variant border-shape bg-surface-container-low;
+  }
+
+  .pdp-gift-thumb--empty {
+    @apply elements-center border-dashed;
+  }
+
+  .pdp-gift-peek {
+    @apply shrink-0 elements-start -space-x-3;
+  }
+
+  .pdp-gift-thumb--peek {
+    @apply size-11 ring-2 ring-surface;
+  }
+
+  .pdp-gift-thumb--more {
+    @apply elements-center bg-primary text-on-primary border-primary font-label-md font-bold!;
+  }
+
+  .pdp-gift-sizes {
+    @apply flex flex-wrap gap-2 px-4 pb-3;
+  }
+
+  .pdp-gift-sizes .pdp-choice {
+    @apply min-w-12;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    button.pdp-gift-item {
+      transition: none;
+    }
+  }
+
+  /* The panel: a sheet from the bottom (92% of the screen) on phone and tablet, 40rem on the right
+     from 1024px with three cards a row (ATS-359). */
+  .choice-picker {
+    @apply h-[92dvh] border-t border-outline-variant;
+  }
+
+  .choice-picker__body {
+    @apply elements-start-col items-stretch! justify-start! gap-3;
+  }
+
+  /* The search field (.search-panel__field) keeps its own height in the column. */
+  .choice-picker__body > .search-panel__field {
+    @apply flex-none;
+  }
+
+  .choice-picker__filters {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .choice-picker__dot {
+    @apply size-9 elements-center border border-outline-variant border-shape cursor-pointer;
+  }
+
+  .choice-picker__dot[aria-pressed='true'] {
+    @apply border-primary ring-1 ring-primary;
+  }
+
+  .choice-picker__brand {
+    @apply min-h-10 gap-1.5 max-w-full;
+  }
+
+  .choice-picker__brand[aria-pressed='true'] .choice-picker__count {
+    @apply text-on-primary;
+  }
+
+  .choice-picker__clear {
+    @apply font-label-lg font-bold! underline underline-offset-4 cursor-pointer;
+  }
+
+  .choice-picker__grid {
+    @apply grid grid-cols-2 gap-3;
+  }
+
+  .choice-picker__card {
+    @apply w-full;
+  }
+
+  .choice-picker__footer {
+    @apply elements-start-col items-stretch!;
+  }
+
+  .choice-picker__sizes {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .choice-picker__sizes .pdp-choice {
+    @apply min-w-12;
+  }
+
+  @media (min-width: 1024px) {
+    /* Every offer's panel is 40rem wide with 3 cards a row on desktop (ATS-359; was 28rem / 2 a row under 9 choices). */
+    .choice-picker {
+      @apply h-dvh w-[40rem] border-t-0;
+    }
+
+    .choice-picker__grid {
+      @apply grid-cols-3;
+    }
+  }
+}

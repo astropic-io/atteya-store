@@ -1,4 +1,5 @@
 // GENERATED — edit functions/src/offers/engine
+import type { CountryBoxFees } from './delivery-countries';
 import { lowestGovernorateExtraFee, type GovernorateSetting } from './governorates';
 import { liveOffers } from './item-price';
 import { matchVariant } from './match';
@@ -49,10 +50,11 @@ export interface ShippingSettings {
    */
   readonly deliveryCountries?: readonly string[];
   /**
-   * Extra delivery fee per country abroad (ATS-326), whole EGP, added to the abroad box fee like
-   * a governorate's extra in Egypt. A listed country with no entry counts as 0.
+   * Extra delivery fee per country abroad for each abroad box (ATS-326, per box since ATS-338),
+   * whole EGP, added to that box's fee like a governorate's extra in Egypt. A listed country or box
+   * with no entry counts as 0.
    */
-  readonly deliveryCountryFees?: Readonly<Record<string, number>>;
+  readonly deliveryCountryFees?: Readonly<Record<string, CountryBoxFees>>;
 }
 
 export type ShippingRegion = 'egypt' | 'international';
@@ -93,7 +95,8 @@ export interface ShippingQuoteInput {
    */
   readonly governorateExtraEgp?: number;
   /**
-   * Abroad only (ATS-326): the delivery country's extra fee (`countryExtraFee()`), added to the box
+   * Abroad only (ATS-326): the delivery country's extra fee for the chosen box
+   * (`countryExtraFee(settings, country, boxId)`, ATS-338), added to the box
    * fee. A promotion fee and free-over replace the whole delivery fee, so they never add it.
    * Ignored for Egypt.
    */

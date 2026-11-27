@@ -1,0 +1,77 @@
+@let box = helpBox();
+
+<section class="surface-card p-5 sm:p-6 space-y-6" aria-label="WhatsApp help box settings">
+  <div class="border-b border-outline-variant pb-4 elements-between gap-4">
+    <div class="min-w-0">
+      <h3 id="help-box-switch-label" class="font-title-md font-bold!">Show the WhatsApp help box</h3>
+      <p class="font-body-sm opacity-70 pt-0.5">
+        Near the bottom of the home page. Its button, Message Us on WhatsApp, opens a chat with the store.
+      </p>
+    </div>
+    <mat-slide-toggle
+      aria-labelledby="help-box-switch-label"
+      [checked]="box.enabled"
+      (change)="onEnabledChange($event)"
+    />
+  </div>
+
+  @if (!hasNumber()) {
+    <p class="p-4 bg-surface-container-low panel-border font-body-md" role="status">
+      The store has no WhatsApp number yet, so shoppers don’t see this box.
+    </p>
+  }
+
+  <div class="space-y-4 bg-surface-container-low p-5 panel-border">
+    <mat-form-field appearance="outline" class="w-full">
+      <mat-label>Headline</mat-label>
+      <input
+        matInput
+        id="help-box-headline"
+        name="help-box-headline"
+        autocomplete="off"
+        [ngModel]="box.headline"
+        (ngModelChange)="headlineChange.emit($event)"
+        placeholder="Not sure which racket fits you?"
+        required
+      />
+      <mat-hint>Up to {{ limits.helpHeadline.words }} words.</mat-hint>
+      <mat-hint align="end">
+        <span [class.text-error]="headlineState().over">{{ headlineState().label }}</span>
+      </mat-hint>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="w-full">
+      <mat-label>Line under the headline</mat-label>
+      <input
+        matInput
+        id="help-box-text"
+        name="help-box-text"
+        autocomplete="off"
+        [ngModel]="box.text"
+        (ngModelChange)="textChange.emit($event)"
+        placeholder="Tell us how you play and we'll help you choose."
+      />
+      <mat-hint>Up to {{ limits.helpText.words }} words.</mat-hint>
+      <mat-hint align="end">
+        <span [class.text-error]="textState().over">{{ textState().label }}</span>
+      </mat-hint>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="w-full">
+      <mat-label>First message (optional)</mat-label>
+      <textarea
+        matInput
+        id="help-box-message"
+        name="help-box-message"
+        rows="2"
+        [ngModel]="box.message"
+        (ngModelChange)="messageChange.emit($event)"
+        placeholder="Hi! I need help choosing a racket."
+      ></textarea>
+      <mat-hint>Already written in the chat when it opens. The shopper still taps send.</mat-hint>
+      <mat-hint align="end">
+        <span [class.text-error]="messageState().over">{{ messageState().label }}</span>
+      </mat-hint>
+    </mat-form-field>
+  </div>
+</section>

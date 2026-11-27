@@ -1,8 +1,10 @@
 import {
   HeroSlide,
+  HomeHelpBox,
   HomeHero,
   HomeNavList,
   HomeNavListItem,
+  HomeOfferBanner,
   HomeShopCategories,
   ShopCategoryCard,
 } from '../models/home.model';
@@ -86,3 +88,56 @@ export const DEFAULT_HOME_NAV_LIST: HomeNavList = {
   title: 'Shop by category',
   items: DEFAULT_NAV_LIST_ITEMS.map((item) => ({ ...item })),
 };
+
+/** Section 4 starts off: it needs a photo and a link before it can show (ATS-347). */
+export const DEFAULT_HOME_OFFER_BANNER: HomeOfferBanner = {
+  enabled: false,
+  label: '',
+  headline: '',
+  link: '',
+  linkText: '',
+  imageUrl: '',
+  imageAlt: '',
+  phoneImageUrl: '',
+};
+
+/** Section 5 shows by default with this text (ATS-348). */
+export const DEFAULT_HOME_HELP_BOX: HomeHelpBox = {
+  enabled: true,
+  headline: 'Not sure which racket fits you?',
+  text: "Tell us how you play and we'll help you choose.",
+  message: '',
+};
+
+/** A text limit for the admin: at most `chars` characters and (when set) `words` words. */
+export interface HomeTextLimit {
+  readonly chars: number;
+  readonly words?: number;
+}
+
+/**
+ * Text limits that keep the home sections' layout from breaking (ATS-346, ATS-347, ATS-348).
+ * Admin → Home Page shows a counter for each and Publish to Store refuses text over them.
+ */
+export const HOME_TEXT_LIMITS = {
+  navListName: { chars: 14 },
+  navListCaption: { chars: 36, words: 6 },
+  bannerLabel: { chars: 20, words: 3 },
+  bannerHeadline: { chars: 40, words: 7 },
+  helpHeadline: { chars: 40, words: 7 },
+  helpText: { chars: 70, words: 12 },
+  helpMessage: { chars: 120 },
+} as const satisfies Record<string, HomeTextLimit>;
+
+/** Words in a piece of text, as the limits count them. */
+export function homeWordCount(text: string): number {
+  const trimmed = text.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
+/** Whether `text` fits `limit`. */
+export function fitsHomeTextLimit(text: string, limit: HomeTextLimit): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length > limit.chars) return false;
+  return limit.words === undefined || homeWordCount(trimmed) <= limit.words;
+}

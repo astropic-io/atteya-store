@@ -27,6 +27,9 @@ Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292
 - At most 10 requests per order, cancelled and rejected ones included (`RETURN_REQUESTS_PER_ORDER_MAX`), so a cancel and resend loop can't flood the staff inbox.
 - The signed-in owner is matched by uid (`customerId`); a guest by the order's secret `viewKey` from the emailed order link (`isOrderShopper()` in `functions/src/returns/return-access.ts`, constant-time compare).
 - Every refusal has a plain message (`returnRefusalMessage()` and `ReturnRequestError` in `return-request.ts`, turned into an `HttpsError` by the callable).
+- **Start Return for Customer (<KEY>-342)**: on `/admin/orders/:id`, while the shopper could send a request (`returnEntry()` open), staff open the same Return or Exchange screen with `forCustomer` (title "Return or Exchange for <name>", the refund number prefilled with the phone, a Courier fee choice "Customer pays … by InstaPay first" or "The store pays").
+- `requestReturn` with `forCustomer: true` checks the staff role instead of the owner and saves `startedByStaff`, `startedBy`, `startedByEmail` and `storePaysFee` (fee 0 when the store pays). The admin return page's history then says "Started by staff for the customer" with who did it (`returnHistory()`), not "Requested by the customer". A request started by staff sends no Request Sent or staff alert.
+- The page then approves it straight away (`approveReturnRequest`), so the customer gets the usual Approved email (or its pay version); with a Wrong Item Sent item it opens `/admin/returns/:id` to pick the sent piece and approve there.
 
 ## Kinds
 
@@ -154,7 +157,8 @@ Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292
 - Approved (`REQUEST APPROVED`): "Our courier will come to your delivery address.", Hand Over (every piece, free gifts going back included), You Get (new pieces, then the InstaPay refund), and a grey box with the courier fee (free / cash at your door / taken off your refund).
 - Rejected (`WE CAN'T TAKE IT BACK`): staff's `rejectReason` in a grey box, a full-width **Message Us on WhatsApp** button (no second one in the footer), and the items with gifts marked "Stays with the …".
 - Received (`ITEMS RECEIVED`): exchange-only says "Your exchange is done."; with a refund it says "We got your items. Your refund of EGP 850 is on its way by InstaPay."
-- Refund Sent (`REFUND SENT`): the amount staff sent (`refundSentEgp`), "Sent by InstaPay to …5678" (only the last 4 characters of `refundTo`, spaces left out) and the reference when staff gave one, then only the refunded items.
+- Refund Sent (`REFUND SENT`): the amount staff sent (`refundSentEgp`), "Sent by InstaPay to 0100 123 5678" (the full `refundTo`, so the shopper can spot a wrong number, <KEY>-342) and the reference when staff gave one, then only the refunded items.
+- Approved, its pay version and Payment Received show the refund with the full `refundTo` and a "Not yours? Message us" note, and every item of the order by state (Delivered, ↩ Returning, ✕ Cancelled) from `readOrderForEmail()` (<KEY>-342).
 - Tests for which email each status change sends and the four templates: `functions/src/email/return-emails.test.ts` (in `npm test --prefix functions`).
 
 ## Staff steps (admin Returns)
@@ -163,7 +167,7 @@ Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292
 - The admin menu's **Returns** item shows the count of Requested and Waiting for Payment (<KEY>-303) (`AdminNavService`, `getCountFromServer`), read again after each step (`refreshReturnsCount()`).
 - `/admin/returns/:requestId` (`ReturnDetailsPageComponent`) shows refs (order ref links to `/admin/orders/:id`), the customer with **Message Customer on WhatsApp** (`returnStaffWhatsappText()`), items with photo, options, what was asked and live stock per piece (now and what each step does), money, the shopper's InstaPay details and note, and the staff history.
 - `/admin/orders/:id` and the open order in the Orders list show a **Returns** line (`app-order-returns-line`, reads `returnRequests` by `orderId`).
-- Callables (`europe-west3`, `requireRole`): `approveReturnRequest`, `confirmReturnPayment` (<KEY>-303), `rejectReturnRequest`, `receiveReturnRequest` (admin and staff) and `markRefundSent` (admin only, checked on the server).
+- Callables (`europe-west3`, `requireRole`): `approveReturnRequest`, `confirmReturnPayment` (<KEY>-303), `rejectReturnRequest`, `receiveReturnRequest` (admin and staff) and `markRefundSent` (admins and staff with Refunds switched on, <KEY>-368, checked on the server).
 - **Payment Received** (`confirmReturnPayment`, only from Waiting for Payment) asks "Did the EGP 60 arrive by InstaPay?", then moves the request to Approved and stamps `paymentReceivedAt` / `paymentReceivedBy`; no stock moves.
 - All five run `runReturnStep()` (`functions/src/returns/return-staff-transaction.ts`): one transaction reads the request, order and products, checks the move with `nextReturnStatuses()`, moves stock, stamps the request, updates the order's `returns` with `withReturnStatus()` and appends `{ status, from, at, by, byEmail?, reason? }` to `returnStaffNotes/{id}.history`.
 - The pure part is `functions/src/returns/return-staff-step.ts` (input checks, `withSentPieces()`, `approvePlan()`, `approveStep()`, `receiveStep()`, `rejectStockFor()`, `applyStockMoves()`), tested in `return-staff-step.test.ts`.
@@ -184,7 +188,7 @@ Built in four tickets: <KEY>-291 (server, shared rules, first emails), <KEY>-292
 - Reject from Waiting for Payment: the Reject dialog has "The customer already paid the courier fee" (`rejectReturnRequest` `feeAlreadyPaid`, refused from Requested).
 - Reject from Approved saves the fee to send back automatically when `paymentReceivedAt` is set (no checkbox); the dialog says so.
 - The fee to send back is saved as `feeBackEgp` on `returnRequests/{id}` and on the order's `returns` entry (`withReturnStatus(..., { feeBackEgp })`).
-- **Fee Sent Back** (`markFeeSentBack`, `europe-west3`, App Check, `requireRole` admin only) saves `feeSentBackEgp` (1 to the fee), `feeSentBackTo` (required, 100 characters), `feeSentBackReference` (optional, 100 characters), `feeSentBackAt`, `feeSentBackBy`; refuses when there is no fee to send back or it was already sent (`runFeeSentBack()` in `return-staff-transaction.ts`).
+- **Fee Sent Back** (`markFeeSentBack`, `europe-west3`, App Check, `requireExtra(req, 'refunds')`: admins and staff with Refunds switched on, <KEY>-368) saves `feeSentBackEgp` (1 to the fee), `feeSentBackTo` (required, 100 characters), `feeSentBackReference` (optional, 100 characters), `feeSentBackAt`, `feeSentBackBy`; refuses when there is no fee to send back or it was already sent (`runFeeSentBack()` in `return-staff-transaction.ts`).
 - Fee Sent Back writes only `feeSentBackEgp` and `feeSentBackAt` (a Timestamp) on the order's `returns` entry (`withReturnFeeSentBack()`), never Sent to or the reference; `orderViews` follows through `syncOrderView`.
 - Staff history rows can carry a `label` the admin shows instead of the status name ("Fee sent back: EGP 115", "Cancelled: the courier fee didn't arrive in 5 days").
 - Admin `/admin/returns/:id` shows the red `text-error` line "Fee to send back: EGP 115", then "Fee sent back: EGP 115 · 14 Nov" (`feeBackLine()`); the Returns list shows the same line under the money; only admins see the **Fee Sent Back** button.

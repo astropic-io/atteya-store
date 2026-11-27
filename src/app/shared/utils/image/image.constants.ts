@@ -81,6 +81,22 @@ export const PHOTO_SPOTS = {
     frameName: 'banner',
     aspectClass: 'aspect-video',
   },
+  homeOfferBanner: {
+    ratioWidth: 21,
+    ratioHeight: 9,
+    best: { width: 2520, height: 1080 },
+    smallest: { width: 1680, height: 720 },
+    frameName: 'banner',
+    aspectClass: 'aspect-21/9',
+  },
+  homeOfferBannerPhone: {
+    ratioWidth: 4,
+    ratioHeight: 5,
+    best: { width: 1200, height: 1500 },
+    smallest: { width: 800, height: 1000 },
+    frameName: 'banner',
+    aspectClass: 'aspect-4/5',
+  },
   categoryPhoto: {
     ratioWidth: 1,
     ratioHeight: 1,

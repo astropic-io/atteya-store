@@ -1,6 +1,8 @@
 import { isPlatformBrowser } from '@angular/common';
 import {
   afterNextRender,
+  afterRenderEffect,
+  computed,
   DestroyRef,
   Directive,
   ElementRef,
@@ -11,7 +13,18 @@ import {
 } from '@angular/core';
 import type { gsap as GsapNamespace } from 'gsap';
 import type { ScrollTrigger as ScrollTriggerClass } from 'gsap/ScrollTrigger';
-import { rowItemTarget, scrollRowByItem } from '@shared/utils/row-scroll.utils';
+import {
+  attachEndlessRow,
+  endlessCollapseTo,
+  endlessHideCopies,
+  endlessIndex,
+  endlessProgress,
+  endlessRecentre,
+  endlessRowOverflows,
+  endlessSpan,
+  endlessStep,
+} from '@shared/utils/endless-row.utils';
+import { rowItemTarget, rowScrollProgress, scrollRowByItem } from '@shared/utils/row-scroll.utils';
 
 type GsapApi = typeof GsapNamespace;
 type GsapMatchMedia = ReturnType<GsapApi['matchMedia']>;
@@ -48,6 +61,12 @@ const REFRESH_DELAY_MS = 200;
  * everything else in the section and sets `--row-lock-media-max` (px) on the
  * section; the section's CSS caps the photos' height with it, so the heading,
  * cards and arrows all fit below the nav.
+ *
+ * Wherever the lock is off (phones, tablets, reduced motion, a section that
+ * doesn't fit), the row is endless instead (`@shared/utils/endless-row.utils`):
+ * give `rowLoopCount` the number of cards; while `loops()` is true the section
+ * renders its cards three times, and after the last card the first one comes
+ * next (arrows, swipe and drag alike), the same as the product page photos.
  */
 @Directive({
   selector: '[appRowScrollLock]',
@@ -56,13 +75,30 @@ const REFRESH_DELAY_MS = 200;
 export class RowScrollLockDirective {
   readonly #row = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
   readonly #isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
+  readonly #destroyRef = inject(DestroyRef);
   readonly #enabled = signal(false);
+  /** The desktop check has run (or GSAP failed to load), so `enabled` is final for now. */
+  readonly #decided = signal(false);
 
   /** Selector of the photos that shrink so the section fits the window while locked. */
   readonly rowLockFit = input<string | null>(null);
 
   /** True while the desktop lock is set up (the page scroll drives the row). */
   readonly enabled = this.#enabled.asReadonly();
+
+  /** Number of cards (one copy). The row only loops when they don't all fit. */
+  readonly rowLoopCount = input(0);
+
+  /** Cards wider than the row, measured on one copy. */
+  readonly #overflows = signal(false);
+  /** Cards rendered right now (three copies once the section has caught up with `loops`). */
+  readonly #children = signal(0);
+
+  /**
+   * The row is endless: the desktop lock is off and the cards don't all fit. While true, the
+   * section renders its cards three times (`[0, 1, 2]`, copies 0 and 2 stay clickable: they can be in view next to copy 1).
+   */
+  readonly loops = computed(() => this.#decided() && !this.#enabled() && this.#overflows());
 
   #mm: GsapMatchMedia | null = null;
   #trigger: ScrollTriggerClass | null = null;
@@ -71,8 +107,19 @@ export class RowScrollLockDirective {
 
   constructor() {
     if (!this.#isBrowser) return;
-    afterNextRender(() => void this.#boot());
-    inject(DestroyRef).onDestroy(() => {
+    afterNextRender(() => {
+      // Phones and tablets never lock: loop straight away instead of waiting for GSAP.
+      if (!window.matchMedia?.(LOCK_QUERY).matches) this.#decided.set(true);
+      this.#watchOverflow();
+      void this.#boot();
+    });
+    // While it loops, keep the row on the middle copy (jumps back once it rests in copy 0 or 2).
+    afterRenderEffect((onCleanup) => {
+      const count = this.rowLoopCount();
+      if (!this.loops() || this.#children() < count * 3) return;
+      onCleanup(attachEndlessRow(this.#row, () => this.rowLoopCount()));
+    });
+    this.#destroyRef.onDestroy(() => {
       this.#destroyed = true;
       this.#mm?.revert();
       this.#mm = null;
@@ -81,7 +128,8 @@ export class RowScrollLockDirective {
 
   /**
    * Arrow buttons. While locked, scroll the page to the card's position so the
-   * page and the row stay in step; otherwise scroll the row itself.
+   * page and the row stay in step; otherwise scroll the row itself (endless
+   * while it loops: after the last card comes the first).
    */
   step(direction: 1 | -1): void {
     const trigger = this.#trigger;
@@ -90,7 +138,60 @@ export class RowScrollLockDirective {
       window.scrollTo({ top: trigger.start + target, behavior: 'smooth' });
       return;
     }
+    if (this.loops()) {
+      endlessStep(this.#row, this.rowLoopCount(), direction);
+      return;
+    }
     scrollRowByItem(this.#row, direction);
+  }
+
+  /** Where the row is, for the arrows and the progress line (loop-aware). */
+  position(): { progress: number; canPrev: boolean; canNext: boolean } {
+    if (this.loops()) {
+      return { progress: endlessProgress(this.#row, this.rowLoopCount()), canPrev: true, canNext: true };
+    }
+    return rowScrollProgress(this.#row);
+  }
+
+  /** Keeps `#overflows` up to date as the row or its cards change size. */
+  #watchOverflow(): void {
+    const row = this.#row;
+    const copied = (): boolean => {
+      const count = this.rowLoopCount();
+      return count > 0 && row.children.length >= count * 3;
+    };
+    let wasCopied = copied();
+    let lastCount = this.rowLoopCount();
+    /** Card at the row's start while it loops, to land on when the copies go away. */
+    let index = 0;
+    const measure = (): void => {
+      const isCopied = copied();
+      const count = this.rowLoopCount();
+      // Runs before the browser paints: copy 0 never shows, and leaving the loop keeps the card.
+      if (isCopied && !wasCopied) endlessRecentre(row, count);
+      if (!isCopied && wasCopied) endlessCollapseTo(row, index);
+      // The cards changed while looping (prices loaded, the live list arrived): same card, copy 1.
+      if (isCopied && wasCopied && count !== lastCount) endlessCollapseTo(row, (index % count) + count);
+      if (isCopied || wasCopied) endlessHideCopies(row, count);
+      wasCopied = isCopied;
+      lastCount = count;
+      this.#children.set(row.children.length);
+      this.#overflows.set(endlessRowOverflows(row, this.rowLoopCount()));
+    };
+    const track = (): void => {
+      if (wasCopied) index = endlessIndex(row, this.rowLoopCount());
+    };
+    measure();
+    row.addEventListener('scroll', track, { passive: true });
+    const resize = new ResizeObserver(measure);
+    resize.observe(row);
+    const children = new MutationObserver(measure);
+    children.observe(row, { childList: true });
+    this.#destroyRef.onDestroy(() => {
+      row.removeEventListener('scroll', track);
+      resize.disconnect();
+      children.disconnect();
+    });
   }
 
   async #boot(): Promise<void> {
@@ -101,8 +202,9 @@ export class RowScrollLockDirective {
       this.#mm = gsap.matchMedia();
       this.#mm.add(LOCK_QUERY, () => this.#lock(ScrollTrigger));
     } catch {
-      // No lock: normal page scroll, arrows and drag still work.
+      // No lock: normal page scroll, arrows and drag still work (and the row loops).
     }
+    if (!this.#destroyed) this.#decided.set(true);
   }
 
   #inRange(trigger: ScrollTriggerClass): boolean {
@@ -147,7 +249,10 @@ export class RowScrollLockDirective {
     };
 
     const measure = (): void => {
-      const max = row.scrollWidth - row.clientWidth;
+      // While the row still holds its three copies, measure one copy (they go once it locks).
+      const count = this.rowLoopCount();
+      const copied = count > 0 && row.children.length >= count * 3;
+      const max = (copied ? endlessSpan(row, count) : row.scrollWidth) - row.clientWidth;
       fitMedia(max > MIN_TRAVEL_PX);
       const height = section.offsetHeight;
       const fits = height <= available();

@@ -86,6 +86,11 @@ export class ImagePickerComponent {
   });
   protected readonly isHeroBanner = computed(() => this.spot() === 'heroBanner');
   protected readonly previewAspectClass = computed(() => this.photoSpot()?.aspectClass ?? this.aspectClass());
+  /** A tall photo preview is kept narrow, so it never fills the whole editor (about 20 × 25 rem for 4:5). */
+  protected readonly previewSizeClass = computed(() => {
+    const spot = this.photoSpot();
+    return spot && spot.ratioHeight > spot.ratioWidth ? 'mx-auto max-w-80' : '';
+  });
   /**
    * Size read at the last upload or import. Some editors keep only the path and alt text, so the
    * size would be lost on the way back in; this keeps the fit check working for that photo.
@@ -172,7 +177,8 @@ export class ImagePickerComponent {
       this.uploaded.emit(resolved.path);
 
       const currentAlt = this.asset()?.alt?.trim() ?? '';
-      const fallbackAlt = sanitizeAltFromFilename(file.name) || 'Store image';
+      // An optional description stays empty rather than becoming the file name.
+      const fallbackAlt = this.altOptional() ? '' : sanitizeAltFromFilename(file.name) || 'Store image';
       const nextAlt = currentAlt || fallbackAlt;
 
       this.#lastSize.set({ path: resolved.path, width: resolved.width, height: resolved.height });
@@ -214,7 +220,8 @@ export class ImagePickerComponent {
 
       const currentAlt = this.asset()?.alt?.trim() ?? '';
       const lastSeg = resolved.path.split('/').pop() ?? '';
-      const nextAlt = currentAlt || sanitizeAltFromFilename(lastSeg) || 'Store image';
+      const nextAlt =
+        currentAlt || (this.altOptional() ? '' : sanitizeAltFromFilename(lastSeg) || 'Store image');
 
       this.#lastSize.set({ path: resolved.path, width: resolved.width, height: resolved.height });
       this.asset.set({

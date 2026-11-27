@@ -2,6 +2,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { CallableRequest, HttpsError } from 'firebase-functions/v2/https';
 import { requireAppCheck } from './callable-options.js';
 import { isRevokedSession } from './session-revocation.js';
+import { readExtras, roleHasExtra, type StaffExtra } from './staff-extras.js';
 
 export type Role = 'user' | 'staff' | 'admin';
 
@@ -65,4 +66,17 @@ export async function requireRole(req: CallableRequest, needed: Role): Promise<R
     emailVerified: req.auth.token.email_verified === true,
     role,
   };
+}
+
+/**
+ * Staff and admin callables that need one extra (ATS-368): admins pass, staff pass only when that
+ * extra is in their `extras` claim. Runs the same App Check, sign-in and revoked-session checks as
+ * `requireRole(req, 'staff')`.
+ */
+export async function requireExtra(req: CallableRequest, extra: StaffExtra): Promise<RequiredCaller> {
+  const caller = await requireRole(req, 'staff');
+  if (!roleHasExtra(caller.role, readExtras(req.auth?.token['extras']), extra)) {
+    throw new HttpsError('permission-denied', "You don't have permission to do that.");
+  }
+  return caller;
 }

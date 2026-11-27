@@ -72,6 +72,13 @@ export interface RequestReturnInput {
   readonly items: readonly ReturnItemInput[];
   readonly note: string | null;
   readonly refundTo: string | null;
+  /**
+   * Staff start it for the customer after a call (ATS-342): `requestReturn` checks the caller is
+   * staff instead of the order's owner. False from the shopper's screen.
+   */
+  readonly forCustomer?: boolean;
+  /** Staff only (`forCustomer`): the store pays the courier fee, so the customer pays nothing first. */
+  readonly storePaysFee?: boolean;
 }
 
 /** An order id: letters and digits only (Firestore auto ids). */
@@ -120,7 +127,16 @@ export function parseRequestReturn(raw: unknown): RequestReturnInput {
       'Add your InstaPay number or address so we can send your refund.',
     );
   }
-  return { orderId, viewKey, items, note, refundTo: anyRefund ? refundTo : null };
+  const forCustomer = raw['forCustomer'] === true;
+  return {
+    orderId,
+    viewKey,
+    items,
+    note,
+    refundTo: anyRefund ? refundTo : null,
+    forCustomer,
+    storePaysFee: forCustomer && raw['storePaysFee'] === true,
+  };
 }
 
 function parseItem(raw: unknown): ReturnItemInput {
@@ -288,7 +304,8 @@ export function buildReturnRequest(build: BuildReturnInput): BuiltReturnRequest 
     {
       status: order['status'],
       deliveredAtMs,
-      isInternational: pricing['isInternational'] === true,
+      // Paid from abroad (delivered in Egypt) is handled on WhatsApp like an order shipped abroad.
+      isInternational: pricing['isInternational'] === true || typeof pricing['paidFromCountry'] === 'string',
       returns,
     },
     build.nowMs,
@@ -349,11 +366,13 @@ export function buildReturnRequest(build: BuildReturnInput): BuiltReturnRequest 
   const storeFault = items.some((item) => isStoreFault(item.kind));
   const itemsEgp = refunds.reduce((sum, item) => sum + item.refundEgp, 0);
   const shipping = isRecord(pricing['shipping']) ? pricing['shipping'] : {};
-  const fee = courierFeeEgp({
-    orderFeeEgp: wholeOrZero(shipping['priceEgp']),
-    normalBoxFeeEgp: build.normalBoxFeeEgp,
-    storeFault,
-  });
+  const fee = input.storePaysFee
+    ? 0
+    : courierFeeEgp({
+        orderFeeEgp: wholeOrZero(shipping['priceEgp']),
+        normalBoxFeeEgp: build.normalBoxFeeEgp,
+        storeFault,
+      });
   const money = returnMoney(itemsEgp, fee, hasRefund);
 
   return {

@@ -521,7 +521,10 @@ export interface ReturnOrderFacts {
   readonly status: unknown;
   /** `deliveredAt` in epoch ms, or null. */
   readonly deliveredAtMs: number | null;
-  /** `pricing.isInternational`: orders shipped outside Egypt can't send a request. */
+  /**
+   * `pricing.isInternational` (or paid from abroad, `pricing.paidFromCountry`): these orders can't
+   * send a request; they ask on WhatsApp.
+   */
   readonly isInternational: boolean;
   readonly returns: readonly ReturnSummary[];
 }
@@ -635,18 +638,23 @@ function linePaidEgp(line: Readonly<Record<string, unknown>>, quantity: number):
 export function piecesLeft(lines: readonly ReturnOrderLine[], returns: readonly ReturnSummary[]): number[] {
   const left = lines.map((line) => line.quantity);
   for (const entry of returns) {
-    const held = returnHoldsPieces(entry.status)
-      ? entry.items
-      : entry.status === 'rejected'
-        ? (entry.keptItems ?? [])
-        : [];
-    for (const item of held) {
+    for (const item of heldReturnItems(entry)) {
       if (item.lineIndex >= 0 && item.lineIndex < left.length) {
         left[item.lineIndex] = Math.max(0, left[item.lineIndex]! - item.quantity);
       }
     }
   }
   return left;
+}
+
+/**
+ * The pieces one request still takes from the order: all its items unless it is Rejected or
+ * Cancelled, and a Rejected one's kept Wrong Item Sent pieces (`keptItems`). `piecesLeft()` and
+ * the return emails' item list both use it.
+ */
+export function heldReturnItems(entry: ReturnSummary): readonly { lineIndex: number; quantity: number }[] {
+  if (returnHoldsPieces(entry.status)) return entry.items;
+  return entry.status === 'rejected' ? (entry.keptItems ?? []) : [];
 }
 
 // ── Free gifts ──────────────────────────────────────────────────────────────

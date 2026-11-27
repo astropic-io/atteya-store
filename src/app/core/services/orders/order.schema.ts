@@ -121,6 +121,8 @@ export const OrderPricingSnapshotSchema = v.object({
   ),
   /** Card orders shipped abroad (ATS-311): whole pounds Paymob charges. `totalEgp` stays the Egypt price. */
   chargeEgp: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
+  /** Paid from abroad, delivered to someone in Egypt: the country the shopper pays from. */
+  paidFromCountry: v.optional(country),
 });
 
 export const OrderPaymobSchema = v.object({
@@ -131,6 +133,18 @@ export const OrderPaymobSchema = v.object({
   transactionId: v.nullable(v.number(), null),
   paidAt: v.nullable(timestampSchema, null),
 });
+
+/**
+ * Paid from abroad, delivered to someone in Egypt: the shopper who pays (`shipping` is the
+ * recipient). Missing on every other order.
+ */
+export const OrderPayerSchema = v.object({
+  fullName: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(120)),
+  phone: v.pipe(v.string(), v.trim(), v.minLength(6), v.maxLength(20)),
+  country,
+});
+
+export type OrderPayer = v.InferOutput<typeof OrderPayerSchema>;
 
 /** Legacy international bank-transfer snapshot (read-only for admin / confirmation). */
 export const OrderBankTransferSchema = v.object({
@@ -155,6 +169,27 @@ export const OrderStatusChangeSchema = v.object({
 
 export type OrderStatusChange = v.InferOutput<typeof OrderStatusChangeSchema>;
 
+/** One item cancel's staff-only row (`orderStaffNotes/{id}.itemCancels`, ATS-342). */
+export const OrderItemCancelNoteSchema = v.object({
+  id: v.string(),
+  label: v.optional(v.string(), ''),
+  at: v.optional(v.nullable(timestampSchema), null),
+  by: v.optional(v.nullable(v.string()), null),
+  byEmail: v.optional(v.nullable(v.string()), null),
+  reason: v.optional(v.nullable(v.string()), null),
+  amountOffEgp: v.optional(v.number(), 0),
+  refundEgp: v.optional(v.number(), 0),
+});
+
+/** One item refund marked sent (`orderStaffNotes/{id}.itemRefunds`, ATS-342). */
+export const OrderItemRefundNoteSchema = v.object({
+  id: v.string(),
+  at: v.optional(v.nullable(timestampSchema), null),
+  by: v.optional(v.nullable(v.string()), null),
+  byEmail: v.optional(v.nullable(v.string()), null),
+  reference: v.optional(v.nullable(v.string()), null),
+});
+
 /**
  * `orderStaffNotes/{orderId}`: the staff-only side of an order (admin read, Admin SDK write), kept
  * off `orders/{id}` because the shopper who owns the order can read that doc.
@@ -164,6 +199,10 @@ export const OrderStaffNotesSchema = v.object({
   statusHistory: v.optional(v.fallback(v.array(OrderStatusChangeSchema), []), []),
   /** Typed when cancelling; never shown to the shopper. */
   cancelReason: v.optional(v.nullable(v.string()), null),
+  /** Who cancelled each item and why (ATS-342), matched to `orders.itemCancels` by `id`. */
+  itemCancels: v.optional(v.fallback(v.array(OrderItemCancelNoteSchema), []), []),
+  /** Who marked each item refund as sent (ATS-342), by cancel `id`. */
+  itemRefunds: v.optional(v.fallback(v.array(OrderItemRefundNoteSchema), []), []),
   /**
    * Bank Transfer paid in another currency (ATS-304): the abroad markup and the rate before it
    * (shopper currency per 1 EGP) behind `pricing.payIn.factor`. Staff-only. Unreadable: null.
@@ -193,6 +232,8 @@ const OrderBaseFields = {
   customerId: v.nullable(v.string(), null),
   customerEmail: v.nullable(v.string(), null),
   shipping: OrderShippingSchema,
+  /** A bad payer block is dropped rather than hiding the order. */
+  payer: v.optional(v.fallback(v.nullable(OrderPayerSchema), null), null),
   pricing: OrderPricingSnapshotSchema,
   confirmedAt: v.nullable(timestampSchema, null),
   confirmedBy: v.nullable(v.string(), null),
@@ -203,6 +244,11 @@ const OrderBaseFields = {
    * `readReturnSummaries()` from `@core/config/returns`.
    */
   returns: v.optional(v.fallback(v.array(v.unknown()), []), []),
+  /**
+   * Pieces staff cancelled from the order (server-written, ATS-342), kept raw: read it with
+   * `readItemCancels()` from `@core/config/order-item-cancel`.
+   */
+  itemCancels: v.optional(v.fallback(v.array(v.unknown()), []), []),
 };
 
 export const StoreOrderSchema = v.object({
@@ -266,6 +312,8 @@ export const OrderViewSchema = v.object({
   deliveredAt: v.optional(v.nullable(timestampSchema), null),
   /** The order's return and exchange summary, copied by `orderViewFields()`. */
   returns: v.optional(v.fallback(v.array(v.unknown()), []), []),
+  /** Pieces staff cancelled (ATS-342), copied without the refund number. */
+  itemCancels: v.optional(v.fallback(v.array(v.unknown()), []), []),
 });
 
 export type OrderViewDoc = v.InferOutput<typeof OrderViewSchema>;
@@ -288,6 +336,8 @@ export function orderFromView(view: OrderViewDoc): StoreOrderDoc {
     customerId: null,
     customerEmail: null,
     shipping: view.shipping,
+    // The view never holds who pays (the order page doesn't show it).
+    payer: null,
     pricing: view.pricing,
     confirmedAt: view.confirmedAt,
     confirmedBy: null,
@@ -310,5 +360,6 @@ export function orderFromView(view: OrderViewDoc): StoreOrderDoc {
     shippedAt: view.shippedAt,
     deliveredAt: view.deliveredAt,
     returns: view.returns,
+    itemCancels: view.itemCancels,
   };
 }

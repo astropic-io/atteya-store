@@ -13,33 +13,35 @@
     (pointercancel)="onPointerEnd($event)"
     (dragstart)="$event.preventDefault()"
   >
-    @for (img of photos; track img.path; let i = $index) {
-      <div class="pdp-gallery-slide">
-        @if (i === 0) {
-          <img
-            [ngSrc]="path(img.path)"
-            [appImageFallback]="img.path"
-            [alt]="imageAlt(img, i)"
-            fill
-            priority
-            [sizes]="sizes"
-            class="object-contain"
-          />
-        } @else {
-          <img
-            [ngSrc]="path(img.path)"
-            [appImageFallback]="img.path"
-            [alt]="imageAlt(img, i)"
-            fill
-            [sizes]="sizes"
-            class="object-contain"
-          />
-        }
-      </div>
-    } @empty {
-      <div class="pdp-gallery-slide elements-center">
-        <mat-icon name="image" size="4xl" />
-      </div>
+    @for (copy of loops() ? loopCopies : oneCopy; track copy) {
+      @for (img of photos; track img.path; let i = $index) {
+        <div class="pdp-gallery-slide" [attr.aria-hidden]="copy === 1 ? null : 'true'">
+          @if (i === 0 && copy === 1) {
+            <img
+              [ngSrc]="path(img.path)"
+              [appImageFallback]="img.path"
+              [alt]="imageAlt(img, i)"
+              fill
+              priority
+              [sizes]="sizes"
+              class="object-contain"
+            />
+          } @else {
+            <img
+              [ngSrc]="path(img.path)"
+              [appImageFallback]="img.path"
+              [alt]="copy === 1 ? imageAlt(img, i) : ''"
+              fill
+              [sizes]="sizes"
+              class="object-contain"
+            />
+          }
+        </div>
+      } @empty {
+        <div class="pdp-gallery-slide elements-center">
+          <mat-icon name="image" size="4xl" />
+        </div>
+      }
     }
   </section>
 
@@ -49,7 +51,7 @@
         matIconButton
         type="button"
         aria-label="Previous photo"
-        [disabled]="active() === 0"
+        [disabled]="!scrollable()"
         (click)="step(-1)"
       >
         <mat-icon name="arrow_back" />
@@ -58,7 +60,13 @@
         <span aria-hidden="true">{{ counter() }}</span
         ><span class="sr-only">{{ counterSpoken() }}</span>
       </p>
-      <button matIconButton type="button" aria-label="Next photo" [disabled]="atEnd()" (click)="step(1)">
+      <button
+        matIconButton
+        type="button"
+        aria-label="Next photo"
+        [disabled]="!scrollable()"
+        (click)="step(1)"
+      >
         <mat-icon name="arrow_forward" />
       </button>
     </div>

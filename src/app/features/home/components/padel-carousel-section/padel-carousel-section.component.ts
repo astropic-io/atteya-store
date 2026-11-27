@@ -9,6 +9,7 @@ import {
   resource,
   signal,
   TransferState,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -50,6 +51,10 @@ export class PadelCarouselSectionComponent {
   readonly isBrowser = isPlatformBrowser(this.#platformId);
 
   readonly scrollEl = viewChild<ElementRef<HTMLElement>>('scrollRow');
+  private readonly rowLock = viewChild(RowScrollLockDirective);
+  /** Cards rendered three times while the row loops (see `RowScrollLockDirective.loops`). */
+  readonly loopCopies = [0, 1, 2] as const;
+  readonly oneCopy = [1] as const;
 
   readonly progress = signal(0);
   readonly canPrev = signal(false);
@@ -91,9 +96,12 @@ export class PadelCarouselSectionComponent {
       if (!this.isBrowser) return;
       const el = this.scrollEl()?.nativeElement;
       if (!el) return;
+      const lock = this.rowLock();
+      // Re-run when looping starts or stops (the arrows and progress line change meaning).
+      lock?.loops();
 
       const sync = () => {
-        const state = rowScrollProgress(el);
+        const state = lock ? untracked(() => lock.position()) : rowScrollProgress(el);
         this.progress.set(state.progress);
         this.canPrev.set(state.canPrev);
         this.canNext.set(state.canNext);

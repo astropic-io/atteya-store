@@ -568,7 +568,13 @@ const ALL_DEAL_CARDS: readonly DealCard[] = [
   { id: 'percentOff', symbol: '%', icon: null, label: 'Percent off', example: '20% off rackets' },
   { id: 'amountOff', symbol: '−EGP', icon: null, label: 'Money off', example: 'EGP 200 off each bag' },
   { id: 'fixedPrice', symbol: '=EGP', icon: null, label: 'New price', example: 'All shirts at EGP 499' },
-  { id: 'bundlePrice', symbol: '2 for', icon: null, label: 'Bundle price', example: '2 socks for EGP 200' },
+  {
+    id: 'bundlePrice',
+    symbol: '2 for',
+    icon: null,
+    label: 'Bundle price',
+    example: '2 socks for EGP 175, 3 for EGP 225',
+  },
   {
     id: 'bundleSet',
     symbol: 'A+B',
@@ -1137,6 +1143,104 @@ export function affectedStats(
     if (priced.compareAtPrice !== null && priced.compareAtPrice > priced.price) onSale += 1;
   }
   return { total: matched.length, inStock, soldOut: matched.length - inStock, onSale };
+}
+
+/** Under the "Skip products already on sale" warning: how to include those products. */
+export const SALE_SKIP_FIX_LINE =
+  'Choose Best discount wins to include them. Shoppers then get whichever price is lower.';
+
+/**
+ * The warning under "Products already on sale" when Skip would leave out more than half of the
+ * offer's products (onSale × 2 > total). Null when Best discount wins is chosen, the offer reaches
+ * no products, half or fewer are on sale, or the deal is Free shipping (the engine's free shipping
+ * check never reads `saleItems`, so Skip changes nothing there).
+ */
+export function saleSkipWarning(
+  draft: Pick<OfferDraft, 'saleItems' | 'reward'>,
+  stats: Pick<AffectedStats, 'total' | 'onSale'>,
+): string | null {
+  const { total, onSale } = stats;
+  if (draft.saleItems !== 'exclude' || draft.reward.kind === 'freeShipping') return null;
+  if (total === 0 || onSale * 2 <= total) return null;
+  if (onSale >= total) {
+    return total === 1
+      ? 'The only product in this offer is already on sale, so this offer would give nothing.'
+      : `All ${total.toLocaleString('en-US')} products are already on sale, so this offer would give nothing.`;
+  }
+  return `${onSale.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} products are already on sale, so this offer skips them.`;
+}
+
+/** One chip under the Affected products count: a category (or "Other") and how many products. */
+export interface CategoryCount {
+  /** The category id, or "other"; unique, so a list can track by it. */
+  readonly key: string;
+  readonly name: string;
+  readonly count: number;
+}
+
+/** Most chips shown under the count; the rest are added up into "Other". */
+export const MAX_CATEGORY_CHIPS = 6;
+
+/**
+ * The deepest category a product is in (a child beats its parent); when depths tie or are unknown,
+ * the last id in `categoryIds`. Null for a product with no category.
+ */
+function mostSpecificCategory(
+  categoryIds: readonly string[],
+  depthOf: ReadonlyMap<string, number>,
+): string | null {
+  let best: string | null = null;
+  let bestDepth = -1;
+  for (const id of categoryIds) {
+    const depth = depthOf.get(id);
+    // A category that is no longer in the list can't win over one that is.
+    if (depth !== undefined && depth >= bestDepth) {
+      best = id;
+      bestDepth = depth;
+    }
+  }
+  return best;
+}
+
+/**
+ * The products an offer reaches split by category, biggest first. Each product counts once, under
+ * its most specific category. A product with no category (or a category that is no longer in the
+ * list) counts under "Other". At most `MAX_CATEGORY_CHIPS` chips: the rest join one "Other" chip.
+ * `kinds` is how many different categories the products span before that cap ("Other" counts as one).
+ */
+export function categoryBreakdown(
+  matched: readonly { readonly priced: { readonly categoryIds: readonly string[] } }[],
+  categories: readonly { readonly id: string; readonly name: string; readonly depth: number }[],
+): { readonly chips: readonly CategoryCount[]; readonly kinds: number } {
+  const info = new Map(categories.map((category) => [category.id, category]));
+  const depthOf = new Map(categories.map((category) => [category.id, category.depth]));
+  const counts = new Map<string, number>();
+  let other = 0;
+  for (const { priced } of matched) {
+    const id = mostSpecificCategory(priced.categoryIds, depthOf);
+    const category = id === null ? undefined : info.get(id);
+    if (category) counts.set(category.id, (counts.get(category.id) ?? 0) + 1);
+    else other += 1;
+  }
+  const named: CategoryCount[] = [...counts.entries()]
+    .map(([id, count]) => ({ key: id, name: info.get(id)?.name ?? 'Other', count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const kinds = named.length + (other > 0 ? 1 : 0);
+  let shown = named;
+  if (kinds > MAX_CATEGORY_CHIPS) {
+    // One chip is kept for "Other", which also takes the smallest categories.
+    shown = named.slice(0, MAX_CATEGORY_CHIPS - 1);
+    other += named.slice(MAX_CATEGORY_CHIPS - 1).reduce((sum, chip) => sum + chip.count, 0);
+  }
+  const chips = other > 0 ? [...shown, { key: 'other', name: 'Other', count: other }] : shown;
+  return { chips, kinds };
+}
+
+/** The hint under the chips when a Brand tag pulls in 2 or more kinds of products; null otherwise. */
+export function brandKindsHint(brandNames: readonly string[], kinds: number): string | null {
+  if (brandNames.length === 0 || kinds < 2) return null;
+  const subject = brandNames.length === 1 ? `Brand ${brandNames[0]} includes` : 'These brands include';
+  return `${subject} ${kinds} kinds of products. To cover only one kind, pick its category instead.`;
 }
 
 // ---------------------------------------------------------------------------------------------

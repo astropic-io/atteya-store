@@ -58,6 +58,7 @@
                   [appImageFallback]="previewImg"
                   (imageFailed)="onImageFailed()"
                   [alt]="asset()?.alt || 'Computer preview'"
+                  loading="eager"
                   fill
                   sizes="(max-width: 1280px) 80vw, 25vw"
                   class="object-center"
@@ -99,9 +100,10 @@
                 <img
                   [ngSrc]="previewImg"
                   [appImageFallback]="previewImg"
-                  [alt]="asset()?.alt || 'Phone preview'"
+                  alt=""
+                  loading="eager"
                   fill
-                  sizes="120px"
+                  sizes="(max-width: 1280px) 80vw, 25vw"
                   class="object-cover object-center"
                 />
               }
@@ -117,7 +119,9 @@
       <div
         [class]="
           'relative w-full overflow-hidden panel-border bg-surface-container-lowest elements-center ' +
-          previewAspectClass()
+          previewAspectClass() +
+          ' ' +
+          previewSizeClass()
         "
       >
         @if (previewImg) {

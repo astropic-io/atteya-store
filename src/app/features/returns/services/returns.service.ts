@@ -19,6 +19,10 @@ export interface RequestReturnData {
   readonly items: readonly RequestReturnItem[];
   readonly note?: string;
   readonly refundTo?: string;
+  /** Staff send it for the customer (ATS-342): the server checks the staff role instead of the owner. */
+  readonly forCustomer?: boolean;
+  /** Staff only: the store pays the courier fee. */
+  readonly storePaysFee?: boolean;
 }
 
 export interface RequestReturnResult {

@@ -6,7 +6,7 @@ import type { OrderPricingSnapshot } from '@core/services/orders/order-pricing.m
 
 export type CheckoutPaymentMethod = 'paymob' | 'cash-on-delivery' | 'instapay' | 'bank-transfer';
 /**
- * Methods staff confirm by hand: Cash on Delivery and InstaPay (Egypt), Bank Transfer (outside Egypt).
+ * Methods staff confirm by hand: Cash on Delivery and InstaPay (Egypt), Bank Transfer (paid from abroad).
  */
 export type ManualCheckoutPaymentMethod = 'cash-on-delivery' | 'instapay' | 'bank-transfer';
 
@@ -27,6 +27,18 @@ export interface CheckoutShippingInput {
   readonly country: string;
   readonly phone: string;
   readonly governorateId: string | null;
+}
+
+/**
+ * Paid from abroad, delivered to someone in Egypt: the shopper who pays (`shipping` is the
+ * recipient's Egypt address). Bank Transfer only.
+ */
+export interface CheckoutPayerInput {
+  readonly fullName: string;
+  /** Their WhatsApp number with its country code. */
+  readonly phone: string;
+  /** Where they pay from (never `EG`): decides the currency. */
+  readonly country: string;
 }
 
 /**
@@ -173,6 +185,8 @@ export class CheckoutOrderService {
     readonly shownTotals: ShownOrderTotals;
     /** Set only when nobody is signed in; a signed-in call never sends it. */
     readonly guest: GuestCheckoutInput | null;
+    /** Paid from abroad for delivery to someone in Egypt (Bank Transfer only); else null. */
+    readonly payer?: CheckoutPayerInput | null;
   }): Promise<CreateManualOrderResult<M>> {
     const call = await callableFrom<
       {
@@ -185,6 +199,7 @@ export class CheckoutOrderService {
         shownTotalEgp: number | null;
         shownPayIn: { readonly currency: string; readonly amount: number } | null;
         guest?: GuestCheckoutInput;
+        payer?: CheckoutPayerInput;
       },
       CreateManualOrderResult<M>
     >(this.#functions(), MANUAL_CALLABLE[args.method]);
@@ -198,6 +213,7 @@ export class CheckoutOrderService {
       shownTotalEgp: args.shownTotals.totalEgp,
       shownPayIn: args.shownTotals.payIn,
       ...(args.guest ? { guest: { email: args.guest.email } } : {}),
+      ...(args.payer ? { payer: args.payer } : {}),
     });
     return response.data;
   }

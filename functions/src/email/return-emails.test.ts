@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { returnClaimId, returnEmailsForWrite } from '../../lib/email/return-email-events.js';
-import { readReturnForEmail } from '../../lib/email/return-email-model.js';
+import { piecesHeldByOtherReturns, readReturnForEmail } from '../../lib/email/return-email-model.js';
+import { readOrderForEmail } from '../../lib/email/order-email-model.js';
 import { renderReturnEmail } from '../../lib/email/return-email-templates.js';
 
 /** Shopper emails for each staff step of a return or exchange request (ATS-294). */
@@ -200,7 +201,7 @@ describe('return status emails', () => {
     assert.doesNotMatch(refund.html, /Please hand it back/);
   });
 
-  it('Refund Sent: the amount, only the last 4 of the InstaPay number, and the reference', () => {
+  it('Refund Sent: the amount, the whole InstaPay number the customer gave (ATS-342), and the reference', () => {
     const email = renderReturnEmail(
       'return-refund-sent',
       request({ status: 'refund-sent', refundSentEgp: 580, refundReference: '88213' }),
@@ -208,10 +209,8 @@ describe('return status emails', () => {
     );
     assert.match(email.subject, /^Refund Sent: EGP\s?580 for #R-K7Q2M9$/);
     assert.match(email.html, /REFUND<br>SENT/);
-    assert.match(email.text, /Amount: EGP\s?580\nSent by InstaPay to …5678 · Reference 88213/);
-    for (const body of [email.html, email.text]) {
-      assert.doesNotMatch(body, /010 1234 5678|01012345678|1234 ?5678/);
-    }
+    assert.match(email.text, /Amount: EGP\s?580\nSent by InstaPay to 010 1234 5678 · Reference 88213/);
+    assert.match(email.html, /010 1234 5678/);
   });
 
   it('Rejected: the reason has a label and the gift stays, in both versions', () => {
@@ -260,14 +259,13 @@ describe('return status emails', () => {
     assert.match(email.text, /You Get: The right Padel Shorts, and 2 new Padel Shorts/);
   });
 
-  it('Refund Sent to an InstaPay address shows only the end of the name', () => {
+  it('Refund Sent to an InstaPay address shows the whole address', () => {
     const email = renderReturnEmail(
       'return-refund-sent',
       request({ status: 'refund-sent', refundSentEgp: 580, refundTo: 'mariamhassan@instapay' }),
       ctx,
     );
-    assert.match(email.text, /Sent by InstaPay to …ssan@instapay/);
-    assert.doesNotMatch(email.text, /mariamhassan/);
+    assert.match(email.text, /Sent by InstaPay to mariamhassan@instapay/);
   });
 
   it('every status email has a plain-text version with the same facts in the same order', () => {
@@ -433,5 +431,74 @@ describe('courier fee sent back, reminder and automatic cancel (ATS-307)', () =>
     assert.match(email.text, /We'll send your EGP\s?70 courier fee back by InstaPay\./);
     const none = renderReturnEmail('return-rejected', at('rejected', payFirst), ctx);
     assert.doesNotMatch(none.text, /courier fee back/);
+  });
+});
+
+describe('returns started by staff for the customer (ATS-342)', () => {
+  it('send no Request Sent or staff alert, then Approved as usual', () => {
+    const started = request({ status: 'requested', startedByStaff: true });
+    assert.deepEqual(returnEmailsForWrite(null, started), []);
+    assert.deepEqual(returnEmailsForWrite(started, request({ status: 'approved', startedByStaff: true })), [
+      'return-approved',
+    ]);
+  });
+
+  it('Approved shows the refund with the whole InstaPay number', () => {
+    const email = renderReturnEmail('return-approved', request({ startedByStaff: true }), ctx);
+    assert.match(email.text, /Your refund: EGP\s?580/);
+    assert.match(email.text, /send it by InstaPay to 010 1234 5678/);
+    assert.match(email.text, /Not yours\? Message us on WhatsApp/);
+    assert.match(email.text, /As we agreed, your return of 2 items is approved\./);
+  });
+});
+
+describe('pieces from earlier returns in the item list (ATS-345)', () => {
+  const returns = [
+    { id: 'k7q2m9abc', status: 'approved', items: [{ lineIndex: 0, quantity: 1 }] },
+    { id: 'earlier', status: 'received', items: [{ lineIndex: 1, quantity: 1 }] },
+    { id: 'gone', status: 'cancelled', items: [{ lineIndex: 0, quantity: 1 }] },
+    {
+      id: 'kept',
+      status: 'rejected',
+      items: [{ lineIndex: 0, quantity: 1 }],
+      keptItems: [{ lineIndex: 0, quantity: 1 }],
+    },
+  ];
+
+  it('counts pieces held by every other request, not this one or a cancelled one', () => {
+    const held = piecesHeldByOtherReturns(returns, 'k7q2m9abc');
+    assert.deepEqual([...held.entries()].sort(), [
+      [0, 1],
+      [1, 1],
+    ]);
+    assert.equal(piecesHeldByOtherReturns(undefined, 'x').size, 0);
+  });
+
+  it("doesn't list a piece an earlier request sent back as yours to keep", () => {
+    const order = readOrderForEmail('a1b2c3xyz', {
+      paymentMethod: 'instapay',
+      status: 'delivered',
+      shipping: { country: 'EG', fullName: 'Mariam Hassan' },
+      pricing: {
+        lines: [
+          { productId: 'tee', name: 'Club Tee', quantity: 2, unitEgp: 300 },
+          { productId: 'hoodie', name: 'Club Hoodie', quantity: 1, unitEgp: 900 },
+        ],
+        subtotalEgp: 1500,
+        totalEgp: 1500,
+      },
+    });
+    assert.ok(order);
+    const one = { ...RETURNED, lineIndex: 0, quantity: 1 };
+    const before = renderReturnEmail('return-approved', { ...request({ items: [one] }), order }, ctx);
+    assert.match(before.text, /Club Hoodie/);
+    const after = renderReturnEmail(
+      'return-approved',
+      { ...request({ items: [one] }), order, otherReturned: new Map([[1, 1]]) },
+      ctx,
+    );
+    const delivered = after.text.slice(after.text.indexOf('Delivered'), after.text.indexOf('Returning'));
+    assert.doesNotMatch(delivered, /Club Hoodie/);
+    assert.match(after.text, /In another return · 1[\s\S]*Club Hoodie/);
   });
 });

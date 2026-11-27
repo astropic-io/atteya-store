@@ -66,6 +66,8 @@ export const HomeNavListItemSchema = v.object({
   ),
   imageUrl: v.pipe(v.string(), v.trim()),
   imageAlt: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(IMAGE_LIMITS.maxAltLength)), ''),
+  /** Short line on the desktop photo (ATS-346). Admin limit 6 words / 36 characters. */
+  caption: v.optional(v.pipe(v.string(), v.trim())),
   target: HomeLinkTargetSchema,
 });
 
@@ -74,11 +76,40 @@ export const HomeNavListSchema = v.object({
   items: v.pipe(v.array(HomeNavListItemSchema), v.maxLength(NAV_LIST_ITEM_LIMIT)),
 });
 
+const trimmedText = v.optional(v.pipe(v.string(), v.trim()), '');
+
+/**
+ * Section 4, the Offer Banner (ATS-347): one photo banner whose whole area is a link. `link` is
+ * built from `target` at Publish (a Bundle & Save offer saves `/bundle/<id>`); the store hides
+ * the banner when its offer stops running or its category or brand is hidden.
+ */
+export const HomeOfferBannerSchema = v.object({
+  enabled: v.optional(v.boolean(), false),
+  label: trimmedText,
+  headline: trimmedText,
+  link: trimmedText,
+  linkText: trimmedText,
+  target: HomeLinkTargetSchema,
+  imageUrl: trimmedText,
+  imageAlt: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(IMAGE_LIMITS.maxAltLength)), ''),
+  phoneImageUrl: trimmedText,
+});
+
+/** Section 5, the WhatsApp Help box (ATS-348). The button opens the store's WhatsApp chat. */
+export const HomeHelpBoxSchema = v.object({
+  enabled: v.optional(v.boolean(), true),
+  headline: trimmedText,
+  text: trimmedText,
+  message: trimmedText,
+});
+
 export const HomeSettingsSchema = v.object({
   id: v.optional(v.string()),
   hero: HomeHeroSchema,
   shopCategories: v.optional(HomeShopCategoriesSchema),
   navList: v.optional(HomeNavListSchema),
+  offerBanner: v.optional(HomeOfferBannerSchema),
+  helpBox: v.optional(HomeHelpBoxSchema),
   updatedAt: v.optional(v.unknown()),
   updatedBy: v.optional(v.string()),
 });

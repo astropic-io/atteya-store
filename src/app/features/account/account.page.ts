@@ -30,8 +30,9 @@ import { ProfileSectionComponent } from './components/profile-section/profile-se
 
 /**
  * `/account` (client-rendered, behind `accountAuthGuard`): a black welcome bar (name, email,
- * order and favorite counts, Sign Out) over a grid: Orders, Delivery Address, then Profile,
- * Favorites and Emails (three columns on wide screens, two on tablets, one on phones). `users/{uid}` is read live
+ * order and favorite counts, Sign Out) over a grid: Profile, Favorites and Emails, then
+ * Delivery Address, then Orders (three columns on wide screens, two on tablets, one on phones,
+ * where Delete Account comes last, below Orders). `users/{uid}` is read live
  * and handed to each section.
  */
 @Component({
@@ -93,9 +94,16 @@ export class AccountPageComponent implements OnInit {
 
   constructor() {
     // The router scrolls to `#orders` / `#profile` at once, while the sections still show
-    // placeholders. Once the details load the page grows, so scroll to that section again.
+    // placeholders. Once the details and favorites load the page grows (on phone, Orders sits
+    // below them), so scroll to that section again.
     effect(() => {
-      if (!this.profileResource.hasValue() || this.#scrolledToSection || !this.#isBrowser) return;
+      if (
+        !this.profileResource.hasValue() ||
+        !this.favoritesReady() ||
+        this.#scrolledToSection ||
+        !this.#isBrowser
+      )
+        return;
       this.#scrolledToSection = true;
       afterNextRender(() => scrollToHashSection(), { injector: this.#injector });
     });

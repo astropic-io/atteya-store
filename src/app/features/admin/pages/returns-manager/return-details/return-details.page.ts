@@ -101,7 +101,8 @@ export class ReturnDetailsPageComponent implements OnInit {
 
   readonly statusConfig = RETURN_STATUS_CONFIG;
   readonly busy = signal<ReturnAction | null>(null);
-  readonly isAdmin = this.#auth.isAdmin;
+  /** Admins, and staff with Refunds switched on in Settings → Team (ATS-368). */
+  readonly canSendRefunds = computed(() => this.#auth.hasExtra('refunds'));
 
   readonly dataResource = resource({
     params: () => ({ id: this.requestId() }),
@@ -182,8 +183,10 @@ export class ReturnDetailsPageComponent implements OnInit {
   });
   readonly canReject = computed(() => this.#moves().includes('rejected'));
   readonly canReceive = computed(() => this.#moves().includes('received'));
-  readonly canRefund = computed(() => this.#moves().includes('refund-sent') && this.isAdmin());
-  readonly refundWaitsForAdmin = computed(() => this.#moves().includes('refund-sent') && !this.isAdmin());
+  readonly canRefund = computed(() => this.#moves().includes('refund-sent') && this.canSendRefunds());
+  readonly refundWaitsForAdmin = computed(
+    () => this.#moves().includes('refund-sent') && !this.canSendRefunds(),
+  );
 
   /** "Fee to send back: EGP 115", then "Fee sent back: EGP 115 · 14 Nov" (ATS-307). */
   readonly feeBack = computed(() => {
@@ -204,10 +207,11 @@ export class ReturnDetailsPageComponent implements OnInit {
     return request ? feeBackNeedsCheck(request) : false;
   });
   /**
-   * Admin only; staff see the line but not the button (the server refuses staff too). Also on a
+   * Admins and staff with Refunds on; other staff see the line but not the button (the server
+   * refuses them too). Also on a
    * request that cancelled itself, in case the fee arrived just before the cancel.
    */
-  readonly canSendFeeBack = computed(() => this.#feeBackLimit() > 0 && this.isAdmin());
+  readonly canSendFeeBack = computed(() => this.#feeBackLimit() > 0 && this.canSendRefunds());
 
   ngOnInit(): void {
     this.#seo.setPageMetadata({

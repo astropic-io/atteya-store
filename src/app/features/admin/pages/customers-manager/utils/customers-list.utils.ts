@@ -4,7 +4,9 @@ import { accountInitial } from '@core/services/user-profile/profile-display';
 import { orderSearchTerms, orderSearchWords } from '@core/config/order-search';
 
 /** The Customers list shows this many at a time (ATS-277). */
-export const CUSTOMERS_PAGE_SIZE = 50;
+export const CUSTOMERS_PAGE_SIZE = 20;
+/** A search reads more per page: its extra words are checked in the browser, so fewer rows survive. */
+export const CUSTOMERS_SEARCH_PAGE_SIZE = 50;
 
 /** The filter chips (phone: the Show select). One at a time. */
 export type CustomerFilter = 'all' | 'repeat' | 'accounts' | 'guests' | 'account-no-order';
@@ -158,7 +160,7 @@ export function repeatShareLine(repeat: number | null, ordered: number | null): 
   return `${Math.round((repeat / ordered) * 100)}% of customers who ordered`;
 }
 
-/** "Showing 50 of 312 customers"; "Showing 3 customers" when the total isn't known (a search). */
+/** "Showing 20 of 312 customers"; "Showing 3 customers" when the total isn't known (a search). */
 export function showingLabel(shown: number, total: number | null): string {
   const noun = (count: number) => (count === 1 ? 'customer' : 'customers');
   if (total === null) return `Showing ${shown} ${noun(shown)}`;

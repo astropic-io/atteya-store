@@ -12,6 +12,16 @@ export interface PickerProduct {
   readonly modelGroup?: string | null;
   readonly colors?: readonly string[];
   readonly published?: boolean;
+  readonly brandId?: string | null;
+  readonly categoryId?: string | null;
+  readonly categoryIds?: readonly string[];
+}
+
+/** Brand and category names for the picker's search text and second line (ATS-331). */
+export interface PickerCatalog {
+  readonly brandName: (brandId: string) => string | null;
+  /** The name of a category, and whether it is a sub-category (the most specific one wins). */
+  readonly category: (categoryId: string) => { readonly name: string; readonly depth: number } | null;
 }
 
 /** A colour's name and dot, from the colour palette. */
@@ -35,6 +45,12 @@ export interface OfferProductModel {
   readonly modelGroup: string | null;
   readonly name: string;
   readonly colours: readonly OfferProductColour[];
+  /** Every word staff can search by, already simplified: each colour's own name, brand and categories. */
+  readonly searchText: string;
+  /** The colours' own names when they differ from `name` ("Siux Socks" under "Siux Ball Edition Socks"). */
+  readonly otherNames: readonly string[];
+  /** "Siux · Socks · 2 colours: Black, White": brand, most specific category, colours. */
+  readonly detail: string;
 }
 
 /** One picked product: all its colours, or the colours ticked. */
@@ -52,10 +68,39 @@ export interface SavedProductPicks {
   readonly productIds: readonly string[];
 }
 
+/** Lower case with accents removed, so "Agustín" and "agustin" match. */
+export function simplifySearchText(text: string): string {
+  return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+}
+
+/** The typed words, simplified (empty for a blank query). */
+export function searchQueryWords(query: string): string[] {
+  return simplifySearchText(query)
+    .split(/\s+/)
+    .filter((word) => word.length > 0);
+}
+
+/** True when every typed word is found in the text. The text is already simplified. */
+export function matchesAllWords(searchText: string, words: readonly string[]): boolean {
+  return words.every((word) => searchText.includes(word));
+}
+
+/** True when the name contains the whole typed text, in the typed order. */
+export function nameHasWholeQuery(name: string, words: readonly string[]): boolean {
+  return searchQueryWords(name).join(' ').includes(words.join(' '));
+}
+
+/** The colour's own name that matches the typed words and differs from the product's name, or null. */
+export function matchedOtherName(model: OfferProductModel, words: readonly string[]): string | null {
+  if (words.length === 0) return null;
+  return model.otherNames.find((name) => matchesAllWords(simplifySearchText(name), words)) ?? null;
+}
+
 /** Groups the products into one entry per model (first colour's name), in the order they come. */
 export function groupOfferProducts(
   products: readonly PickerProduct[],
   colourInfo: (colorId: string) => PickerColourInfo | null,
+  catalog?: PickerCatalog,
 ): OfferProductModel[] {
   const buckets = new Map<string, { modelGroup: string | null; items: PickerProduct[] }>();
   for (const product of products) {
@@ -66,12 +111,66 @@ export function groupOfferProducts(
     if (bucket) bucket.items.push(product);
     else buckets.set(key, { modelGroup, items: [product] });
   }
-  return [...buckets].map(([key, bucket]) => ({
-    key,
-    modelGroup: bucket.modelGroup,
-    name: bucket.items[0]!.name,
-    colours: colourRows(bucket.items, colourInfo),
-  }));
+  return [...buckets].map(([key, bucket]) => {
+    const name = bucket.items[0]!.name;
+    const colours = colourRows(bucket.items, colourInfo);
+    const otherNames = [...new Set(bucket.items.map((item) => item.name))].filter((other) => other !== name);
+    const brand = bucket.items
+      .map((item) => (item.brandId && catalog?.brandName(item.brandId)) || null)
+      .find(Boolean);
+    const category = mostSpecificCategory(bucket.items[0]!, catalog);
+    const categoryNames = new Set<string>();
+    for (const item of bucket.items) {
+      for (const id of [item.categoryId, ...(item.categoryIds ?? [])]) {
+        const found = id ? catalog?.category(id) : null;
+        if (found) categoryNames.add(found.name);
+      }
+    }
+    return {
+      key,
+      modelGroup: bucket.modelGroup,
+      name,
+      colours,
+      otherNames,
+      searchText: simplifySearchText(
+        [
+          ...bucket.items.map((item) => item.name),
+          brand ?? '',
+          ...categoryNames,
+          bucket.modelGroup ?? '',
+        ].join(' '),
+      ),
+      detail: modelDetail(brand ?? null, category, colours),
+    };
+  });
+}
+
+/** The product's deepest category name (a sub-category beats its parent). */
+function mostSpecificCategory(product: PickerProduct, catalog?: PickerCatalog): string | null {
+  if (!catalog) return null;
+  let best: { name: string; depth: number } | null = null;
+  for (const id of [product.categoryId, ...(product.categoryIds ?? [])]) {
+    const found = id ? catalog.category(id) : null;
+    if (found && (!best || found.depth > best.depth)) best = found;
+  }
+  return best?.name ?? null;
+}
+
+/**
+ * "Siux · Socks · 2 colours: Black, White", "Siux · Socks · Black" or, from 3 colours up, just the
+ * count ("adidas · T-shirts & polos · 5 colours") so the line stays on one row; a missing part is left out.
+ */
+function modelDetail(
+  brand: string | null,
+  category: string | null,
+  colours: readonly OfferProductColour[],
+): string {
+  // A colour with no colour set has only a placeholder name ("Colour 1"): not worth showing.
+  const named = colours.filter((colour) => colour.colorId !== null);
+  const labels = named.map((colour) => colour.label).join(', ');
+  const colourPart =
+    named.length >= 3 ? `${named.length} colours` : named.length === 2 ? `2 colours: ${labels}` : labels;
+  return [brand, category, colourPart].filter((part) => part).join(' · ');
 }
 
 /**
@@ -238,11 +337,6 @@ export function productPickLabel(pick: ProductPick): string {
     (id) => pick.model!.colours.find((colour) => colour.productId === id)?.label ?? 'Colour not found',
   );
   return `${pick.model.name} · ${labels.join(', ')}`;
-}
-
-/** "3 colours" for a product with several, or null. */
-export function colourCountNote(model: OfferProductModel): string | null {
-  return hasColourChoice(model) ? `${model.colours.length} colours` : null;
 }
 
 /** Product name per model (the first colour's name), for tags and sentences. */

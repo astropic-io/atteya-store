@@ -171,7 +171,16 @@
                   <dd class="font-title-md font-bold!">{{ summary.total }}</dd>
                 </div>
               </dl>
-              @if (summary.feeToBeAgreed && !isEgypt()) {
+              @if (savedText(); as saved) {
+                <p class="font-body-md font-bold!">You saved {{ saved }}</p>
+              }
+              @if (sendToEgypt()) {
+                @if (!summary.feeToBeAgreed) {
+                  <p class="font-label-sm opacity-70">
+                    Shipping is the Egypt delivery fee to the address you give.
+                  </p>
+                }
+              } @else if (summary.feeToBeAgreed && !isEgypt()) {
                 <p class="font-body-sm" aria-live="polite">
                   We'll confirm delivery to {{ deliveryCountryName() }} and the shipping fee with you on
                   WhatsApp. You pay once we agree.
@@ -234,37 +243,125 @@
           }
         </div>
 
+        @if (showDeliveryChoice()) {
+          <!-- Shoppers outside Egypt: deliver to them abroad, or to someone in Egypt who takes it from there. -->
+          <mat-radio-group
+            class="grid gap-2"
+            [value]="sendToEgypt() ? 'egypt' : 'me'"
+            (change)="setSendToEgypt($event.value === 'egypt')"
+            aria-label="Where should we deliver?"
+          >
+            <div class="pay-option" [class.pay-option--selected]="!sendToEgypt()">
+              <mat-radio-button value="me">
+                <span class="elements-start-col gap-0.5">
+                  <!-- Stretches the label over the whole row, so a click anywhere on it picks this choice. -->
+                  <span class="pay-option__hit" aria-hidden="true"></span>
+                  <span class="font-body-md font-bold!">Deliver to Me</span>
+                  <span class="font-body-sm text-on-surface-variant"
+                    >We ship to your address outside Egypt.</span
+                  >
+                </span>
+              </mat-radio-button>
+            </div>
+            <div class="pay-option" [class.pay-option--selected]="sendToEgypt()">
+              <mat-radio-button value="egypt">
+                <span class="elements-start-col gap-0.5">
+                  <span class="pay-option__hit" aria-hidden="true"></span>
+                  <span class="font-body-md font-bold!">Deliver to Someone in Egypt</span>
+                  <span class="font-body-sm text-on-surface-variant"
+                    >A friend, family member or forwarder. You pay Egypt delivery fees.</span
+                  >
+                </span>
+              </mat-radio-button>
+            </div>
+          </mat-radio-group>
+        }
+
         <div class="grid gap-6">
-          <!-- Every visitor can choose any country, also on the Egypt form (ATS-314). -->
-          <mat-form-field class="w-full" subscriptSizing="dynamic" appearance="outline">
-            <mat-label>Country</mat-label>
-            <input
-              matInput
-              [matAutocomplete]="countryAuto"
-              [value]="countryQuery()"
-              (input)="onCountryQueryInput($event)"
-              (blur)="onCountryBlur()"
-              autocomplete="country-name"
-              placeholder="Start typing a country"
-            />
-            <mat-autocomplete
-              #countryAuto="matAutocomplete"
-              [displayWith]="displayCountryLabel"
-              (opened)="onCountryAutocompleteOpened()"
-              (closed)="onCountryAutocompleteClosed()"
-              (optionSelected)="onCountrySelected($event)"
-            >
-              @for (country of filteredCountries(); track country.code) {
-                <mat-option
-                  [value]="country.code"
-                  (mousedown)="$event.preventDefault()"
-                  (pointerdown)="onCountryOptionActivate()"
-                >
-                  {{ country.label }}
-                </mat-option>
+          @if (sendToEgypt()) {
+            <h3 class="font-title-sm font-bold!">Your Details</h3>
+            <mat-form-field class="w-full" subscriptSizing="dynamic" appearance="outline">
+              <mat-label>Your name</mat-label>
+              <input
+                matInput
+                maxlength="120"
+                [id]="fieldId('payerName')"
+                [appFieldError]="fieldErrors().payerName"
+                [value]="payer().fullName"
+                (input)="patchPayer('fullName', $any($event.target).value)"
+                autocomplete="name"
+              />
+              @if (fieldErrors().payerName; as message) {
+                <mat-error>{{ message }}</mat-error>
               }
-            </mat-autocomplete>
-          </mat-form-field>
+            </mat-form-field>
+            <mat-form-field class="w-full" subscriptSizing="dynamic" appearance="outline">
+              <mat-label>Your WhatsApp</mat-label>
+              <input
+                matInput
+                maxlength="20"
+                [id]="fieldId('payerPhone')"
+                [appFieldError]="fieldErrors().payerPhone"
+                [value]="payer().phone"
+                (input)="patchPayer('phone', $any($event.target).value)"
+                autocomplete="tel"
+                inputmode="tel"
+              />
+              @if (fieldErrors().payerPhone; as message) {
+                <mat-error>{{ message }}</mat-error>
+              } @else {
+                <mat-hint>With your country code. We'll message you here about payment.</mat-hint>
+              }
+            </mat-form-field>
+            <mat-form-field class="w-full" subscriptSizing="dynamic" appearance="outline">
+              <mat-label>You're paying from</mat-label>
+              <mat-select
+                [id]="fieldId('payerCountry')"
+                [value]="payer().country"
+                (valueChange)="patchPayer('country', $event)"
+              >
+                @for (country of payerCountries; track country.code) {
+                  <mat-option [value]="country.code">{{ country.label }}</mat-option>
+                }
+              </mat-select>
+              @if (fieldErrors().payerCountry; as message) {
+                <mat-error>{{ message }}</mat-error>
+              } @else {
+                <mat-hint>You pay in this country's currency.</mat-hint>
+              }
+            </mat-form-field>
+          } @else {
+            <!-- Every visitor can choose any country, also on the Egypt form (ATS-314). -->
+            <mat-form-field class="w-full" subscriptSizing="dynamic" appearance="outline">
+              <mat-label>Country</mat-label>
+              <input
+                matInput
+                [matAutocomplete]="countryAuto"
+                [value]="countryQuery()"
+                (input)="onCountryQueryInput($event)"
+                (blur)="onCountryBlur()"
+                autocomplete="country-name"
+                placeholder="Start typing a country"
+              />
+              <mat-autocomplete
+                #countryAuto="matAutocomplete"
+                [displayWith]="displayCountryLabel"
+                (opened)="onCountryAutocompleteOpened()"
+                (closed)="onCountryAutocompleteClosed()"
+                (optionSelected)="onCountrySelected($event)"
+              >
+                @for (country of filteredCountries(); track country.code) {
+                  <mat-option
+                    [value]="country.code"
+                    (mousedown)="$event.preventDefault()"
+                    (pointerdown)="onCountryOptionActivate()"
+                  >
+                    {{ country.label }}
+                  </mat-option>
+                }
+              </mat-autocomplete>
+            </mat-form-field>
+          }
           @if (isGuest()) {
             <mat-form-field class="w-full" subscriptSizing="dynamic" appearance="outline">
               <mat-label>Email</mat-label>
@@ -284,8 +381,11 @@
               }
             </mat-form-field>
           }
+          @if (sendToEgypt()) {
+            <h3 class="font-title-sm font-bold! pt-2">Who Receives It in Egypt</h3>
+          }
           <mat-form-field class="w-full" subscriptSizing="dynamic" appearance="outline">
-            <mat-label>Full name</mat-label>
+            <mat-label>{{ sendToEgypt() ? "Recipient's name" : 'Full name' }}</mat-label>
             <input
               matInput
               maxlength="120"
@@ -396,7 +496,7 @@
           }
 
           <mat-form-field class="w-full" subscriptSizing="dynamic" appearance="outline">
-            <mat-label>Phone</mat-label>
+            <mat-label>{{ sendToEgypt() ? "Recipient's mobile" : 'Phone' }}</mat-label>
             <input
               matInput
               maxlength="20"
@@ -409,12 +509,20 @@
             />
             @if (fieldErrors().phone; as message) {
               <mat-error>{{ message }}</mat-error>
+            } @else if (sendToEgypt()) {
+              <mat-hint>The courier calls this Egyptian number, e.g. 010 1234 5678</mat-hint>
             } @else if (isEgypt()) {
               <mat-hint>Your WhatsApp mobile number, e.g. 010 1234 5678</mat-hint>
             } @else {
               <mat-hint>Include your country code, e.g. +971 50 123 4567</mat-hint>
             }
           </mat-form-field>
+          @if (sendToEgypt()) {
+            <p class="font-body-sm bg-surface-container border-shape p-3" role="note">
+              We deliver your order to {{ shipping().fullName.trim() || 'them' }} in Egypt. Getting it from
+              them to you is up to you and them.
+            </p>
+          }
         </div>
       </section>
 
@@ -481,7 +589,7 @@
                 }
               </div>
             }
-            @if (cardOrWalletLive && !feeToBeAgreed()) {
+            @if (cardOrWalletLive && !feeToBeAgreed() && !sendToEgypt()) {
               <div class="pay-option" [class.pay-option--selected]="paymentMethod() === 'paymob'">
                 <mat-radio-button value="paymob">
                   <span class="elements-start gap-3">
@@ -532,7 +640,9 @@
             }
           </div>
         </mat-radio-group>
-        @if (!localMethodsAvailable()) {
+        @if (sendToEgypt()) {
+          <p class="font-label-sm opacity-70">When you pay from outside Egypt, you pay by Bank Transfer.</p>
+        } @else if (!localMethodsAvailable()) {
           <p class="font-label-sm opacity-70">
             InstaPay and Cash on Delivery are available when shipping to Egypt.
           </p>
@@ -562,7 +672,11 @@
 
       @if (abroadOrderingClosed()) {
         <p class="font-body-md" role="status">
-          Ordering from outside Egypt is coming soon.
+          @if (sendToEgypt() && feeToBeAgreed()) {
+            This order is too large to send to someone in Egypt from here.
+          } @else {
+            Ordering from outside Egypt is coming soon.
+          }
           @if (whatsappUrl) {
             Message us on WhatsApp and we'll help you order.
           }

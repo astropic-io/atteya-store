@@ -581,7 +581,7 @@ function overlapMessage(draft: OfferDraft, other: Offer, count: number): string 
       : `${alsoHave} Shoppers get both: the discount and the free gift.`;
   }
   if (mine === 'bundle' && theirs === 'bundle') {
-    return `${alsoIn} Each item counts toward one Bundle price offer only, the higher-priority one first.`;
+    return `${alsoIn} Each item counts toward one Bundle price offer only, so the two prices won't add up. To add another price (like 3 for EGP 225), add a row to "${other.name}" instead.`;
   }
   if (mine === 'set' && theirs === 'set') {
     return `${alsoIn} Each item counts toward one Bundle & Save offer only, the higher-priority one first.`;

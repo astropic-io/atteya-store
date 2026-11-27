@@ -42,6 +42,16 @@ Account emails follow the same table: the "Confirm Your Email" message (`functio
 - Amounts only from the saved order. Never guess a missing amount; leave it out.
 - Order refs come from `shortOrderRef()`: `#` + 6 capitals.
 
+### Savings are money, not percent (site-wide)
+
+- A price saving is shown as the new price with the old one struck through ("EGP 100 ~~EGP 125~~"). No "20% off" or "−20%" tag beside it: product cards, the product page, quick lists, the bag, checkout and order pages.
+- Say a saving once. Where the struck-through price is shown, add no "Save EGP 50" tag beside it (the Bundle price "How many?" rows show only "EGP 100 each" over a struck "EGP 125").
+- When a saving is named in words, it is money in the shopper's currency: "You save EGP 250" (bag strips, which name the offer), "You saved EGP 25" (checkout summary), "Save EGP 1,200" (the product page's Bundle & Save box header once every piece is picked).
+- The Bundle & Save page's summary keeps its struck "Normal price" and "You save" rows: it is a total breakdown, like checkout, not a price tag.
+- A Buy X Get Y line's tag reads "Free", "1 free", "Offer price" or "1 at offer price" (`dealTag()`), never a percent. Staff order pages pass `{ staff: true }` and keep "−50%".
+- Exception: a percent stays where it is the whole message and no money amount is known yet: an admin-written offer title, badge or banner ("Sale: 30% off everything"), a Bundle & Save percent before the shopper picks the pieces ("Save 60%", which turns into "Save EGP 1,200" once every piece is picked), and a Buy X Get Y rule before the item is chosen ("Add 1 more to get 1 at 50% off").
+- Admin pages that set up an offer keep percent fields and percent wording.
+
 ## 5. Messages must match the order exactly
 
 All payment wording comes from `orderStage()` / `paymentDue()` in `functions/src/store/order-messages.ts` (synced to `src/app/core/config/`). Never decide from defaults or the checkout seed.

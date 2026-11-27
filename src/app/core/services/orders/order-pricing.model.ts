@@ -2,7 +2,8 @@
  * Prices are re-computed server-side at checkout from Firestore + settings, never trusted from the client.
  *
  * Paymob Egypt Accept charges whole EGP: `totalEgp` in Egypt, `chargeEgp` for an order shipped abroad.
- * Cash on delivery and InstaPay are Egypt shipping only; Bank Transfer is outside Egypt only.
+ * Cash on delivery and InstaPay are Egypt shipping only; Bank Transfer is for orders paid from abroad
+ * (shipped outside Egypt, or delivered to someone in Egypt with `paidFromCountry`).
  * `isInternational` is decided by the shipping country, not a visitor display toggle.
  * Shipping stays a separate line. The abroad markup is never applied to it: abroad it is converted
  * at the plain rate (`shippingEntry()`, ATS-311).
@@ -30,6 +31,11 @@ export interface OrderPricingSnapshot {
   readonly payIn?: OrderPayIn;
   /** Card orders shipped abroad (ATS-311): whole pounds Paymob charges. `totalEgp` stays the Egypt price. */
   readonly chargeEgp?: number;
+  /**
+   * Paid from abroad, delivered to someone in Egypt: the country the shopper pays from. The order
+   * is an Egypt delivery (Egypt fee) paid like an order abroad (Bank Transfer, `payIn`).
+   */
+  readonly paidFromCountry?: string;
 }
 
 /**

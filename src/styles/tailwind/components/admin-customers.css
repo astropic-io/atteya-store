@@ -37,11 +37,18 @@
 
   /* Account (black) or Guest (outlined). */
   .customer-pill {
-    @apply shrink-0 items-center border border-primary border-shape px-2 py-0.5 font-label-sm;
+    @apply inline-flex shrink-0 items-center border border-primary border-shape px-2 py-0.5 font-label-sm;
   }
 
   .customer-pill--account {
     @apply bg-primary text-on-primary;
+  }
+
+  /* The desktop columns, shared by the header and every row so they always line up. */
+  .customer-row,
+  .customer-row__head {
+    --customer-columns: 2.5rem minmax(0, 1.4fr) 6.5rem minmax(0, 1fr) minmax(0, 0.8fr) 3.5rem 6.5rem 6.5rem
+      1.5rem;
   }
 
   /*
@@ -50,7 +57,7 @@
    */
   .customer-row {
     @apply grid w-full grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 p-4 text-start;
-    @apply @3xl:grid-cols-[2.5rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.8fr)_4rem_7rem_6.5rem_1.5rem] @3xl:gap-4 @3xl:px-5 @3xl:py-3;
+    @apply @3xl:grid-cols-(--customer-columns) @3xl:gap-4 @3xl:px-5 @3xl:py-3;
   }
 
   .customer-row:hover {
@@ -62,7 +69,7 @@
   }
 
   .customer-row__head {
-    @apply hidden @3xl:grid grid-cols-[2.5rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.8fr)_4rem_7rem_6.5rem_1.5rem] gap-4 px-5 py-2.5 border-b border-outline-variant font-label-md text-on-surface-variant;
+    @apply hidden @3xl:grid grid-cols-(--customer-columns) gap-4 px-5 py-2.5 border-b border-outline-variant font-label-md text-on-surface-variant;
   }
 
   .customer-row__head > :first-child {
@@ -86,8 +93,27 @@
     @apply hidden @3xl:block font-body-md truncate;
   }
 
+  /* Account / Guest (from @3xl; phone cards say it in the card line). */
+  .customer-row__type {
+    @apply hidden @3xl:flex;
+  }
+
+  /* Guest and Account badges are the same width, so the column lines up. */
+  .customer-row__type .customer-pill {
+    @apply w-19 justify-center;
+  }
+
+  .customer-row__number {
+    @apply tabular-nums text-end;
+  }
+
   .customer-row__spent {
-    @apply font-title-sm font-bold! tabular-nums text-end @3xl:text-center;
+    @apply font-title-sm font-bold! tabular-nums text-end;
+  }
+
+  /* Nothing confirmed yet: grey and regular weight, so real spending stands out. */
+  .customer-row__spent--none {
+    @apply font-normal! text-on-surface-variant;
   }
 
   .customer-row__last {

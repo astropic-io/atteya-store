@@ -12,11 +12,14 @@
 import { dealTag } from '../offers/engine/buy-x-get-y.js';
 import { shopperMoney, type ShopperMoney, type ShopperMoneyLine } from '../offers/engine/shopper-money.js';
 import { isDeliveryFeeToBeAgreed, readPayIn, type PayIn } from '../store/order-messages.js';
+import { readItemCancels, type ItemCancelEntry } from '../store/order-item-cancel.js';
 
 export type OrderEmailPaymentMethod = 'paymob' | 'cash-on-delivery' | 'instapay' | 'bank-transfer';
 export type OrderEmailStatus = 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled' | 'failed';
 
 export interface OrderEmailLine {
+  /** Index in the saved `pricing.lines` (unreadable lines are skipped, so it can differ from the position here). */
+  readonly lineIndex?: number;
   readonly productId: string;
   readonly name: string;
   readonly optionLabels: readonly { readonly label: string; readonly value: string }[];
@@ -25,7 +28,7 @@ export interface OrderEmailLine {
   readonly lineEgp: number;
   /** Free gift line (price 0, listed after its item): the gift's name, e.g. "Free shirt". */
   readonly giftName: string | null;
-  /** Buy X Get Y discount on the line ("Free", "1 free", "−50%"); `lineEgp` is after it. */
+  /** Buy X Get Y discount on the line ("Free", "1 free", "Offer price"); `lineEgp` is after it. */
   readonly dealTag: string | null;
   /** The line in the order's `shopper` currency (`lineEgp` for an Egypt order); null = no price shown. */
   readonly shopperAmount: number | null;
@@ -53,6 +56,13 @@ export interface OrderEmailAddress {
   readonly phone: string;
 }
 
+/** The shopper paying from abroad for an order delivered to someone in Egypt. */
+export interface OrderEmailPayer {
+  readonly fullName: string;
+  readonly phone: string;
+  readonly country: string;
+}
+
 export interface OrderEmailOrder {
   readonly id: string;
   /** `#A1B2C3`: the same short number the site and dashboard show. */
@@ -61,6 +71,15 @@ export interface OrderEmailOrder {
   readonly paymentMethod: OrderEmailPaymentMethod;
   readonly customerEmail: string | null;
   readonly isInternational: boolean;
+  /**
+   * Shipped abroad, or paid from abroad for delivery to someone in Egypt (`pricing.paidFromCountry`):
+   * shopper amounts are in the currency they pay in (`shopper`), never EGP.
+   */
+  readonly paysInOtherCurrency: boolean;
+  /** Paid from abroad for delivery in Egypt: the country it is paid from (`pricing.paidFromCountry`). */
+  readonly paidFromCountry: string | null;
+  /** Paid from abroad: who pays (the address is the recipient in Egypt). Null for every other order. */
+  readonly payer: OrderEmailPayer | null;
   readonly address: OrderEmailAddress;
   readonly lines: readonly OrderEmailLine[];
   readonly subtotalEgp: number;
@@ -114,6 +133,8 @@ export interface OrderEmailOrder {
   readonly shippingAtPlainRate: boolean;
   /** Staff alert only: `orderStaffNotes.payInRate` (filled by the trigger), or null when not read or saved. */
   readonly staffRate: OrderEmailStaffRate | null;
+  /** Pieces staff cancelled before delivery (ATS-342), oldest first. */
+  readonly itemCancels: readonly ItemCancelEntry[];
 }
 
 /** `orderStaffNotes.payInRate` as the staff alert needs it, or null when missing or unreadable. */
@@ -141,7 +162,7 @@ function readGiftName(raw: unknown): string | null {
   return text(raw['giftName']) || 'Free gift';
 }
 
-/** The Buy X Get Y or bundle tag of a line ("Free", "1 free", "−50%", "Bundle price", "Bundle & Save"), or null. */
+/** The Buy X Get Y or bundle tag of a line ("Free", "1 free", "Offer price", "Bundle price", "Bundle & Save"), or null. */
 function readDealTag(raw: unknown, quantity: number): string | null {
   if (!Array.isArray(raw)) return null;
   const deals = raw
@@ -215,6 +236,7 @@ export function readOrderForEmail(
     moneyLines.push({ lineEgp, wasEgp: discountEgp > 0 ? fullEgp : null });
     kept.push(index);
     lines.push({
+      lineIndex: index,
       productId,
       name: text(raw['name']),
       optionLabels: readOptionLabels(raw['optionLabels']),
@@ -240,9 +262,15 @@ export function readOrderForEmail(
   // Same test as the order page (`orderShopperMoney`): shipped outside Egypt.
   const isInternational =
     pricing['isInternational'] === true || (shippingCountry !== '' && shippingCountry !== 'EG');
+  // Paid from abroad for delivery to someone in Egypt: amounts in the shopper's currency too.
+  const paidFromCountry =
+    typeof pricing['paidFromCountry'] === 'string' && pricing['paidFromCountry'] !== 'EG'
+      ? pricing['paidFromCountry']
+      : null;
+  const paysInOtherCurrency = isInternational || paidFromCountry !== null;
   const payIn = isRecord(pricing['payIn']) ? pricing['payIn'] : null;
   const shopper = shopperMoney({
-    abroad: isInternational,
+    abroad: paysInOtherCurrency,
     lines: moneyLines,
     subtotalEgp,
     shippingEgp,
@@ -268,6 +296,9 @@ export function readOrderForEmail(
     paymentMethod,
     customerEmail: email.includes('@') ? email : null,
     isInternational,
+    paysInOtherCurrency,
+    paidFromCountry,
+    payer: payerOf(data['payer'], paidFromCountry),
     address: {
       fullName: text(shippingAddress['fullName']),
       line1: text(shippingAddress['line1']),
@@ -306,6 +337,7 @@ export function readOrderForEmail(
     shippingAtPlainRate:
       payIn !== null && typeof payIn['shippingFactor'] === 'number' && payIn['shippingFactor'] > 0,
     staffRate: null,
+    itemCancels: readItemCancels(data['itemCancels']),
   };
 }
 
@@ -347,4 +379,13 @@ function wholeNumber(value: unknown): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** The saved `payer` of an order paid from abroad, or null (missing, unreadable, or not paid from abroad). */
+function payerOf(raw: unknown, paidFromCountry: string | null): OrderEmailPayer | null {
+  if (!paidFromCountry || !isRecord(raw)) return null;
+  const fullName = text(raw['fullName']);
+  const phone = text(raw['phone']);
+  if (!fullName && !phone) return null;
+  return { fullName, phone, country: text(raw['country']) || paidFromCountry };
 }

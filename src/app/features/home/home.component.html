@@ -2,15 +2,25 @@
   <app-hero-section [hero]="hero()" [isLoading]="isLoading()" />
 
   @defer (hydrate on viewport) {
-    <app-shop-categories-section [shopCategories]="shopCategories()" [isLoading]="isLoading()" />
+    <app-navigation-list-section [navList]="navList()" [isLoading]="isLoading()" />
   } @placeholder {
     <section class="container-content" aria-hidden="true">
       <app-skeleton class="w-full min-h-120" />
     </section>
   }
 
+  @if (offerBanner(); as banner) {
+    @defer (hydrate on viewport) {
+      <app-offer-banner-section [banner]="banner" />
+    } @placeholder {
+      <section class="offer-banner-section" aria-hidden="true">
+        <app-skeleton class="block w-full aspect-4/5 max-h-[85dvh] md:aspect-21/9" />
+      </section>
+    }
+  }
+
   @defer (hydrate on viewport) {
-    <app-navigation-list-section [navList]="navList()" [isLoading]="isLoading()" />
+    <app-new-arrivals-section />
   } @placeholder {
     <section class="container-content" aria-hidden="true">
       <app-skeleton class="w-full min-h-120" />
@@ -25,11 +35,13 @@
     </section>
   }
 
-  @defer (hydrate on viewport) {
-    <app-new-arrivals-section />
-  } @placeholder {
-    <section class="container-content" aria-hidden="true">
-      <app-skeleton class="w-full min-h-120" />
-    </section>
+  @if (helpBox(); as box) {
+    @defer (hydrate on viewport) {
+      <app-help-box-section [helpBox]="box" />
+    } @placeholder {
+      <section class="container-content" aria-hidden="true">
+        <app-skeleton class="w-full min-h-40" />
+      </section>
+    }
   }
 </div>

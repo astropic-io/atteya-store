@@ -1,10 +1,11 @@
 @let titleText = title();
-@let current = activeIndex();
+@let shown = shownIndex();
+@let highlight = highlightIndex();
 
 <section class="container-content" (pointerenter)="mountRemaining()" (focusin)="mountRemaining()">
-  <div class="mx-auto flex w-full max-w-7xl justify-between">
-    <nav class="w-full lg:w-fit lg:shrink-0" [attr.aria-labelledby]="titleId">
-      <h2 [id]="titleId" class="sr-only">{{ titleText }}</h2>
+  <div class="nav-list-layout">
+    <nav class="elements-start-col w-full gap-5" [attr.aria-labelledby]="titleId">
+      <h2 [id]="titleId" class="nav-list-eyebrow">{{ titleText }}</h2>
       <ul class="nav-list">
         @for (item of items(); track $index; let idx = $index) {
           <li>
@@ -12,9 +13,8 @@
               <button
                 type="button"
                 class="nav-list-link"
-                [class.ring-2]="isEdited(idx)"
-                [class.ring-inset]="isEdited(idx)"
-                [class.ring-primary]="isEdited(idx)"
+                [class.is-active]="highlight === idx"
+                [class.is-edited]="isEdited(idx)"
                 [attr.aria-pressed]="isEdited(idx)"
                 (mouseenter)="activate(idx)"
                 (focusin)="activate(idx)"
@@ -22,19 +22,20 @@
               >
                 <ng-container
                   [ngTemplateOutlet]="rowLabel"
-                  [ngTemplateOutletContext]="{ $implicit: item, index: idx, active: current === idx }"
+                  [ngTemplateOutletContext]="{ $implicit: item, index: idx, active: highlight === idx }"
                 />
               </button>
             } @else {
               <a
                 class="nav-list-link"
+                [class.is-active]="highlight === idx"
                 [routerLink]="item.link | linkTarget"
-                (mouseenter)="activate(idx)"
+                (pointerenter)="activate(idx, $event.pointerType === 'mouse')"
                 (focusin)="activate(idx)"
               >
                 <ng-container
                   [ngTemplateOutlet]="rowLabel"
-                  [ngTemplateOutletContext]="{ $implicit: item, index: idx, active: current === idx }"
+                  [ngTemplateOutletContext]="{ $implicit: item, index: idx, active: highlight === idx }"
                 />
               </a>
             }
@@ -51,17 +52,19 @@
               class="nav-list-photo"
               data-nav-photo
               [attr.data-nav-index]="idx"
-              [class.is-active]="current === idx"
+              [attr.data-depth]="depthOf(idx)"
+              [class.is-loaded]="isLoaded(item)"
             >
               @if (imagePath(item); as src) {
                 <img
                   [ngSrc]="src"
-                  ngSrcset="520w, 1040w"
+                  ngSrcset="640w, 1280w"
                   [appImageFallback]="src"
                   alt=""
                   fill
-                  sizes="(min-width: 1024px) 32.5rem, 100vw"
+                  sizes="(min-width: 1280px) 40rem, (min-width: 1024px) 50vw, 100vw"
                   class="object-cover object-center"
+                  (load)="markLoaded(src)"
                 />
               } @else {
                 <div class="absolute inset-0 skeleton"></div>
@@ -69,6 +72,14 @@
             </div>
           }
         }
+      }
+
+      @if (showPhotos() && items().length > 0) {
+        @let shownItem = items()[shown];
+        <div class="nav-list-caption">
+          <span class="min-w-0 truncate">{{ shownItem?.caption }}</span>
+          <span class="shrink-0 tabular-nums">{{ position() }}</span>
+        </div>
       }
 
       @if (isBrowser && isLoading()) {
@@ -79,9 +90,12 @@
 </section>
 
 <ng-template #rowLabel let-item let-index="index" let-active="active">
-  <span class="min-w-0">{{ item.label || 'Untitled' }}</span>
+  <span class="nav-list-name min-w-0">{{ item.label || 'Untitled' }}</span>
+  @if (item.caption) {
+    <span class="sr-only">, {{ item.caption }}</span>
+  }
   <span class="lg:hidden" aria-hidden="true">
-    <mat-icon name="arrow_forward" />
+    <mat-icon name="arrow_outward" />
   </span>
   <span
     class="nav-list-arrow hidden lg:inline-flex"
@@ -90,6 +104,6 @@
     [attr.data-nav-index]="index"
     [class.is-active]="active"
   >
-    <mat-icon name="arrow_right_alt" size="4xl" weight="700" />
+    <mat-icon name="arrow_outward" size="4xl" weight="400" />
   </span>
 </ng-template>

@@ -17,10 +17,12 @@
 @import './styles/tailwind/components/product-page';
 @import './styles/tailwind/components/bundle-page';
 @import './styles/tailwind/components/home-product-rows';
+@import './styles/tailwind/components/home-sections';
 @import './styles/tailwind/components/shop';
 @import './styles/tailwind/components/side-panel';
 @import './styles/tailwind/components/search-panel';
 @import './styles/tailwind/components/account-panel';
+@import './styles/tailwind/components/choice-picker';
 @import './styles/tailwind/components/cart-drawer';
 @import './styles/tailwind/components/payment-methods';
 @import './styles/tailwind/components/deals';
@@ -28,6 +30,7 @@
 @import './styles/tailwind/components/returns';
 @import './styles/tailwind/components/admin-orders';
 @import './styles/tailwind/components/admin-customers';
+@import './styles/tailwind/components/admin-overview';
 @import './styles/tailwind/components/admin-offers';
 @import './styles/tailwind/components/admin-catalog';
 @import './styles/tailwind/components/admin-returns';

@@ -5,6 +5,7 @@ import type {
   BagBundleSetMissing,
   BagDealHint,
   Offer,
+  OfferBadge,
   OfferBundleRow,
   OfferBundleSetReward,
   OfferBundleSlot,
@@ -418,4 +419,45 @@ export function earnedItemLabel(percent: number, word: string | null): string {
     if (text.length <= EARNED_LABEL_MAX) return text;
   }
   return free ? 'Gets you a free item' : `Gets you ${percent}% off an item`;
+}
+
+/** Offer kinds whose label-only badge shows as an offer line on the product page, not on the photo. */
+export const OFFER_LINE_KINDS: ReadonlySet<Offer['reward']['kind']> = new Set([
+  'buyXGetY',
+  'bundlePrice',
+  'bundleSet',
+  'tiered',
+  'freeShipping',
+]);
+
+/**
+ * A price offer's photo badge (a badge that lowers the price, not label-only), or null. The saving
+ * is the struck-through price, never a "20% off" tag (ATS-357): only words the admin wrote as the
+ * offer's badge stay ("Black Friday", or "30% off everything"). A tiered offer says the rest in its
+ * title line, and an offer on only some colours or sizes says so without the percent
+ * ("Offer price · Black only"). `offer` is undefined for a product's own sale price.
+ */
+export function priceOfferBadgeText(badge: OfferBadge, offer: Offer | undefined): string | null {
+  if (offer?.badge?.trim()) return badge.text;
+  if (offer?.reward.kind === 'tiered' || !badge.partial) return null;
+  const only = / · ([^·]+ only)$/.exec(badge.text)?.[1];
+  return only ? `Offer price · ${only}` : 'Offer price on some options';
+}
+
+/**
+ * The first badge the product page would put on the photo, for the offer editor's
+ * "How a product will look" card. Line kinds and free gifts never sit on the photo.
+ */
+export function photoBadgeText(badges: readonly OfferBadge[], offers: readonly Offer[]): string | null {
+  for (const badge of badges) {
+    const offer = offers.find((candidate) => candidate.id === badge.offerId);
+    if (badge.labelOnly) {
+      const kind = offer?.reward.kind;
+      if (kind === 'freeGift' || (kind && OFFER_LINE_KINDS.has(kind))) continue;
+      return badge.text;
+    }
+    const text = priceOfferBadgeText(badge, offer);
+    if (text) return text;
+  }
+  return null;
 }

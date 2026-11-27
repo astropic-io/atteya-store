@@ -24,6 +24,11 @@
     @apply font-body-sm text-on-surface-variant;
   }
 
+  /* "Cancelled ×1" beside an item staff cancelled (ATS-342). */
+  .admin-order-cancelled-tag {
+    @apply bg-inverse-surface text-inverse-on-surface border-shape px-1.5 py-0.5 font-label-sm font-bold! uppercase whitespace-nowrap;
+  }
+
   /*
    * Bank Transfer order from abroad (ATS-304): photo, text, then Customer pays / In pounds /
    * Price in Egypt. Narrow: the prices stack under the item as label / value rows. From @xl

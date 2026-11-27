@@ -6,7 +6,12 @@ import { emailContext } from './email-context.js';
 import type { OrderEmailContext } from './order-email-templates.js';
 import { sendResendEmail } from './resend-client.js';
 import { returnClaimId, returnEmailsForWrite, type ReturnEmailKind } from './return-email-events.js';
-import { readReturnForEmail, type ReturnEmailRequest } from './return-email-model.js';
+import {
+  piecesHeldByOtherReturns,
+  readReturnForEmail,
+  type ReturnEmailRequest,
+} from './return-email-model.js';
+import { readOrderForEmail } from './order-email-model.js';
 import { renderReturnEmail } from './return-email-templates.js';
 import { isReturnStatus } from '../store/returns.js';
 
@@ -52,8 +57,14 @@ export const sendReturnEmails = onDocumentWritten(
     // The order's view key, so a guest's "View Your Order" link opens without signing in.
     const orderSnap = await db.collection('orders').doc(after.orderId).get();
     const viewKey = orderSnap.get('viewKey');
-    const request = readReturnForEmail(requestId, afterData, typeof viewKey === 'string' ? viewKey : null);
-    if (!request) return;
+    const read = readReturnForEmail(requestId, afterData, typeof viewKey === 'string' ? viewKey : null);
+    if (!read) return;
+    // Every item by state in the shopper's status emails (ATS-342).
+    const request = {
+      ...read,
+      order: readOrderForEmail(after.orderId, orderSnap.exists ? orderSnap.data() : null),
+      otherReturned: piecesHeldByOtherReturns(orderSnap.get('returns'), requestId),
+    };
     const ctx = emailContext();
     for (const kind of kinds) {
       await sendOnce(db, kind, request, ctx);

@@ -178,6 +178,29 @@
     @apply border border-dashed border-outline border-shape px-4 py-2 font-label-lg font-bold! cursor-pointer bg-surface-container-lowest;
   }
 
+  /* A product in the search list: its name on one line, then brand · category · colours on one more
+     line; a line that doesn't fit is cut with "…". The panel is as wide as the picker's row, and each
+     product row has 8px of space above and below it with a hairline between rows. */
+  .offer-option-panel .mat-mdc-option .mdc-list-item__primary-text {
+    @apply min-w-0 flex-1;
+  }
+
+  .offer-option {
+    @apply block w-full min-w-0 py-2 border-b border-outline-variant;
+  }
+
+  .offer-option-panel .mat-mdc-option:last-of-type .offer-option {
+    @apply border-b-0;
+  }
+
+  .offer-option-name {
+    @apply block font-body-md truncate;
+  }
+
+  .offer-option-detail {
+    @apply block truncate;
+  }
+
   /* A picked product with several colours: a card with its name, count and remove button, then the
      Colours dropdown (as wide as the search box, full width on phone). */
   .offer-colour-pick {
@@ -198,9 +221,31 @@
     @apply inline-flex size-7 shrink-0 rounded-full border border-outline-variant bg-surface p-0.5;
   }
 
+  /* Step 2: the included products by category, as small grey chips that wrap. */
+  .offer-category-chips {
+    @apply elements-start flex-wrap gap-2 w-full list-none p-0 m-0;
+  }
+
+  .offer-category-chip {
+    @apply bg-surface-container border-shape px-3 py-1 font-label-lg;
+  }
+
   /* A grey note box (overlaps, the run line, Good to know). */
   .offer-note {
     @apply w-full bg-surface-container border-shape p-4 font-body-md elements-start-col items-stretch! gap-2;
+  }
+
+  /* Step 3 → More settings: "Skip products already on sale" would leave most products out.
+     Black 1.5px border, no colour. The dropdown above grows to its hint's real height while this box shows;
+     the top margin plus the column gap keep 20px below the hint. On phone the grid's 32px row gap alone leaves 24px
+     to the next field's label; from @3xl up the bottom margin plus the 12px row gap keep 24px to the next field. */
+  .offer-sale-warning {
+    @apply w-full border-[1.5px] border-primary border-shape p-4 mt-4 mb-0 @3xl:mb-3 elements-start-col items-stretch! gap-3;
+  }
+
+  /* The Use Best Discount Wins button: full width on phone, its own width from @3xl up. */
+  .offer-sale-warning-action {
+    @apply elements-start-col items-stretch! @3xl:flex-row;
   }
 
   /* An Extras row: title and hint on the left, a switch or button on the right. */

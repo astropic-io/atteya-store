@@ -256,7 +256,7 @@ describe('J1-J12: Buy X get Y groups', () => {
   it('J10: 50% instead of free: "1 at -50%" and the line is 2,500', () => {
     const result = priceBagDeals([line(P1, 3)], [bxgy('half', { get: { quantity: 1, percent: 50 } })], CTX);
     assert.deepEqual(totals(result), [2500]);
-    assert.equal(dealTag(result.lines[0].deals, 3), '1 at −50%');
+    assert.equal(dealTag(result.lines[0].deals, 3), '1 at offer price');
     assert.deepEqual(result.lines[0].deals, [{ offerId: 'half', units: 1, percent: 50, discount: 500 }]);
   });
 
@@ -265,7 +265,7 @@ describe('J1-J12: Buy X get Y groups', () => {
     const result = priceBagDeals([line(P1, 1), line(P3, 1)], [b1g1half], CTX);
     // P3 is the discounted one: 100 off.
     assert.deepEqual(discounts(result), [0, 100]);
-    assert.equal(dealTag(result.lines[1].deals, 1), '−50%');
+    assert.equal(dealTag(result.lines[1].deals, 1), 'Offer price');
   });
 
   it('J11: Buy 1 get 1: two pieces, one free', () => {
@@ -932,7 +932,7 @@ describe('O9: two Buy X get Y offers on the same items', () => {
       { offerId: 'offer-a', units: 1, percent: 100, discount: 1000 },
       { offerId: 'offer-b', units: 1, percent: 50, discount: 500 },
     ]);
-    assert.equal(dealTag(result.lines[0].deals, 5), '1 free · 1 at −50%');
+    assert.equal(dealTag(result.lines[0].deals, 5), '1 free · 1 at offer price');
     assert.deepEqual([...result.offerIds].sort(), ['offer-a', 'offer-b']);
   });
 
@@ -1174,9 +1174,9 @@ describe('dealTag', () => {
     assert.equal(dealTag([{ units: 2, percent: 100 }], 2), 'Free');
     assert.equal(dealTag([{ units: 1, percent: 100 }], 3), '1 free');
     assert.equal(dealTag([{ units: 2, percent: 100 }], 6), '2 free');
-    assert.equal(dealTag([{ units: 2, percent: 50 }], 2), '−50%');
-    assert.equal(dealTag([{ units: 1, percent: 50 }], 3), '1 at −50%');
-    assert.equal(dealTag([{ units: 1, percent: 25 }], 1), '−25%');
+    assert.equal(dealTag([{ units: 2, percent: 50 }], 2), 'Offer price');
+    assert.equal(dealTag([{ units: 1, percent: 50 }], 3), '1 at offer price');
+    assert.equal(dealTag([{ units: 1, percent: 25 }], 1), 'Offer price');
   });
 
   it('is empty for no deals and skips an offer with no pieces', () => {
@@ -1190,7 +1190,7 @@ describe('dealTag', () => {
         ],
         3,
       ),
-      '1 at −50%',
+      '1 at offer price',
     );
   });
 
@@ -1203,7 +1203,7 @@ describe('dealTag', () => {
         ],
         5,
       ),
-      '1 free · 1 at −50%',
+      '1 free · 1 at offer price',
     );
   });
 });

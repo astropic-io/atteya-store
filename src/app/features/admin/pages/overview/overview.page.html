@@ -1,0 +1,494 @@
+@let money = showMoney();
+@let liveBoxes = live();
+@let loadingDays = daysResource.isLoading() && !current();
+<div class="elements-start-col items-stretch! gap-3 @3xl:gap-4 w-full">
+  <!-- Header and date range -->
+  <section class="overview-card elements-start-col items-stretch! gap-3" aria-labelledby="overview-title">
+    <div class="elements-between flex-wrap items-end! gap-3">
+      <div class="elements-start-col gap-1 min-w-0">
+        <h1 id="overview-title" class="font-title-lg font-bold!">Overview</h1>
+        <p class="font-body-md text-on-surface-variant">How the store is doing. Days run on Cairo time.</p>
+      </div>
+      <div class="overview-ranges w-full @5xl:w-auto" role="group" aria-label="Date range">
+        @for (option of ranges; track option.id) {
+          <button
+            type="button"
+            class="overview-range"
+            [attr.aria-pressed]="rangeId() === option.id"
+            (click)="setRange(option.id)"
+          >
+            {{ option.label }}
+          </button>
+        }
+      </div>
+    </div>
+    @if (rangeId() === 'custom') {
+      <div class="elements-start flex-wrap gap-2">
+        <label for="overview-from" class="font-body-md text-on-surface-variant">From</label>
+        <input
+          id="overview-from"
+          type="date"
+          class="overview-date"
+          [max]="today()"
+          [value]="period().current.from"
+          (change)="setCustom('from', $any($event.target).value)"
+        />
+        <label for="overview-to" class="font-body-md text-on-surface-variant">To</label>
+        <input
+          id="overview-to"
+          type="date"
+          class="overview-date"
+          [max]="today()"
+          [value]="period().current.to"
+          (change)="setCustom('to', $any($event.target).value)"
+        />
+      </div>
+    }
+    <p class="overview-hint" aria-live="polite">{{ periodText() }}</p>
+  </section>
+
+  <!-- Needs attention now (live) -->
+  <section class="elements-start-col items-stretch! gap-2" aria-labelledby="overview-attention">
+    <div class="elements-between flex-wrap gap-2">
+      <h2 id="overview-attention" class="font-title-md font-bold!">Needs attention now</h2>
+      <span class="overview-hint">Live, not affected by the date range</span>
+    </div>
+    <div class="overview-grid">
+      <a routerLink="/admin/orders" class="overview-tile overview-alert overview-alert--warn">
+        <span class="overview-tile__label">Waiting for Payment</span>
+        <span class="overview-tile__value">
+          @if (liveResource.isLoading()) {
+            <app-skeleton class="h-7 w-10 ml-auto @xl:ml-0" />
+          } @else {
+            {{ liveBoxes?.waitingForPayment ?? '—' }}
+          }
+        </span>
+        <span class="overview-tile__note">Orders not paid or confirmed yet</span>
+      </a>
+      <a routerLink="/admin/orders" class="overview-tile overview-alert overview-alert--bad">
+        <span class="overview-tile__label">Confirmed, not shipped</span>
+        <span class="overview-tile__value">
+          @if (liveResource.isLoading()) {
+            <app-skeleton class="h-7 w-10 ml-auto @xl:ml-0" />
+          } @else {
+            {{ liveBoxes?.confirmedLate ?? '—' }}
+          }
+        </span>
+        <span class="overview-tile__note">Over 2 days since confirmed</span>
+      </a>
+      <a routerLink="/admin/returns" class="overview-tile overview-alert overview-alert--warn">
+        <span class="overview-tile__label">Open returns</span>
+        <span class="overview-tile__value">
+          @if (liveResource.isLoading()) {
+            <app-skeleton class="h-7 w-10 ml-auto @xl:ml-0" />
+          } @else {
+            {{ liveBoxes?.openReturns ?? '—' }}
+          }
+        </span>
+        <span class="overview-tile__note">
+          @if ((liveBoxes?.refundsToSend ?? 0) > 0) {
+            {{ liveBoxes?.refundsToSend }} {{ liveBoxes?.refundsToSend === 1 ? 'refund' : 'refunds' }} still
+            to send
+          } @else {
+            Waiting for a step from the team
+          }
+        </span>
+      </a>
+      @if ((liveBoxes?.itemRefundsToSend ?? 0) > 0) {
+        <a routerLink="/admin/orders" class="overview-tile overview-alert overview-alert--warn">
+          <span class="overview-tile__label">Item refunds to send</span>
+          <span class="overview-tile__value">{{ liveBoxes?.itemRefundsToSend }}</span>
+          <span class="overview-tile__note">For items cancelled before delivery, sent by InstaPay</span>
+        </a>
+      }
+      <a routerLink="/admin/products" class="overview-tile overview-alert overview-alert--bad">
+        <span class="overview-tile__label">Out of stock</span>
+        <span class="overview-tile__value">
+          @if (liveResource.isLoading()) {
+            <app-skeleton class="h-7 w-10 ml-auto @xl:ml-0" />
+          } @else {
+            {{ liveBoxes?.outOfStock ?? '—' }}
+          }
+        </span>
+        <span class="overview-tile__note">
+          @if (liveBoxes?.runningLow !== null && liveBoxes?.runningLow !== undefined) {
+            Live products. Plus {{ liveBoxes?.runningLow }} with 5 or fewer left
+          } @else {
+            Live products with nothing left
+          }
+        </span>
+      </a>
+    </div>
+  </section>
+
+  @if (daysResource.error()) {
+    <section class="overview-card elements-between flex-wrap gap-3" role="alert">
+      <p class="font-body-md">The numbers didn't load. Check your connection and try again.</p>
+      <button type="button" class="overview-range" (click)="refresh()">Try Again</button>
+    </section>
+  }
+
+  <!-- Key numbers for the range -->
+  <section aria-label="Key numbers">
+    @if (loadingDays) {
+      <div class="overview-grid">
+        @for (n of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]; track n) {
+          <div class="overview-tile">
+            <app-skeleton class="h-4 w-24" />
+            <app-skeleton class="h-7 w-20 ml-auto @xl:ml-0" />
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="overview-grid">
+        @for (tile of tiles(); track tile.id) {
+          <div class="overview-tile">
+            <span class="overview-tile__label">{{ tile.label }}</span>
+            @if (tile.money && !money) {
+              <span class="overview-tile__locked"> Only admins see pounds </span>
+            } @else {
+              <span class="overview-tile__value">{{ tile.value }}</span>
+              @if (tile.delta; as delta) {
+                <span
+                  class="overview-tile__delta overview-delta"
+                  [class.overview-delta--good]="delta.tone === 'good'"
+                  [class.overview-delta--bad]="delta.tone === 'bad'"
+                  [attr.aria-label]="delta.description"
+                  >{{ delta.label }}</span
+                >
+              }
+            }
+            <span class="overview-tile__note">{{ tile.note }}</span>
+            @if (tile.spark && (!tile.money || money)) {
+              <svg
+                class="overview-spark"
+                [attr.viewBox]="sparkBox"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path class="overview-spark__area" [attr.d]="tile.spark.area" />
+                <polyline
+                  class="overview-spark__line"
+                  [attr.points]="tile.spark.line"
+                  vector-effect="non-scaling-stroke"
+                />
+              </svg>
+            }
+          </div>
+        }
+      </div>
+    }
+  </section>
+
+  <!-- Chart and order statuses -->
+  <section class="overview-split">
+    <div class="overview-card">
+      <div class="overview-card__head">
+        <h2 class="font-title-md font-bold!">{{ money ? 'Sales by day' : 'Orders by day' }}</h2>
+        <div class="elements-start gap-3 overview-hint">
+          @if (money) {
+            <span class="elements-start gap-1.5"
+              ><span class="overview-swatch bg-primary"></span>Pounds received (left)</span
+            >
+          }
+          <span class="elements-start gap-1.5"
+            ><span class="overview-swatch" [class.bg-outline]="money" [class.bg-primary]="!money"></span
+            >Orders{{ money ? ' (right)' : '' }}</span
+          >
+        </div>
+      </div>
+      <div #chartBox class="w-full">
+        @if (chart(); as c) {
+          <svg
+            class="overview-chart block w-full h-auto"
+            [attr.viewBox]="'0 0 ' + c.width + ' ' + c.height"
+            role="img"
+            [attr.aria-label]="(money ? 'Pounds received and orders' : 'Orders') + ' per day'"
+          >
+            @for (tick of c.ticks; track $index) {
+              <line
+                class="grid-line"
+                [attr.x1]="c.left"
+                [attr.x2]="c.right"
+                [attr.y1]="tick.y"
+                [attr.y2]="tick.y"
+              />
+              <text [attr.x]="c.left - 8" [attr.y]="tick.y + 4" text-anchor="end">{{ tick.left }}</text>
+              @if (tick.right !== null) {
+                <text [attr.x]="c.right + 6" [attr.y]="tick.y + 4">{{ tick.right }}</text>
+              }
+            }
+            @for (bar of c.bars; track $index) {
+              <rect
+                class="bar"
+                [class.bar--solo]="!c.hasMoney"
+                [attr.x]="bar.x"
+                [attr.y]="bar.y"
+                [attr.width]="bar.width"
+                [attr.height]="bar.height"
+              >
+                <title>{{ bar.title }}</title>
+              </rect>
+            }
+            @if (c.line) {
+              <polyline class="money-line" [attr.points]="c.line" stroke-width="2" />
+            }
+            @if (c.lastPoint; as p) {
+              <circle class="money-dot" [attr.cx]="p.x" [attr.cy]="p.y" r="3.5" />
+            }
+            @for (label of c.labels; track $index) {
+              <text [attr.x]="label.x" [attr.y]="c.labelY" text-anchor="middle">{{ label.text }}</text>
+            }
+          </svg>
+          @if (c.empty) {
+            <p class="overview-hint mt-2">No orders in this range yet.</p>
+          }
+        } @else {
+          <app-skeleton class="h-52 w-full" />
+        }
+      </div>
+    </div>
+
+    <div class="overview-card">
+      <div class="overview-card__head">
+        <h2 class="font-title-md font-bold!">Where orders are now</h2>
+      </div>
+      <p class="overview-hint">Orders placed in this range, by their status today</p>
+      @if (current(); as now) {
+        <div class="overview-stack mt-1 mb-3" aria-hidden="true">
+          @for (row of statusShares(); track row.key) {
+            <span [style.width.%]="row.percent" [class]="'block h-full overview-status--' + row.key"></span>
+          }
+        </div>
+        <ul class="grid gap-2" aria-label="Orders by status">
+          @for (row of statusShares(); track row.key) {
+            <li class="overview-share__line">
+              <span class="elements-start gap-2 min-w-0">
+                <span [class]="'overview-swatch overview-status--' + row.key"></span>
+                {{ row.label }}
+              </span>
+              <span class="tabular-nums">{{ row.count }}</span>
+              <span class="overview-share__percent">{{ row.percent }}%</span>
+            </li>
+          }
+        </ul>
+      } @else {
+        <app-skeleton class="h-40 w-full mt-2" />
+      }
+    </div>
+  </section>
+
+  <!-- Best sellers and running low -->
+  <section class="overview-split">
+    <div class="overview-card">
+      <div class="overview-card__head">
+        <h2 class="font-title-md font-bold!">Best sellers</h2>
+        <span class="overview-hint">By pieces, share of all pieces sold</span>
+      </div>
+      @if (current(); as now) {
+        @if (sellers().length) {
+          <div class="overview-sellers">
+            <figure class="overview-ring">
+              <svg
+                viewBox="0 0 100 100"
+                role="img"
+                [attr.aria-label]="sellers()[0].name + ' is ' + sellers()[0].percent + '% of pieces sold'"
+              >
+                <circle class="overview-ring__track" cx="50" cy="50" [attr.r]="ringRadius" />
+                @for (slice of ring(); track slice.key) {
+                  <circle
+                    [class]="'overview-ring__slice overview-tone-' + slice.tone"
+                    cx="50"
+                    cy="50"
+                    [attr.r]="ringRadius"
+                    [attr.stroke-dasharray]="slice.dash"
+                    [attr.stroke-dashoffset]="slice.offset"
+                  >
+                    <title>{{ slice.label }}: {{ slice.percent }}%</title>
+                  </circle>
+                }
+              </svg>
+              <figcaption class="overview-ring__center">
+                <span class="font-headline-sm font-bold! tabular-nums">{{ sellers()[0].percent }}%</span>
+                <span class="overview-hint">Top seller</span>
+              </figcaption>
+            </figure>
+            <table class="overview-table">
+              <thead>
+                <tr>
+                  <th scope="col">Product</th>
+                  <th scope="col">Pieces</th>
+                  @if (money) {
+                    <th scope="col">Pounds</th>
+                  }
+                  <th scope="col">Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (seller of sellers(); track seller.id; let i = $index) {
+                  @let photo = photos().get(seller.id)?.imagePath;
+                  <tr>
+                    <td>
+                      <a [routerLink]="['/admin/products', seller.id]" class="overview-product">
+                        <span [class]="'overview-swatch overview-tone-' + i"></span>
+                        <span class="overview-thumb">
+                          @if (photo) {
+                            <img
+                              [ngSrc]="photo"
+                              [appImageFallback]="photo"
+                              alt=""
+                              width="36"
+                              height="36"
+                              class="size-full object-cover"
+                            />
+                          }
+                        </span>
+                        <span class="overview-product__name">{{ seller.name }}</span>
+                      </a>
+                    </td>
+                    <td>{{ seller.pieces }}</td>
+                    @if (money) {
+                      <td>{{ seller.egp | egpPrice }}</td>
+                    }
+                    <td>{{ seller.percent }}%</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="overview-hint mt-2">
+            {{ now.pieces.toLocaleString('en-US') }} pieces sold in this range.
+          </p>
+        } @else {
+          <p class="overview-hint">Nothing sold in this range yet.</p>
+        }
+      } @else {
+        <app-skeleton class="h-40 w-full" />
+      }
+    </div>
+
+    <div class="overview-card">
+      <div class="overview-card__head">
+        <h2 class="font-title-md font-bold!">Running low</h2>
+        <a routerLink="/admin/products" [queryParams]="{ tab: 'low' }" class="overview-link">View All</a>
+      </div>
+      <p class="overview-hint mb-2">
+        Live products with 5 or fewer pieces left. Not affected by the date range
+      </p>
+      @if (lowStockResource.isLoading()) {
+        <app-skeleton class="h-40 w-full" />
+      } @else if (lowStockResource.error()) {
+        <p class="overview-hint">The list didn't load. Try again in a moment.</p>
+      } @else {
+        <ul class="grid">
+          @for (product of lowStockResource.value() ?? []; track product.id) {
+            <li class="overview-stock-row">
+              <a [routerLink]="['/admin/products', product.id]" class="overview-product">
+                <span class="overview-thumb">
+                  @if (product.imagePath) {
+                    <img
+                      [ngSrc]="product.imagePath"
+                      [appImageFallback]="product.imagePath"
+                      alt=""
+                      width="36"
+                      height="36"
+                      class="size-full object-cover"
+                    />
+                  }
+                </span>
+                <span class="overview-product__name">{{ product.name || 'Product' }}</span>
+              </a>
+              <span class="overview-delta overview-delta--bad tabular-nums">{{ product.stock }} left</span>
+            </li>
+          } @empty {
+            <li class="overview-hint">Nothing is running low.</li>
+          }
+        </ul>
+      }
+    </div>
+  </section>
+
+  <!-- Payments and places -->
+  <section class="overview-duo">
+    <div class="overview-card">
+      <div class="overview-card__head"><h2 class="font-title-md font-bold!">How people pay</h2></div>
+      @if (current()) {
+        <ul class="grid gap-2.5">
+          @for (row of payments(); track row.key) {
+            <li class="overview-share">
+              <span class="overview-share__line">
+                <span class="truncate">{{ row.label }}</span>
+                <span class="tabular-nums">{{ row.count }}</span>
+                <span class="overview-share__percent">{{ row.percent }}%</span>
+              </span>
+              <span class="overview-meter" aria-hidden="true"
+                ><span class="overview-meter__fill" [style.width.%]="row.percent"></span
+              ></span>
+            </li>
+          } @empty {
+            <li class="overview-hint">No orders in this range yet.</li>
+          }
+        </ul>
+      } @else {
+        <app-skeleton class="h-40 w-full" />
+      }
+    </div>
+
+    <div class="overview-card">
+      <div class="overview-card__head"><h2 class="font-title-md font-bold!">Where orders go</h2></div>
+      @if (current()) {
+        <ul class="grid gap-2.5">
+          @for (row of places(); track row.key) {
+            <li class="overview-share">
+              <span class="overview-share__line">
+                <span class="truncate">{{ row.label }}</span>
+                <span class="tabular-nums">{{ row.count }}</span>
+                <span class="overview-share__percent">{{ row.percent }}%</span>
+              </span>
+              <span class="overview-meter" aria-hidden="true"
+                ><span class="overview-meter__fill" [style.width.%]="row.percent"></span
+              ></span>
+            </li>
+          } @empty {
+            <li class="overview-hint">No orders in this range yet.</li>
+          }
+        </ul>
+      } @else {
+        <app-skeleton class="h-40 w-full" />
+      }
+    </div>
+  </section>
+
+  <!-- Catalogue (live) -->
+  <section class="overview-card" aria-labelledby="overview-catalogue">
+    <div class="overview-card__head">
+      <h2 id="overview-catalogue" class="font-title-md font-bold!">Catalogue</h2>
+      <span class="overview-hint">Live, not affected by the date range</span>
+    </div>
+    <div class="grid grid-cols-2 @5xl:grid-cols-4 gap-x-3 gap-y-4">
+      <div class="elements-start-col gap-0.5">
+        <span class="overview-label">Products in the store</span>
+        <span class="font-headline-sm font-bold! tabular-nums">{{ liveBoxes?.productsLive ?? '—' }}</span>
+        <span class="overview-hint">{{ liveBoxes?.productsHidden ?? '—' }} hidden</span>
+      </div>
+      <div class="elements-start-col gap-0.5">
+        <span class="overview-label">Out of stock</span>
+        <span class="font-headline-sm font-bold! tabular-nums">{{ liveBoxes?.outOfStock ?? '—' }}</span>
+        <span class="overview-hint">Live products with nothing left</span>
+      </div>
+      <div class="elements-start-col gap-0.5">
+        <span class="overview-label">Running low</span>
+        <span class="font-headline-sm font-bold! tabular-nums">{{ liveBoxes?.runningLow ?? '—' }}</span>
+        <span class="overview-hint">5 or fewer pieces left</span>
+      </div>
+      <div class="elements-start-col gap-0.5">
+        <span class="overview-label">Offers running</span>
+        <span class="font-headline-sm font-bold! tabular-nums">{{ liveBoxes?.offersRunning ?? '—' }}</span>
+        <span class="overview-hint">
+          {{ offerNote() }}
+        </span>
+      </div>
+    </div>
+  </section>
+</div>

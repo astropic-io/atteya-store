@@ -351,6 +351,36 @@
                 }
               </li>
             }
+            @for (c of cancelledItems(); track c.key) {
+              <li class="elements-start gap-3 text-on-surface-variant">
+                <div class="order-thumb opacity-50">
+                  <div
+                    class="size-full overflow-hidden bg-surface border border-outline-variant border-shape"
+                  >
+                    @if (c.imagePath; as path) {
+                      <img
+                        [ngSrc]="c.imageSrc"
+                        [appImageFallback]="path"
+                        alt=""
+                        width="56"
+                        height="56"
+                        class="size-full object-contain p-1"
+                      />
+                    }
+                  </div>
+                </div>
+                <div class="min-w-0 flex-1 elements-start-col gap-0.5">
+                  <p class="font-title-sm line-through break-words">{{ c.name }}</p>
+                  <p class="font-body-sm">
+                    Removed · × {{ c.quantity }}{{ c.details ? ' · ' + c.details : ''
+                    }}{{ c.gifts ? ' · free gift removed too' : '' }}
+                  </p>
+                </div>
+                @if (c.amountOff) {
+                  <span class="shrink-0 font-body-md line-through whitespace-nowrap">{{ c.amountOff }}</span>
+                }
+              </li>
+            }
           </ul>
           <dl class="elements-start-col items-stretch! gap-2 border-t border-outline-variant pt-4">
             @if (subtotal(); as subtotalText) {
@@ -377,6 +407,12 @@
               </div>
             }
           </dl>
+          @if (itemRefund(); as refund) {
+            <div class="bg-surface-container border-shape p-4 elements-start-col gap-1" role="status">
+              <p class="font-body-md font-bold!">{{ refund.title }}</p>
+              <p class="font-body-sm text-on-surface-variant break-words">{{ refund.text }}</p>
+            </div>
+          }
         </section>
       }
 

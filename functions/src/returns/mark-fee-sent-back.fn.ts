@@ -1,7 +1,7 @@
 import { getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { adminCallableOptions } from '../auth/callable-options.js';
-import { requireRole } from '../auth/require-role.js';
+import { requireExtra } from '../auth/require-role.js';
 import { parseFeeSentBack, ReturnStepError } from './return-staff-step.js';
 import { runFeeSentBack, type ReturnStepResult } from './return-staff-transaction.js';
 
@@ -11,7 +11,7 @@ import { runFeeSentBack, type ReturnStepResult } from './return-staff-transactio
  * status stays as it is; the shopper gets the Fee Sent Back email (`sendReturnEmails`).
  */
 export const markFeeSentBack = onCall(adminCallableOptions(), async (request): Promise<ReturnStepResult> => {
-  const actor = await requireRole(request, 'admin');
+  const actor = await requireExtra(request, 'refunds');
   let input;
   try {
     input = parseFeeSentBack(request.data);

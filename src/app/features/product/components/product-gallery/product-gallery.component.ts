@@ -1,6 +1,7 @@
 import { NgOptimizedImage } from '@angular/common';
 import {
   afterNextRender,
+  afterRenderEffect,
   Component,
   computed,
   DestroyRef,
@@ -18,6 +19,14 @@ import { PDP_GALLERY_SIZES } from '@core/image/image-kit.loader';
 import type { ProductImage } from '@core/services/products';
 import { AppImageFallbackDirective } from '@shared/directives/image-fallback';
 import { SharedIconModule } from '@shared/ui/mat-icon';
+import {
+  attachEndlessRow,
+  endlessCollapseTo,
+  endlessIndex,
+  endlessRecentre,
+  endlessRowOverflows,
+  endlessStep,
+} from '@shared/utils/endless-row.utils';
 import { normalizeImageKitPath } from '@shared/utils/image';
 
 /** Pixels the mouse must move before a press becomes a drag. */
@@ -29,6 +38,9 @@ const DRAGGING_CLASS = 'pdp-gallery-track--dragging';
 /**
  * Product photos in a native scroll-snap row: swipe on touch, drag with a mouse, arrows and a
  * "1/6" counter centred under the photos. Vertical wheel scrolling is left to the page.
+ * The photos are endless (`@shared/utils/endless-row.utils`): when they don't all fit, they are
+ * rendered three times and after the last photo the first one comes next (arrows, mouse drag and
+ * touch swipe alike), with no rewind.
  */
 @Component({
   selector: 'app-product-gallery',
@@ -56,23 +68,35 @@ export class ProductGalleryComponent {
     return [colourImg, ...base.filter((img) => img.path !== colourImg.path)];
   });
 
+  /** Photos don't all fit: render them three times so the row never ends (copies 0 and 2 `aria-hidden`). */
+  readonly loops = linkedSignal({ source: this.displayImages, computation: () => false });
+  readonly loopCopies = [0, 1, 2] as const;
+  /** Slides rendered right now (three copies once the template has caught up with `loops`). */
+  readonly #slides = signal(0);
+  readonly oneCopy = [1] as const;
+
   /** Index of the first photo in view. Back to 0 when the photo list changes (another colour). */
   readonly active = linkedSignal({ source: this.displayImages, computation: () => 0 });
 
   /** Photos fully in view at once: 1, or 2 side by side on wide screens. */
   readonly perView = signal(1);
 
-  /** Index of the last photo in view (screen readers hear "Photos 2 and 3 of 3"). */
-  readonly lastShown = computed(() =>
-    Math.min(this.active() + this.perView() - 1, Math.max(this.displayImages().length - 1, 0)),
-  );
+  /** Index of the last photo in view (screen readers hear "Photos 2 and 3 of 3", or "4 and 1"). */
+  readonly lastShown = computed(() => {
+    const total = this.displayImages().length;
+    const last = this.active() + this.perView() - 1;
+    if (this.loops()) return total > 0 ? last % total : 0;
+    return Math.min(last, Math.max(total - 1, 0));
+  });
 
   /**
    * Counts positions, not photos: with two photos side by side, 4 photos are 3 positions
-   * ("1/3" … "3/3"); one photo at a time, it is "1/4" … "4/4".
+   * ("1/3" … "3/3"); one photo at a time, it is "1/4" … "4/4". While looping every photo can come
+   * first, so 4 photos are always "1/4" … "4/4".
    */
   readonly counter = computed(() => {
-    const positions = Math.max(1, this.displayImages().length - this.perView() + 1);
+    const total = this.displayImages().length;
+    const positions = this.loops() ? Math.max(1, total) : Math.max(1, total - this.perView() + 1);
     return `${Math.min(this.active() + 1, positions)}/${positions}`;
   });
 
@@ -81,13 +105,13 @@ export class ProductGalleryComponent {
     const first = this.active() + 1;
     const last = this.lastShown() + 1;
     const total = this.displayImages().length;
-    return last > first ? `Photos ${first} and ${last} of ${total}` : `Photo ${first} of ${total}`;
+    return last !== first ? `Photos ${first} and ${last} of ${total}` : `Photo ${first} of ${total}`;
   });
 
-  /** True once the last photo is in view (two fit at once on wide screens). */
-  readonly atEnd = linkedSignal({
+  /** False when every photo already fits (nothing to move to); the arrows are then disabled. */
+  readonly scrollable = linkedSignal({
     source: this.displayImages,
-    computation: (images) => images.length <= 1,
+    computation: (images) => images.length > 1,
   });
 
   constructor() {
@@ -96,7 +120,24 @@ export class ProductGalleryComponent {
     afterNextRender(() => {
       this.#sync();
       const el = this.track()?.nativeElement;
-      if (!el || typeof ResizeObserver === 'undefined') return;
+      if (!el) return;
+      this.#slides.set(el.children.length);
+      const copied = (): boolean => {
+        const count = this.displayImages().length;
+        return count > 1 && el.children.length >= count * 3;
+      };
+      let wasCopied = copied();
+      // Runs before the browser paints: copy 0 never shows, and leaving the loop keeps the photo.
+      const slides = new MutationObserver(() => {
+        const isCopied = copied();
+        if (isCopied && !wasCopied) endlessRecentre(el, this.displayImages().length);
+        if (!isCopied && wasCopied) endlessCollapseTo(el, this.active());
+        wasCopied = isCopied;
+        this.#slides.set(el.children.length);
+      });
+      slides.observe(el, { childList: true });
+      destroyRef.onDestroy(() => slides.disconnect());
+      if (typeof ResizeObserver === 'undefined') return;
       const observer = new ResizeObserver(() => this.#sync());
       observer.observe(el);
       destroyRef.onDestroy(() => observer.disconnect());
@@ -112,17 +153,39 @@ export class ProductGalleryComponent {
         const el = this.track()?.nativeElement;
         if (el && typeof el.scrollTo === 'function') {
           el.scrollTo({ left: 0, behavior: 'instant' });
+          // Already at 0 sends no scroll event: refresh the counter and arrows for the new photos.
+          if (typeof requestAnimationFrame === 'function') {
+            cancelAnimationFrame(this.#frame);
+            this.#frame = requestAnimationFrame(() => this.#sync());
+          }
         }
       });
+    });
+
+    // While looping, start on the middle copy and jump back to it whenever the photos come to
+    // rest in the first or last copy.
+    afterRenderEffect((onCleanup) => {
+      const el = this.track()?.nativeElement;
+      const count = this.displayImages().length;
+      if (!el || !this.loops() || this.#slides() < count * 3) return;
+      onCleanup(attachEndlessRow(el, () => this.displayImages().length));
+      untracked(() => this.#sync());
     });
   }
 
   step(direction: 1 | -1): void {
     const el = this.track()?.nativeElement;
     if (!el) return;
+    if (this.loops()) {
+      // Endless: the next copy carries on, so there is always a photo either way.
+      endlessStep(el, this.displayImages().length, direction);
+      return;
+    }
+    const stride = this.#stride(el);
+    const index = Math.round(el.scrollLeft / stride);
     const last = this.displayImages().length - 1;
-    const target = Math.min(Math.max(this.active() + direction, 0), last);
-    el.scrollTo({ left: target * this.#stride(el) });
+    const target = Math.min(Math.max(index + direction, 0), last);
+    el.scrollTo({ left: target * stride });
   }
 
   onScroll(): void {
@@ -175,12 +238,12 @@ export class ProductGalleryComponent {
     const dragged = drag.startLeft - el.scrollLeft;
     // A short flick is enough to move one photo; a long drag lands on the nearest photo.
     let target = startIndex;
+    const lastLeft = this.#lastLeft(el);
+    el.classList.remove(DRAGGING_CLASS);
     if (Math.abs(dragged) >= stride * DRAG_FLIP_RATIO) {
       const photos = Math.max(1, Math.round(Math.abs(dragged) / stride));
       target = startIndex + (dragged < 0 ? photos : -photos);
     }
-    const lastLeft = el.scrollWidth - el.clientWidth;
-    el.classList.remove(DRAGGING_CLASS);
     el.scrollTo({ left: Math.min(Math.max(target * stride, 0), lastLeft) });
   }
 
@@ -192,12 +255,22 @@ export class ProductGalleryComponent {
   #sync(): void {
     const el = this.track()?.nativeElement;
     if (!el) return;
-    const last = this.displayImages().length - 1;
+    const count = this.displayImages().length;
     const stride = this.#stride(el);
     this.perView.set(Math.max(1, Math.round(el.clientWidth / stride)));
-    const index = Math.round(el.scrollLeft / stride);
-    this.active.set(Math.min(Math.max(index, 0), Math.max(last, 0)));
-    this.atEnd.set(el.scrollLeft + el.clientWidth >= el.scrollWidth - 2);
+    const loops = endlessRowOverflows(el, count);
+    this.loops.set(loops);
+    if (loops) {
+      this.active.set(endlessIndex(el, count));
+    } else {
+      const index = Math.round(el.scrollLeft / stride);
+      this.active.set(Math.min(Math.max(index, 0), Math.max(count - 1, 0)));
+    }
+    this.scrollable.set(loops || this.#lastLeft(el) > 2);
+  }
+
+  #lastLeft(el: HTMLElement): number {
+    return Math.max(0, el.scrollWidth - el.clientWidth);
   }
 
   /** Width of one photo plus the gap after it. */

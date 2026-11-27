@@ -1,0 +1,166 @@
+<header class="side-panel__header">
+  <div class="flex-1 min-w-0">
+    <p class="font-label-md text-on-surface-variant">{{ data.step }}</p>
+    <h2 id="choice-picker-title" class="font-title-md font-bold! truncate" dir="auto">{{ data.title }}</h2>
+  </div>
+  <button matIconButton type="button" aria-label="Close" (click)="close()">
+    <mat-icon name="close" />
+  </button>
+</header>
+
+<div class="side-panel__body choice-picker__body">
+  @if (searchable) {
+    <div class="search-panel__field">
+      <mat-icon name="search" size="xl" aria-hidden="true" />
+      <input
+        class="search-panel__input"
+        type="search"
+        placeholder="Search by name, brand or colour"
+        aria-label="Search the choices"
+        autocomplete="off"
+        enterkeyhint="search"
+        [value]="query()"
+        (input)="onSearch($event)"
+      />
+    </div>
+  }
+
+  @if (colours().length > 0) {
+    <div class="choice-picker__filters" role="group" aria-label="Colour">
+      @for (dot of colours(); track dot.id) {
+        <button
+          type="button"
+          class="choice-picker__dot"
+          [attr.aria-label]="dot.label"
+          [attr.aria-pressed]="colour() === dot.id"
+          (click)="setColour(dot.id)"
+        >
+          <app-color-swatch class="size-6" [colorId]="dot.id" round />
+        </button>
+      }
+    </div>
+  }
+
+  @if (brands().length > 0) {
+    <div class="choice-picker__filters" role="group" aria-label="Brand">
+      @for (entry of brands(); track entry.id) {
+        <button
+          type="button"
+          class="pdp-choice choice-picker__brand"
+          [attr.aria-pressed]="brand() === entry.id"
+          (click)="setBrand(entry.id)"
+        >
+          <span class="truncate" dir="auto">{{ entry.name }}</span>
+          <span class="text-on-surface-variant choice-picker__count">{{ entry.count }}</span>
+        </button>
+      }
+    </div>
+  }
+
+  @if (showCount()) {
+    <div class="elements-between gap-3" aria-live="polite">
+      <p class="font-body-sm text-on-surface-variant">
+        {{ filtered().length }} {{ filtered().length === 1 ? 'choice' : 'choices' }}
+      </p>
+      @if (filtering()) {
+        <button type="button" class="choice-picker__clear" (click)="clearFilters()">Clear</button>
+      }
+    </div>
+  }
+
+  @if (filtered().length === 0) {
+    <div class="search-panel__message">
+      <p class="font-title-md font-bold!">Nothing matches</p>
+      <p class="font-body-md text-on-surface-variant">Try another colour or brand.</p>
+      <button matButton="outlined" type="button" (click)="clearFilters()">Clear Filters</button>
+    </div>
+  } @else {
+    <div class="choice-picker__grid">
+      @for (choice of visible(); track choice.productId) {
+        @let isPicked = selectedId() === choice.productId;
+        <button
+          type="button"
+          class="pdp-gift-card choice-picker__card"
+          [attr.aria-label]="choice.label"
+          [attr.aria-pressed]="isPicked"
+          (click)="pick(choice.productId)"
+        >
+          <span class="pdp-gift-card__photo">
+            @if (choice.imagePath) {
+              <img
+                [ngSrc]="path(choice.imagePath)"
+                [appImageFallback]="choice.imagePath"
+                alt=""
+                fill
+                sizes="(max-width: 1023px) 45vw, 12.5rem"
+                class="object-cover"
+              />
+            }
+            @if (isPicked) {
+              <span class="pdp-gift-card__picked" aria-hidden="true">
+                <mat-icon name="check" size="xs" weight="700" />
+                Picked
+              </span>
+            }
+          </span>
+          <span class="pdp-gift-card__caption" aria-hidden="true">
+            <span class="pdp-gift-card__name" dir="auto">{{ choice.cardName }}</span>
+            @if (choice.cardColours.length > 0) {
+              <span class="pdp-gift-card__colour">
+                @for (colour of choice.cardColours; track colour.id) {
+                  <app-color-swatch class="size-2.5" [colorId]="colour.id" round />
+                }
+                <span class="truncate">{{ choice.cardColours[0].label }}</span>
+              </span>
+            }
+          </span>
+        </button>
+      }
+    </div>
+    @if (remaining() > 0) {
+      <div class="grid">
+        <button matButton="outlined" type="button" (click)="showMore()">Show {{ nextPage() }} More</button>
+      </div>
+    }
+  }
+</div>
+
+<footer class="side-panel__footer choice-picker__footer">
+  @if (sizes(); as list) {
+    @if (list.length > 0) {
+      <div class="w-full elements-start-col gap-2">
+        <p class="font-label-lg">
+          <span class="font-bold!">Size</span>
+          <span class="text-on-surface-variant"> · {{ selected()?.cardName }}</span>
+        </p>
+        <div
+          class="choice-picker__sizes"
+          role="group"
+          aria-label="Size"
+          [attr.aria-describedby]="needSize() ? 'choice-picker-hint' : null"
+        >
+          @for (size of list; track size.id) {
+            <button
+              type="button"
+              class="pdp-choice"
+              [attr.aria-pressed]="sizeId() === size.id"
+              (click)="pickSize(size.id)"
+            >
+              {{ size.label }}
+            </button>
+          }
+        </div>
+      </div>
+    }
+  }
+  @if (needSize()) {
+    <p id="choice-picker-hint" class="w-full font-body-sm text-error" role="alert">
+      Pick a size to carry on.
+    </p>
+  } @else if (!selected()) {
+    <p class="w-full font-body-sm text-on-surface-variant">{{ data.hint }}</p>
+  }
+  <div class="grid w-full">
+    <button matButton="filled" type="button" [disabled]="!selected()" (click)="finish()">{{ cta }}</button>
+  </div>
+</footer>

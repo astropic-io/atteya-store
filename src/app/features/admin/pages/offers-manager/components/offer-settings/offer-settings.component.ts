@@ -1,18 +1,37 @@
-import { Component, computed, model } from '@angular/core';
+import { Component, computed, input, model, viewChild } from '@angular/core';
+import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
-import { MatSelectModule } from '@angular/material/select';
+import { MatSelect, MatSelectModule } from '@angular/material/select';
 import type { OfferDraft, OfferSaleItemsPolicy } from '@core/services/offers/engine';
+import { SharedIconModule } from '@shared/ui/mat-icon';
+import { SALE_SKIP_FIX_LINE, saleSkipWarning } from '../../models/offer-admin.model';
 
 /** Step 3 → Extras → More settings: products already on sale, badge override and priority. */
 @Component({
   selector: 'app-offer-settings',
   host: { class: 'block w-full' },
-  imports: [MatFormFieldModule, MatInputModule, MatSelectModule],
+  imports: [MatButtonModule, MatFormFieldModule, MatInputModule, MatSelectModule, SharedIconModule],
   templateUrl: './offer-settings.component.html',
 })
 export class OfferSettingsComponent {
   readonly draft = model.required<OfferDraft>();
+  /** How many products the offer reaches (step 2's count). */
+  readonly total = input(0);
+  /** How many of them are already on sale (step 2's "already on sale" number). */
+  readonly onSale = input(0);
+
+  readonly saleSkipWarning = computed(() =>
+    saleSkipWarning(this.draft(), { total: this.total(), onSale: this.onSale() }),
+  );
+  readonly saleSkipFixLine = SALE_SKIP_FIX_LINE;
+
+  private readonly saleItemsSelect = viewChild<MatSelect>('saleItemsSelect');
+
+  /** The closed dropdown shows the short name; the option list keeps "(recommended)". */
+  readonly saleItemsShortLabel = computed(() =>
+    this.draft().saleItems === 'exclude' ? 'Skip products already on sale' : 'Best discount wins',
+  );
 
   readonly saleItemsExplanation = computed(() =>
     this.draft().saleItems === 'exclude'
@@ -27,6 +46,12 @@ export class OfferSettingsComponent {
 
   onSaleItemsChange(value: OfferSaleItemsPolicy): void {
     this.draft.update((prev) => ({ ...prev, saleItems: value === 'exclude' ? 'exclude' : 'bestOf' }));
+  }
+
+  /** Use Best Discount Wins: switch the setting; the warning (and its button) goes away, so focus the dropdown. */
+  useBestOf(): void {
+    this.onSaleItemsChange('bestOf');
+    this.saleItemsSelect()?.focus();
   }
 
   onPriorityChange(event: Event): void {

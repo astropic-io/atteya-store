@@ -96,7 +96,7 @@ const PERFORMANCE_HINTS = [
 /**
  * Pages that need an account. Opened signed out (each check uses a fresh page in a context that
  * never signs in), each must land on Sign In with `returnUrl` set to that page. /admin's guard runs
- * after the child redirect, so its `returnUrl` is a page inside /admin (`/admin/navigation`).
+ * after the child redirect, so its `returnUrl` is a page inside /admin (`/admin/orders`, or `/admin/overview` where Overview is on).
  */
 const SIGNED_OUT_PAGES = [
   { id: 'account', label: 'Account', path: '/account' },
@@ -435,7 +435,7 @@ async function waitForBrowserApp(page, problems) {
 /**
  * A signed-out visitor on a private page must end on `/login?returnUrl=<that page>`. The guard
  * waits for Firebase Auth first, so this waits up to READY_TIMEOUT for the address to change.
- * `returnUrl` may name a page inside the requested one (`/admin` → `/admin/navigation`).
+ * `returnUrl` may name a page inside the requested one (`/admin` → `/admin/orders`).
  * Returns whether the visitor reached Sign In at all.
  */
 async function expectSignInRedirect(page, path, problems) {
@@ -446,7 +446,7 @@ async function expectSignInRedirect(page, path, problems) {
     // Not on Sign In: reported below from where the page actually is.
   }
   const landed = new URL(page.url());
-  // Still on the page, or on a page inside it (`/admin` opening `/admin/navigation`).
+  // Still on the page, or on a page inside it (`/admin` opening `/admin/orders`).
   if (landed.pathname === path || landed.pathname.startsWith(`${path}/`)) {
     problems.push(`${path} opened without signing in.`);
     return false;

@@ -4,6 +4,7 @@ import {
   paymentDue,
   type OrderStage,
 } from '@core/config/order-messages';
+import { canCancelItems, readItemCancels } from '@core/config/order-item-cancel';
 import { dealTag, displayDecimals } from '@core/services/offers/engine';
 import { orderMessageInput } from '@core/services/orders/order-message-input';
 import type { OrderDoc, OrderStaffNotes } from '@core/services/orders/order.schema';
@@ -14,6 +15,7 @@ import type {
   AbroadOrderView,
   AbroadPriceCells,
   AbroadTotalRow,
+  OrderCancelledItem,
   OrderDetailItem,
   OrderDetailRow,
   OrderDetails,
@@ -198,6 +200,7 @@ function detailItems(
   money: (amount: number) => string,
   abroad: AbroadPrices | null,
 ): OrderDetailItem[] {
+  const cancellable = canCancelItems(order);
   return order.pricing.lines.map((line, index) => {
     const product = productsById.get(line.productId) ?? null;
     const selection = line.selection ?? {};
@@ -213,6 +216,8 @@ function detailItems(
     const free = !!gift || line.lineDisplay === 0;
     const base = {
       key: `${index}:${line.productId}`,
+      lineIndex: index,
+      cancellable: cancellable && !line.gift,
       productId: line.productId,
       productExists: product !== null,
       name: line.name || product?.name || 'Product unavailable',
@@ -221,7 +226,7 @@ function detailItems(
       imageSrc: imagePath ? normalizeImageKitPath(imagePath) : '',
       quantity: line.quantity,
       gift,
-      deal: line.deals?.length ? dealTag(line.deals, line.quantity) || null : null,
+      deal: line.deals?.length ? dealTag(line.deals, line.quantity, { staff: true }) || null : null,
       stock:
         stock.status === 'missing'
           ? 'Product removed'
@@ -253,6 +258,57 @@ function detailItems(
       was: discounted ? money(line.fullEgp ?? line.unitDisplay * line.quantity) : null,
     };
   });
+}
+
+/** The pieces staff cancelled (ATS-342), with who, why and the refund state. */
+function cancelledItems(order: OrderDoc, notes: OrderStaffNotes | null): OrderCancelledItem[] {
+  return readItemCancels(order.itemCancels).map((entry) => {
+    const note = notes?.itemCancels.find((n) => n.id === entry.id) ?? null;
+    const imagePath = entry.item.imagePath?.trim() || null;
+    const giftPieces = entry.gifts.reduce((sum, g) => sum + g.quantity, 0);
+    const meta = [
+      entry.atMs ? SHORT_DATE.format(new Date(entry.atMs)) : '',
+      note?.byEmail || note?.by || '',
+      note?.reason?.trim() ? `"${note.reason.trim()}"` : '',
+    ].filter(Boolean);
+    const toSend = entry.refundEgp > 0 && entry.refundSentAtMs === null ? entry.refundEgp : 0;
+    let refund: string | null = null;
+    if (entry.refundEgp > 0) {
+      refund =
+        entry.refundSentAtMs !== null
+          ? `Refund ${egpMoney(entry.refundSentEgp ?? entry.refundEgp)} sent ${SHORT_DATE.format(new Date(entry.refundSentAtMs))}`
+          : `Refund ${egpMoney(entry.refundEgp)}${entry.refundTo ? ` · to ${entry.refundTo}` : ''}`;
+    }
+    return {
+      id: entry.id,
+      name: entry.item.name || 'Item',
+      options: entry.item.optionLabels.map((o) => `${o.label}: ${o.value}`).join(' · '),
+      imagePath,
+      imageSrc: imagePath ? normalizeImageKitPath(imagePath) : '',
+      quantity: entry.item.quantity,
+      gifts: giftPieces > 0 ? `+ ${giftPieces} free ${giftPieces === 1 ? 'gift' : 'gifts'}` : null,
+      stock: !entry.stockReturned
+        ? 'Nothing was taken out of stock'
+        : entry.notReturned > 0
+          ? `${entry.notReturned === 1 ? '1 piece' : `${entry.notReturned} pieces`} couldn't go back into stock, check by hand`
+          : 'Back in stock',
+      meta: `Cancelled ${meta.join(' · ')}`.trim(),
+      amountOff: entry.amountOffEgp > 0 ? `−${egpMoney(entry.amountOffEgp)}` : egpMoney(0),
+      refundToSendEgp: toSend,
+      refund,
+    };
+  });
+}
+
+/** Under Total once items were cancelled: the first total, and what is still to send back. */
+function afterTotalRows(order: OrderDoc, cancelled: readonly OrderCancelledItem[]): OrderDetailRow[] {
+  const entries = readItemCancels(order.itemCancels);
+  const first = entries[0];
+  if (!first) return [];
+  const rows: OrderDetailRow[] = [{ label: 'Was', value: egpMoney(first.totalBeforeEgp), muted: true }];
+  const toSend = cancelled.reduce((sum, c) => sum + c.refundToSendEgp, 0);
+  if (toSend > 0) rows.push({ label: 'Refund to send', value: egpMoney(toSend), strong: true });
+  return rows;
 }
 
 /** Order from abroad (with saved line amounts): what the transfer comes to in pounds, and in Egypt. */
@@ -355,6 +411,7 @@ export function orderDetails(
   const egp = (amount: number) => formatMoney(amount, 'EGP', 0);
   const stage = orderStage(orderMessageInput(order));
   const shipping = order.shipping;
+  const payer = order.payer ?? null;
   const feeToBeAgreed = isDeliveryFeeToBeAgreed(pricing.shipping);
 
   const cityLine = [shipping.city, shipping.region].filter(Boolean).join(', ');
@@ -386,15 +443,25 @@ export function orderDetails(
   const totalEgp =
     pricing.currency !== 'EGP' && typeof pricing.totalEgp === 'number' ? egp(pricing.totalEgp) : null;
 
+  const cancelled = cancelledItems(order, notes);
+  const refundToSend = cancelled.reduce((sum, c) => sum + c.refundToSendEgp, 0);
+  const step = nextStep(stage, order, egp);
+
   return {
     stage,
-    nextStep: nextStep(stage, order, egp),
+    nextStep:
+      refundToSend > 0
+        ? `Send the customer ${egp(refundToSend)} back by InstaPay. Then an admin presses Refund Sent on each cancelled item.${step ? ` ${step}` : ''}`
+        : step,
+    // Paid from abroad for delivery in Egypt: the customer is the payer, the address the recipient's.
     customer: {
-      name: shipping.fullName,
+      name: payer?.fullName ?? shipping.fullName,
       email: order.customerEmail?.trim() || null,
-      phone: shipping.phone,
+      phone: payer?.phone ?? shipping.phone,
       account: order.customerId ? 'Has an account' : 'Guest',
+      paysFrom: payer ? `Pays from ${countryName(payer.country)}` : null,
     },
+    recipient: payer ? { name: shipping.fullName, phone: shipping.phone } : null,
     city: shipping.country === 'EG' ? shipping.city : `${shipping.city}, ${countryName(shipping.country)}`,
     address: {
       lines: addressLines,
@@ -413,6 +480,8 @@ export function orderDetails(
     totals,
     total,
     totalEgp,
+    cancelled,
+    afterTotal: afterTotalRows(order, cancelled),
     abroad: prices ? abroadView(order, prices) : null,
     needsReview: 'needsReview' in order && order.needsReview === true,
     placedShort: shortOrderDate(order.createdAt),

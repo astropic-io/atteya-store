@@ -1,6 +1,22 @@
 {
   "indexes": [
     {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "confirmedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "products",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "published", "order": "ASCENDING" },
+        { "fieldPath": "stock", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "returnRequests",
       "queryScope": "COLLECTION",
       "fields": [

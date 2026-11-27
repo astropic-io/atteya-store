@@ -1,0 +1,66 @@
+/**
+ * Home Page Section 4 (Offer Banner, ATS-347) and Section 5 (WhatsApp Help, ATS-348).
+ */
+@layer components {
+  /* One photo banner; the whole banner is the link. 4:5 on phones, 21:9 from md up. */
+  /* No side padding: the banner runs edge to edge. Only space below it, so it sits close to the list above. */
+  .offer-banner-section {
+    @apply pb-[5cqw];
+  }
+
+  .offer-banner {
+    @apply relative block aspect-4/5 max-h-[85dvh] w-full overflow-hidden bg-inverse-surface text-on-primary no-underline md:aspect-21/9;
+    @apply focus-visible:outline-4 focus-visible:-outline-offset-4 focus-visible:outline-on-primary;
+  }
+
+  .offer-banner-photo {
+    @apply object-cover object-center transition-transform duration-1000 ease-out motion-reduce:transition-none;
+  }
+
+  /* Dark fade under the text: from the bottom on phones, from the left from md up. */
+  .offer-banner-fade {
+    @apply pointer-events-none absolute inset-0 bg-linear-to-t from-black/80 via-black/25 to-transparent;
+    @apply md:bg-linear-to-r md:from-black/80 md:via-black/35 md:to-transparent;
+  }
+
+  .offer-banner-text {
+    @apply absolute inset-x-0 bottom-0 elements-start-col gap-2.5 px-[5cqw] py-6 md:max-w-[65%] md:gap-4 md:py-[4cqw];
+  }
+
+  .offer-banner-headline {
+    @apply m-0 line-clamp-2 font-headline-lg font-bold! md:font-display-sm lg:font-display-md xl:font-display-lg;
+  }
+
+  /* "Shop the Offer": a label, not a separate button. The line under it fills on hover. */
+  .offer-banner-cta {
+    @apply relative mt-1 pb-1 font-label-lg font-bold!;
+  }
+
+  .offer-banner-cta::after {
+    @apply absolute inset-x-0 bottom-0 h-0.5 origin-left scale-x-[0.35] bg-current transition-transform duration-500 content-[''] motion-reduce:transition-none;
+  }
+
+  .offer-banner-go {
+    @apply absolute top-5 right-[5cqw] elements-center transition-transform duration-500 ease-out motion-reduce:transition-none md:top-[4cqw];
+  }
+
+  @media (hover: hover) {
+    .offer-banner:hover .offer-banner-photo {
+      @apply scale-[1.04];
+    }
+
+    .offer-banner:hover .offer-banner-cta::after {
+      @apply scale-x-100;
+    }
+
+    .offer-banner:hover .offer-banner-go {
+      @apply translate-x-1 -translate-y-1;
+    }
+  }
+
+  /* WhatsApp Help: an outlined box with the text and one button. */
+  .help-box {
+    @apply mx-auto elements-start-col w-full max-w-7xl gap-6 border border-outline-variant border-shape p-6;
+    @apply md:flex-row md:items-center md:justify-between md:px-12 md:py-9;
+  }
+}

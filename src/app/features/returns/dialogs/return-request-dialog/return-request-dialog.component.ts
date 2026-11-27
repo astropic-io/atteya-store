@@ -7,6 +7,7 @@ import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/materia
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatRadioModule } from '@angular/material/radio';
 import { MatSelectModule } from '@angular/material/select';
 import {
   isRefundItem,
@@ -58,11 +59,18 @@ export interface ReturnRequestDialogData {
   readonly order: OrderDoc;
   /** "24 Nov": the last day a request can be sent. */
   readonly until: string;
+  /**
+   * Staff send it for the customer (ATS-342): the screen says so, offers "The store pays" for the
+   * courier fee, and the request goes straight to Approved after it is sent.
+   */
+  readonly forCustomer?: { readonly name: string } | null;
 }
 
 export interface ReturnRequestDialogResult {
   readonly requestId: string;
   readonly ref: string;
+  /** A Wrong Item Sent item is in it: staff pick the piece that was sent before Approve. */
+  readonly wrongItem?: boolean;
 }
 
 /** How the request screen opens: a dialog on desktop, full screen on phone (`_dialog.scss`). */
@@ -105,6 +113,7 @@ function giftSwapHint(kinds: readonly ReturnKind[]): string {
     MatInputModule,
     MatSelectModule,
     MatProgressSpinnerModule,
+    MatRadioModule,
     SharedIconModule,
     SkeletonComponent,
   ],
@@ -128,8 +137,12 @@ export class ReturnRequestDialogComponent {
   readonly wantsLabel = returnWantsLabel;
   readonly whatsappUrl = whatsappChatUrl(STORE_INFO.contact.whatsapp);
 
+  /** Staff mode (ATS-342), or null for the shopper. */
+  readonly staff = this.data.forCustomer ?? null;
   readonly choices = signal<Readonly<Record<number, ReturnChoice>>>({});
-  readonly refundTo = signal('');
+  readonly refundTo = signal(this.staff ? (this.data.order.shipping.phone ?? '') : '');
+  /** Staff only: the store pays the courier fee, so the customer pays nothing first. */
+  readonly storePaysFee = signal(false);
   readonly note = signal('');
   readonly isSending = signal(false);
   readonly sendError = signal<string | null>(null);
@@ -305,11 +318,19 @@ export class ReturnRequestDialogComponent {
     const fee: { label: string; value: string; note: string | null } =
       money.feePaid === 'free'
         ? { label: 'Courier fee', value: "Free, we're sorry about this", note: null }
-        : {
-            label: 'Courier fee',
-            value: egp(money.feeEgp),
-            note: 'You pay it by InstaPay once we approve your request.',
-          };
+        : this.staff && this.storePaysFee()
+          ? { label: 'Courier fee', value: 'Free, the store pays', note: null }
+          : this.staff
+            ? {
+                label: 'Courier fee',
+                value: egp(money.feeEgp),
+                note: 'The customer pays it by InstaPay; the Approved email tells them how.',
+              }
+            : {
+                label: 'Courier fee',
+                value: egp(money.feeEgp),
+                note: 'You pay it by InstaPay once we approve your request.',
+              };
     // Until the shipping settings arrive the fee isn't known yet.
     const known = preview.storeFault || !this.#feeUnknown();
     return {
@@ -320,6 +341,14 @@ export class ReturnRequestDialogComponent {
   });
 
   readonly needsRefundTo = computed(() => this.preview().hasRefund);
+
+  /** Staff mode: "EGP 60" when the customer would pay a courier fee (the choice shows), else null. */
+  readonly feeChoice = computed(() => {
+    if (!this.staff || this.#picked().length === 0) return null;
+    const money = this.preview().money;
+    if (money.feePaid === 'free' || money.feeEgp <= 0 || this.#feeUnknown()) return null;
+    return formatMoney(money.feeEgp, 'EGP', 0);
+  });
 
   /** The first thing still missing, in plain words; null when the request can be sent. */
   readonly problem = computed(() => {
@@ -402,14 +431,17 @@ export class ReturnRequestDialogComponent {
         items,
         ...(note ? { note } : {}),
         ...(this.needsRefundTo() && refundTo ? { refundTo } : {}),
+        ...(this.staff ? { forCustomer: true, storePaysFee: this.storePaysFee() && !!this.feeChoice() } : {}),
       });
-      rememberReturnRequest(result.requestId, {
-        asked: Object.fromEntries(rows.map((row) => [String(row.line.index), this.#askedLabel(row)])),
-        storeFault: this.preview().storeFault,
-        refundEgp: this.preview().hasRefund ? this.preview().money.refundEgp : null,
-      });
+      // The shopper's own browser remembers what they asked; staff don't need it.
+      if (!this.staff)
+        rememberReturnRequest(result.requestId, {
+          asked: Object.fromEntries(rows.map((row) => [String(row.line.index), this.#askedLabel(row)])),
+          storeFault: this.preview().storeFault,
+          refundEgp: this.preview().hasRefund ? this.preview().money.refundEgp : null,
+        });
       this.#dialogRef.disableClose = false;
-      this.#dialogRef.close(result);
+      this.#dialogRef.close({ ...result, wrongItem: items.some((item) => item.kind === 'wrong-item') });
     } catch (error: unknown) {
       this.sendError.set(callableMessage(error) ?? FALLBACK_ERROR);
       this.#dialogRef.disableClose = false;

@@ -70,9 +70,34 @@ export class AdminsTabComponent implements OnInit {
   private readonly removeCell = viewChild<TemplateRef<unknown>>('removeCell');
 
   readonly roleOptions: readonly { readonly id: TeamRole; readonly label: string }[] = [
-    { id: 'staff', label: 'Staff (everything except deleting orders and this page)' },
-    { id: 'admin', label: 'Admin (everything)' },
+    { id: 'staff', label: 'Staff' },
+    { id: 'admin', label: 'Admin' },
   ];
+
+  /**
+   * What each role can do, shown under the form so the dropdown only needs the role names. Yes / No per role. "Can be given" is what an admin can switch on for one staff member under
+   * Extra Access; null when Staff already have it.
+   */
+  readonly roleGuide: readonly {
+    readonly task: string;
+    readonly staff: boolean;
+    readonly canGive: boolean | null;
+    readonly admin: boolean;
+  }[] = [
+    { task: 'Manage orders, products, offers and customers', staff: true, canGive: null, admin: true },
+    { task: 'Change store settings, Home Page and menus', staff: true, canGive: null, admin: true },
+    { task: 'Mark refunds as sent, and send back return fees', staff: false, canGive: true, admin: true },
+    { task: 'Delete orders', staff: false, canGive: true, admin: true },
+    { task: 'See money totals on Overview', staff: false, canGive: true, admin: true },
+    { task: 'Add, change or remove team members (this page)', staff: false, canGive: false, admin: true },
+    { task: 'Change or remove a Super Admin', staff: false, canGive: false, admin: false },
+  ];
+  readonly #showRoleGuide = signal(true);
+  readonly showRoleGuide = this.#showRoleGuide.asReadonly();
+
+  toggleRoleGuide(): void {
+    this.#showRoleGuide.update((shown) => !shown);
+  }
 
   readonly emailModel = signal<{ email: string; role: TeamRole }>({ email: '', role: 'staff' });
   readonly grantForm = form(this.emailModel, (path) => {
@@ -81,7 +106,23 @@ export class AdminsTabComponent implements OnInit {
     maxLength(path.email, 254, { message: 'That email address is too long.' });
   });
 
-  readonly adminsResource = resource({
+  /** Live from the `roles` mirrors (ATS-372): opens at once and updates by itself after a change. */
+  readonly #team = signalCollection(this.#roles.teamQuery());
+  readonly #mirrorTeam = computed(() => {
+    const team = this.#team();
+    return team === undefined ? undefined : team.flatMap((member) => (member ? [member] : []));
+  });
+  /** No admin mirror found (access given outside the website, or the read failed): show the server's list. */
+  readonly #needsServerList = computed(() => {
+    const team = this.#mirrorTeam();
+    return team !== undefined && !team.some((member) => member.role === 'admin');
+  });
+  /**
+   * Asked once when Team opens, in the background. The server checks every mirror against the Auth
+   * claims and fixes the ones out of step, and the live list above picks the fixes up. Its answer is
+   * shown only when there is no admin mirror at all.
+   */
+  readonly #serverTeam = resource({
     loader: async () => {
       if (!isPlatformBrowser(this.#platformId)) return [];
       return this.#roles.listAdmins();
@@ -96,19 +137,33 @@ export class AdminsTabComponent implements OnInit {
     id: '',
     email: '',
     role: 'staff',
+    extras: [],
+    owner: false,
     roleLabel: '',
     since: '',
     grantedBy: '',
     action: '',
   };
 
-  readonly rows = computed(() => (this.adminsResource.value() ?? []).map(toAdminTableRow));
+  readonly rows = computed(() => {
+    const team = this.#needsServerList() ? (this.#serverTeam.value() ?? []) : (this.#mirrorTeam() ?? []);
+    return [...team]
+      .sort(
+        (left, right) =>
+          Number(right.owner) - Number(left.owner) ||
+          Number(right.role === 'admin') - Number(left.role === 'admin') ||
+          left.email.localeCompare(right.email),
+      )
+      .map(toAdminTableRow);
+  });
   readonly adminCount = computed(() => this.rows().filter((row) => row.role === 'admin').length);
   readonly loadError = computed(() => {
-    const error = this.adminsResource.error();
+    const error = this.#needsServerList() ? this.#serverTeam.error() : undefined;
     return error ? roleActionError(error) : '';
   });
-  readonly showSkeleton = computed(() => this.adminsResource.isLoading() && !this.adminsResource.hasValue());
+  readonly showSkeleton = computed(
+    () => this.#mirrorTeam() === undefined || (this.#needsServerList() && this.#serverTeam.isLoading()),
+  );
   readonly columns = computed((): TableColumn<AdminTableRow>[] => {
     const base: TableColumn<AdminTableRow>[] = [
       { key: 'email', label: 'Email', sortable: true },
@@ -154,7 +209,7 @@ export class AdminsTabComponent implements OnInit {
         } else {
           this.#snackbar.info(`That person is already ${label}.`);
         }
-        this.adminsResource.reload();
+        this.#reloadServerList();
       } catch (error: unknown) {
         this.#snackbar.error(roleActionError(error));
       } finally {
@@ -169,15 +224,41 @@ export class AdminsTabComponent implements OnInit {
   }
 
   async changeRole(row: AdminTableRow, to: TeamRole): Promise<void> {
-    if (this.#removingUid() || !this.#hasEmail(row) || row.role === to) return;
+    if (this.#removingUid() || !this.#hasEmail(row) || row.owner || row.role === to) return;
     if (!(await this.#dialogs.confirmChange(row.email, to))) return;
     await this.#save(row, to, `${row.email} is ${to === 'admin' ? 'an Admin' : 'Staff'} now.`);
   }
 
+  /** Extra Access (ATS-368): switch Refunds, Delete Orders and Sales Money for one staff member. */
+  async editExtras(row: AdminTableRow): Promise<void> {
+    if (this.#removingUid() || !this.#hasEmail(row) || row.role !== 'staff') return;
+    const extras = await this.#dialogs.editExtras(row.email, row.extras);
+    if (!extras) return;
+    this.#removingUid.set(row.id);
+    try {
+      const result = await this.#roles.setStaffExtras(row.email, extras);
+      if (result.changed) {
+        this.#snackbar.success(`Extra access saved for ${row.email}.`);
+      } else {
+        this.#snackbar.info('Nothing changed.');
+      }
+      this.#reloadServerList();
+    } catch (error: unknown) {
+      this.#snackbar.error(roleActionError(error));
+    } finally {
+      this.#removingUid.set(null);
+    }
+  }
+
   async removeAdmin(row: AdminTableRow): Promise<void> {
-    if (this.#removingUid() || !this.#hasEmail(row)) return;
+    if (this.#removingUid() || !this.#hasEmail(row) || row.owner) return;
     if (!(await this.#dialogs.confirmRemove(row.email))) return;
     await this.#save(row, 'user', `${row.email} can no longer manage the store.`);
+  }
+
+  /** The mirror list updates by itself; only the server fallback needs asking again. */
+  #reloadServerList(): void {
+    if (this.#needsServerList()) this.#serverTeam.reload();
   }
 
   #hasEmail(row: AdminTableRow): boolean {
@@ -193,7 +274,7 @@ export class AdminsTabComponent implements OnInit {
       } else {
         this.#snackbar.info('Nothing changed. The list is up to date now.');
       }
-      this.adminsResource.reload();
+      this.#reloadServerList();
     } catch (error: unknown) {
       this.#snackbar.error(roleActionError(error));
     } finally {

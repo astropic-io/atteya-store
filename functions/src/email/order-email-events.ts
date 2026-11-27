@@ -38,6 +38,11 @@ export type OrderEmailKind =
    */
   | 'order-reopened'
   /**
+   * Staff cancelled some pieces of an item before it shipped (ATS-342) and left "Email the
+   * customer" on: claimed per cancel (`itemCancels[].id`).
+   */
+  | 'order-item-cancelled'
+  /**
    * Store-owner alert: a cash-on-delivery, InstaPay or Bank Transfer order was placed, or a card
    * payment cleared.
    */
@@ -50,6 +55,9 @@ export type OrderEmailKind =
 export function claimId(kind: OrderEmailKind, order: OrderEmailOrder): string {
   if (kind === 'delivery-fee-changed') {
     return `${order.id}_${kind}_${order.deliveryFeeSetAtMs ?? order.shippingEgp}`;
+  }
+  if (kind === 'order-item-cancelled') {
+    return `${order.id}_${kind}_${order.itemCancels.at(-1)?.id ?? 'first'}`;
   }
   if (kind === 'order-reopened') {
     return `${order.id}_${kind}_${order.reopenedAtMs ?? 'first'}`;
@@ -71,6 +79,16 @@ export function orderEmailsForWrite(
   after: OrderEmailOrder | null,
 ): OrderEmailKind[] {
   if (!after) return [];
+  // Staff cancelled an item (ATS-342): only that email, whatever else the write changed.
+  const newCancel = after.itemCancels.at(-1);
+  if (
+    before !== null &&
+    newCancel &&
+    newCancel.emailCustomer &&
+    !before.itemCancels.some((entry) => entry.id === newCancel.id)
+  ) {
+    return ['order-item-cancelled'];
+  }
   const kinds: OrderEmailKind[] = [];
   const statusBefore = before?.status ?? null;
   // Reopened after a cancel by mistake (never Card: those can't be reopened).

@@ -169,6 +169,10 @@ export interface AbroadOrderView {
 /** One saved order line as staff see it. */
 export interface OrderDetailItem {
   readonly key: string;
+  /** Index in `pricing.lines` (what Cancel Item sends). */
+  readonly lineIndex: number;
+  /** Cancel Item shows on this line (not a gift, and the order allows it, ATS-342). */
+  readonly cancellable: boolean;
   readonly productId: string;
   /** False when the product doc is gone: no link to the product form. */
   readonly productExists: boolean;
@@ -195,6 +199,28 @@ export interface OrderDetailItem {
   readonly stockStatus: OrderLineStockStatus;
 }
 
+/** Pieces staff cancelled from the order (ATS-342), as staff see them under the items. */
+export interface OrderCancelledItem {
+  readonly id: string;
+  readonly name: string;
+  readonly options: string;
+  readonly imagePath: string | null;
+  readonly imageSrc: string;
+  readonly quantity: number;
+  /** "+ 1 free gift"; null when no gift went with it. */
+  readonly gifts: string | null;
+  /** "Back in stock", or "Nothing was taken out of stock" for an order not confirmed yet. */
+  readonly stock: string;
+  /** "26 Nov, 2:32 pm · mona@… · Customer called" (who and why from staff notes). */
+  readonly meta: string;
+  /** "−EGP 75" off the total. */
+  readonly amountOff: string;
+  /** EGP still to send (0 when nothing is owed or it was sent). */
+  readonly refundToSendEgp: number;
+  /** "Refund EGP 75 · to 0100 123 4567", "Refund sent 27 Nov", or null when none is owed. */
+  readonly refund: string | null;
+}
+
 /** Everything about one order for the opened row and the order page. */
 export interface OrderDetails {
   readonly stage: OrderStage;
@@ -205,7 +231,14 @@ export interface OrderDetails {
     readonly email: string | null;
     readonly phone: string;
     readonly account: 'Has an account' | 'Guest';
+    /** Paid from abroad for delivery in Egypt: "Pays from United States"; null for other orders. */
+    readonly paysFrom: string | null;
   };
+  /**
+   * Paid from abroad: who receives the order in Egypt (the customer above pays). Null when the
+   * customer receives it themselves.
+   */
+  readonly recipient: { readonly name: string; readonly phone: string } | null;
   /** "Cairo", or "Dubai, United Arab Emirates" abroad. */
   readonly city: string;
   readonly address: { readonly lines: readonly string[]; readonly copyText: string };
@@ -224,6 +257,10 @@ export interface OrderDetails {
   readonly total: string;
   /** The total in EGP when the customer saw another currency. */
   readonly totalEgp: string | null;
+  /** Pieces staff cancelled (ATS-342), oldest first. */
+  readonly cancelled: readonly OrderCancelledItem[];
+  /** Under Total once items were cancelled: "Was", "Refund to send". */
+  readonly afterTotal: readonly OrderDetailRow[];
   /** Bank Transfer from abroad with saved line amounts: the three-price view; null otherwise. */
   readonly abroad: AbroadOrderView | null;
   /** Paid while an item had sold out. */

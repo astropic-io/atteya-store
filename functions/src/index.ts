@@ -22,7 +22,7 @@ export { onProductCountsChange } from './products/product-counts.trigger.js';
 export { onProductColorSiblingsChange } from './products/color-siblings.trigger.js';
 export { onOfferWritten } from './offers/on-offer-written.trigger.js';
 export { refreshOfferPricing } from './offers/refresh-offer-pricing.schedule.js';
-export { listAdmins, setUserRole } from './roles/roles.fn.js';
+export { listAdmins, setStaffExtras, setUserRole } from './roles/roles.fn.js';
 export { reindexSearch } from './search/reindex.fn.js';
 export { syncProductSearch } from './search/sync-product.trigger.js';
 export { onShippingSettingsWritten } from './shipping/on-shipping-settings-written.trigger.js';
@@ -39,6 +39,8 @@ export { cancelOrder } from './orders/cancel-order.fn.js';
 export { deleteOrder } from './orders/delete-order.fn.js';
 export { setOrderStatus } from './orders/set-order-status.fn.js';
 export { reopenOrder } from './orders/reopen-order.fn.js';
+export { cancelOrderItemFn as cancelOrderItem } from './orders/cancel-order-item.fn.js';
+export { markItemRefundSentFn as markItemRefundSent } from './orders/mark-item-refund-sent.fn.js';
 export { setDeliveryFee } from './orders/set-delivery-fee.fn.js';
 export { paymobWebhook } from './orders/paymob-webhook.fn.js';
 export { claimOrder } from './orders/claim-order.fn.js';
@@ -66,3 +68,4 @@ export {
   onUserDeletedUpdateCustomer,
   onUserUpdatedUpdateCustomer,
 } from './customers/customer-summary.trigger.js';
+export { onOrderWrittenStoreStats, onReturnRequestWrittenStoreStats } from './stats/store-stats.trigger.js';
