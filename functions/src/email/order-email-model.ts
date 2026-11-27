@@ -28,7 +28,7 @@ export interface OrderEmailLine {
   readonly lineEgp: number;
   /** Free gift line (price 0, listed after its item): the gift's name, e.g. "Free shirt". */
   readonly giftName: string | null;
-  /** Buy X Get Y discount on the line ("Free", "1 free", "−50%"); `lineEgp` is after it. */
+  /** Buy X Get Y discount on the line ("Free", "1 free", "Offer price"); `lineEgp` is after it. */
   readonly dealTag: string | null;
   /** The line in the order's `shopper` currency (`lineEgp` for an Egypt order); null = no price shown. */
   readonly shopperAmount: number | null;
@@ -162,7 +162,7 @@ function readGiftName(raw: unknown): string | null {
   return text(raw['giftName']) || 'Free gift';
 }
 
-/** The Buy X Get Y or bundle tag of a line ("Free", "1 free", "−50%", "Bundle price", "Bundle & Save"), or null. */
+/** The Buy X Get Y or bundle tag of a line ("Free", "1 free", "Offer price", "Bundle price", "Bundle & Save"), or null. */
 function readDealTag(raw: unknown, quantity: number): string | null {
   if (!Array.isArray(raw)) return null;
   const deals = raw

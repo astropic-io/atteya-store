@@ -113,7 +113,7 @@ import {
   bundleOfferForProduct,
   bundlePieceLine,
   bundleQualifyingChoices,
-  bundleSavePercent,
+  bundleSaveAmount,
   bundleSizeStepKey,
   bundleStepKey,
   bundleSteps,
@@ -415,8 +415,8 @@ export class ProductComponent {
   });
 
   /**
-   * One design per offer type. Price offers (percent off, amount off, fixed price) stay badges
-   * next to the price. Buy X get Y, Bundle price, tiered and free shipping become one short line with the
+   * One design per offer type. Price offers (percent off, amount off, fixed price) show as the
+   * struck-through price, with a badge only when the admin wrote one. Buy X get Y, Bundle price, tiered and free shipping become one short line with the
    * offer's title. Free gift offers show as the Gift Box, never as a badge.
    */
   #splitBadges(
@@ -459,6 +459,25 @@ export class ProductComponent {
         }
         lines.push({ text: title, link });
         continue;
+      }
+      // A price offer's saving is the struck-through price, never a "20% off" tag. Only words the
+      // admin wrote as the offer's badge stay ("Black Friday", or "30% off everything").
+      if (!badge.labelOnly) {
+        const offer = offers.find((candidate) => candidate.id === badge.offerId);
+        if (!offer?.badge?.trim()) {
+          if (offer?.reward.kind === 'tiered') {
+            // The struck-through price shows only the first tier: the title says the rest.
+            const title = offer.title.trim();
+            if (title && !lines.some((line) => line.text === title) && offerTextFor(title, currency) !== '') {
+              lines.push({ text: title, link: null });
+            }
+          } else if (badge.partial) {
+            // Only some colours or sizes: say so, without the percent ("Offer price · Black only").
+            const only = / · ([^·]+ only)$/.exec(badge.text)?.[1];
+            shown.push(only ? `Offer price · ${only}` : 'Offer price on some options');
+          }
+          continue;
+        }
       }
       shown.push(badge.text);
     }
@@ -715,13 +734,14 @@ export class ProductComponent {
     const full = this.#fullPrice();
     return this.#pickerRows().map((row) => {
       // The added "Get 1" row is the normal price: nothing to save.
-      const savePercent = offerRows.includes(row) ? bundleSavePercent(row, full) : 0;
+      const saveEgp = offerRows.includes(row) ? bundleSaveAmount(row, full) : 0;
       return {
         row,
         title: `Get ${row.quantity} for ${this.#money(row.price)}`,
         perPiece: this.#money(Math.round(row.price / row.quantity)),
-        fullPrice: savePercent > 0 ? this.#money(full) : '',
-        savePercent,
+        fullPrice: saveEgp > 0 ? this.#money(full) : '',
+        // Savings are written as money, never as a percent.
+        saving: saveEgp > 0 ? this.#money(saveEgp) : '',
       };
     });
   });
@@ -894,10 +914,17 @@ export class ProductComponent {
     );
   });
 
-  /** "Save EGP 300", "Save 15%", "Cheapest item free", in the visitor's currency. */
+  /**
+   * "Save EGP 300", "Save 15%", "Cheapest item free", in the visitor's currency. A percent turns
+   * into money ("Save EGP 1,200") once every piece is picked, since the amount depends on the picks.
+   */
   readonly bundleSaveSaving = computed(() => {
     const bundle = this.bundleSave();
-    return bundle ? bundleSaveHeaderSaving(bundle.setReward, (egp) => this.#money(egp)) : '';
+    if (!bundle) return '';
+    // The set's own saving, as the bag's strip counts it; none when the set doesn't apply.
+    const saving = bundle.setReward.type === 'percent' ? (this.#bundleSavePriced()?.setSavingEgp ?? 0) : 0;
+    if (saving > 0) return `Save ${this.#money(saving)}`;
+    return bundleSaveHeaderSaving(bundle.setReward, (egp) => this.#money(egp));
   });
 
   /**
@@ -944,14 +971,15 @@ export class ProductComponent {
   readonly bundleSaveLines = computed(() => this.#bundleSaveDrafts(true));
 
   /**
-   * "Add Bundle to Bag · EGP 4,900" once every piece's product is picked: what the bag charges for
-   * these pieces on their own (the set price when it saves, priced by the bag's own `priceBag`).
+   * The picked set priced by the bag's own `priceBag` once every piece's product is picked: what
+   * the bag charges for these pieces (`totalEgp`, the set price when it saves) and what this
+   * Bundle & Save set saves (`setSavingEgp`, 0 when the set doesn't apply). Null while a piece is open.
    */
-  readonly bundleSaveLabel = computed(() => {
+  readonly #bundleSavePriced = computed((): { totalEgp: number; setSavingEgp: number } | null => {
     const drafts = this.#bundleSaveDrafts(false);
     const p = this.product();
     const choices = this.#bundleSaveChoices();
-    if (!drafts || !p || !choices) return 'Add Bundle to Bag';
+    if (!drafts || !p || !choices) return null;
     const products = new Map<string, BagPricingProduct>();
     for (const product of [p, ...choices.flat().map((choice) => choice.product)]) {
       products.set(product.id, {
@@ -963,12 +991,20 @@ export class ProductComponent {
     // Gifts left out: their products aren't read here, and the label is the pieces' price.
     const lines = drafts.map(({ gifts: _gifts, ...line }) => line);
     const priced = priceBag(lines, products, this.#offers(), this.#pricingCtx());
-    let total = 0;
+    let totalEgp = 0;
     for (const line of priced.lines) {
-      if (!line) return 'Add Bundle to Bag';
-      total += line.lineEgp;
+      if (!line) return null;
+      totalEgp += line.lineEgp;
     }
-    return `Add Bundle to Bag · ${this.#money(total)}`;
+    const offerId = this.bundleSave()?.offer.id;
+    const set = priced.sets.find((candidate) => candidate.offerId === offerId && candidate.sets > 0);
+    return { totalEgp, setSavingEgp: set?.saving ?? 0 };
+  });
+
+  /** "Add Bundle to Bag · EGP 4,900" once every piece's product is picked. */
+  readonly bundleSaveLabel = computed(() => {
+    const priced = this.#bundleSavePriced();
+    return priced ? `Add Bundle to Bag · ${this.#money(priced.totalEgp)}` : 'Add Bundle to Bag';
   });
 
   #money(egp: number): string {

@@ -357,7 +357,7 @@ export function toOrderLineAdminRows(
         // Prefer what was saved on the order; older orders fall back to the live product.
         productName: line.name || product?.name || 'Product unavailable',
         giftName: line.gift ? line.gift.giftName || 'Free gift' : null,
-        dealLabel: line.deals?.length ? dealTag(line.deals, line.quantity) || null : null,
+        dealLabel: line.deals?.length ? dealTag(line.deals, line.quantity, { staff: true }) || null : null,
         selectionLabel: line.optionLabels?.length
           ? line.optionLabels.map((opt) => `${opt.label}: ${opt.value}`).join(' · ')
           : selectionLabel(product, selection),

@@ -199,9 +199,9 @@ export function bundleQualifyingChoices(
   return choicesThatFit(choices, (item) => bundleOffersForItem([offer], ctx, item).length > 0);
 }
 
-/** How much a row saves against `fullPrice` per piece, as a whole percent; 0 when it saves nothing. */
-export function bundleSavePercent(row: OfferBundleRow, fullPrice: number): number {
+/** How much a row saves against `fullPrice` per piece, in EGP; 0 when it saves nothing. */
+export function bundleSaveAmount(row: OfferBundleRow, fullPrice: number): number {
   const full = row.quantity * fullPrice;
   if (!(full > 0) || row.price >= full) return 0;
-  return Math.floor(((full - row.price) / full) * 100);
+  return full - row.price;
 }

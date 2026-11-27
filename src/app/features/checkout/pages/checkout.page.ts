@@ -184,6 +184,8 @@ type PricedBag =
       readonly parcelLines: readonly ParcelLine[];
       readonly subtotalEgp: number;
       readonly subtotalDisplay: number;
+      /** What offers take off the available lines, in the visitor's currency (0 when nothing). */
+      readonly savedDisplay: number;
       /** Picked free gifts that are gone or sold out right now (`bagGiftKey`): not given, not weighed. */
       readonly unavailableGifts: ReadonlySet<string>;
     };
@@ -203,7 +205,7 @@ interface CheckoutSummaryItem {
   readonly quantity: number;
   /** Line total in the visitor's currency; empty while prices load. */
   readonly price: string;
-  /** Buy X Get Y: the line before the discount (struck through) and its tag ("Free", "−50%"). */
+  /** Buy X Get Y: the line before the discount (struck through) and its tag ("Free", "Offer price"). */
   readonly was: string;
   readonly deal: string;
   /** Free gifts picked with the item, shown under it with their photo. */
@@ -586,6 +588,7 @@ export class CheckoutPageComponent implements OnInit {
     const parcelLines: ParcelLine[] = [];
     let subtotalEgp = 0;
     let subtotalDisplay = 0;
+    let savedDisplay = 0;
 
     for (const [index, line] of lines.entries()) {
       const info = products.get(line.productId);
@@ -613,6 +616,11 @@ export class CheckoutPageComponent implements OnInit {
           : lineDisplayAmount(toDisplayAmount(priced.unitEgp, entry), line.quantity);
       subtotalEgp += priced.lineEgp;
       subtotalDisplay += display;
+      // Measured against the product's own price, like the bag's "You save".
+      savedDisplay += Math.max(
+        0,
+        lineDisplayAmount(toDisplayAmount(priced.baseEgp, entry), line.quantity) - display,
+      );
       lineDisplay.push(display);
       // The chosen size and colour, matched as the order callables match it, so a Free shipping
       // offer's size and colour Except rules apply to the option picked.
@@ -631,6 +639,7 @@ export class CheckoutPageComponent implements OnInit {
       parcelLines,
       subtotalEgp,
       subtotalDisplay,
+      savedDisplay,
       unavailableGifts,
     };
   });
@@ -715,6 +724,17 @@ export class CheckoutPageComponent implements OnInit {
         }),
       };
     });
+  });
+
+  /** "EGP 25" the offers take off this order, for the summary's "You saved" line; empty when nothing. */
+  readonly savedText = computed((): string => {
+    const bag = this.#pricedBag();
+    const entry = this.#entry();
+    if (bag.state !== 'ready' || !entry || !(bag.savedDisplay > 0)) return '';
+    // After a refusal the summary may show the server's totals; a browser-side saving could
+    // disagree with them, so it is left out until the bag is priced again.
+    if (this.#serverTotals()) return '';
+    return formatMoney(bag.savedDisplay, entry.code, displayDecimals(entry.code));
   });
 
   /**
