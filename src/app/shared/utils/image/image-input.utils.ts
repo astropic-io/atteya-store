@@ -101,5 +101,23 @@ export function sanitizeAltFromFilename(filename: string): string {
   const lastDot = trimmed.lastIndexOf('.');
   const withoutExt = lastDot > 0 ? trimmed.slice(0, lastDot) : trimmed;
   const readable = withoutExt.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (isMachineFileName(readable)) return '';
   return readable.slice(0, IMAGE_LIMITS.maxAltLength);
+}
+
+/**
+ * True for a name no person wrote, such as a storage id or hash ("80187e54f0f5d456365489c7bacd3872"):
+ * one word of 12 or more letters and digits with at least 4 digits. Such a name is useless as
+ * alt text, so it is never offered as one.
+ */
+export function isMachineFileName(text: string): boolean {
+  const value = text.trim();
+  if (value.length < 12) return false;
+  let digits = 0;
+  for (const char of value.toLowerCase()) {
+    const isDigit = char >= '0' && char <= '9';
+    if (!isDigit && !(char >= 'a' && char <= 'z')) return false;
+    if (isDigit) digits++;
+  }
+  return digits >= 4;
 }

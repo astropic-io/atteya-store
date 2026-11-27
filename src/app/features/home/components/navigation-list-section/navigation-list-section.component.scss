@@ -33,7 +33,8 @@
     transition: transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
   }
 
-  .nav-list-link.is-active {
+  .nav-list-link.is-active,
+  .nav-list-link.is-edited {
     &::after {
       transform: scaleX(1);
     }
