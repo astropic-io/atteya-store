@@ -82,11 +82,15 @@ export function bundleOfferLink(offer: Offer, from: string | null = null): Offer
  * ("2 for EGP 200 · 3 for EGP 275", amounts written by `money`), or a Bundle & Save offer's
  * groups and saving ("Racket + Bag + Grip · Save 15%"). Null for every other offer.
  */
-export function offerShopSubtitle(offer: Offer, money: (egp: number) => string = egpText): string | null {
+export function offerShopSubtitle(
+  offer: Offer,
+  money: (egp: number) => string = egpText,
+  rowMoney?: BundleRowMoney,
+): string | null {
   const reward = offer.reward;
   if (reward.kind === 'bundlePrice') {
     const rows = [...reward.rows].sort((a, b) => a.quantity - b.quantity);
-    return rows.length > 0 ? rows.map((row) => bundleRowLabel(row, money)).join(' · ') : null;
+    return rows.length > 0 ? rows.map((row) => bundleRowLabel(row, money, rowMoney)).join(' · ') : null;
   }
   if (reward.kind === 'bundleSet') {
     if (reward.slots.length === 0) return null;
@@ -98,20 +102,52 @@ export function offerShopSubtitle(offer: Offer, money: (egp: number) => string =
   return reward.get.percent >= 100 ? `${subject} free.` : `${subject} ${reward.get.percent}% off.`;
 }
 
-/** "2 for EGP 200". */
-export function bundleRowLabel(row: OfferBundleRow, money: (egp: number) => string = egpText): string {
-  return `${row.quantity} for ${money(row.price)}`;
+/** Writes a Bundle price row's price ("AED 20" for "2 for EGP 200"), in place of `money(row.price)`. */
+export type BundleRowMoney = (row: Pick<OfferBundleRow, 'quantity' | 'price'>) => string;
+
+/**
+ * A Bundle price row's price in the visitor's currency (ATS-385): the row split evenly over its
+ * pieces (as the bag splits equal pieces), each share converted on its own, then added up. The
+ * bag and checkout convert each piece's line, not the row total, so converting the total once
+ * ("2 for AED 19") promised less than the shopper pays (AED 10 + AED 10). In EGP, `toDisplay`
+ * returns the amount unchanged and this is the row price.
+ */
+export function bundleRowDisplayAmount(
+  row: Pick<OfferBundleRow, 'quantity' | 'price'>,
+  toDisplay: (egp: number) => number,
+  decimals: number,
+): number {
+  const pieces = Math.max(1, Math.floor(row.quantity));
+  const share = Math.floor(row.price / pieces);
+  const extra = row.price - share * pieces;
+  const sum = (pieces - extra) * toDisplay(share) + (extra > 0 ? extra * toDisplay(share + 1) : 0);
+  return Number(sum.toFixed(decimals));
+}
+
+/** "2 for EGP 200". `rowMoney` writes the row's price when given (see `bundleRowDisplayAmount`). */
+export function bundleRowLabel(
+  row: Pick<OfferBundleRow, 'quantity' | 'price'>,
+  money: (egp: number) => string = egpText,
+  rowMoney?: BundleRowMoney,
+): string {
+  return `${row.quantity} for ${rowMoney ? rowMoney(row) : money(row.price)}`;
 }
 
 /**
  * The bag's grey strip for a bundle: "<title> · 2 for EGP 200" ("3 for EGP 275 + 1 for EGP 125"
  * for two rows, "2 × 3 for EGP 275" for a repeated row). Null while no piece is in the bundle.
  */
-export function bundleStripTitle(bundle: BagBundle, money: (egp: number) => string = egpText): string | null {
+export function bundleStripTitle(
+  bundle: BagBundle,
+  money: (egp: number) => string = egpText,
+  rowMoney?: BundleRowMoney,
+): string | null {
   if (bundle.units === 0 || bundle.rows.length === 0) return null;
   const rows = bundle.rows
     .map((row) =>
-      row.count > 1 ? `${row.count} × ${bundleRowLabel(row, money)}` : bundleRowLabel(row, money),
+      row.count > 1
+        ? `${row.count} × ${bundleRowLabel(row, money, rowMoney)}`
+        : bundleRowLabel(row, money, rowMoney),
     )
     .join(' + ');
   const title = bundle.title.trim();
@@ -119,10 +155,14 @@ export function bundleStripTitle(bundle: BagBundle, money: (egp: number) => stri
 }
 
 /** The bag's bundle nudge: "Add 1 more to get 3 for EGP 275". Null at the top row. */
-export function bundleNudgeText(bundle: BagBundle, money: (egp: number) => string = egpText): string | null {
+export function bundleNudgeText(
+  bundle: BagBundle,
+  money: (egp: number) => string = egpText,
+  rowMoney?: BundleRowMoney,
+): string | null {
   const next = bundle.next;
   if (!next) return null;
-  return `Add ${next.missing} more to get ${bundleRowLabel(next, money)}`;
+  return `Add ${next.missing} more to get ${bundleRowLabel(next, money, rowMoney)}`;
 }
 
 /** A Bundle & Save offer's groups: "Racket + Bag + Grip" ("2 × Ball" for a group of 2). */

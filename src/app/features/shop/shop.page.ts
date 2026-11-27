@@ -16,6 +16,7 @@ import { Router } from '@angular/router';
 import { displayDecimals, toDisplayAmount, type Offer } from '@core/services/offers/engine';
 import {
   bundleOfferLink,
+  bundleRowDisplayAmount,
   offerShopSubtitle,
   offerTextFor,
   offerTitleVisible,
@@ -215,8 +216,11 @@ export class ShopPage {
       // Bundle rows in the visitor's currency ("2 for EGP 200 · 3 for EGP 275").
       const entry = this.#currency.entry();
       const decimals = displayDecimals(entry.code);
-      return offerShopSubtitle(offer, (egp) =>
-        formatMoney(toDisplayAmount(egp, entry), entry.code, decimals),
+      const toDisplay = (egp: number): number => toDisplayAmount(egp, entry);
+      return offerShopSubtitle(
+        offer,
+        (egp) => formatMoney(toDisplay(egp), entry.code, decimals),
+        (row) => formatMoney(bundleRowDisplayAmount(row, toDisplay, decimals), entry.code, decimals),
       );
     }
     return this.offerEnded() ? 'This offer has ended. Here is everything else in the store.' : null;

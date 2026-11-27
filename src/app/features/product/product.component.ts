@@ -24,6 +24,7 @@ import { CurrencyService } from '@core/services/currency/currency.service';
 import { MetaPixelService } from '@core/services/analytics/meta-pixel.service';
 import {
   bundleOfferLink,
+  bundleRowDisplayAmount,
   canShopOffer,
   OFFER_LINE_KINDS,
   type OfferLink,
@@ -43,6 +44,7 @@ import {
   type OfferBadge,
   type OfferBundleRow,
   priceItem,
+  splitBundleTotal,
   toDisplayAmount,
 } from '@core/services/offers/engine';
 import { toPricedProduct } from '@core/services/offers/offer.model';
@@ -729,7 +731,8 @@ export class ProductComponent {
       const fullText = this.#money(full);
       return {
         row,
-        title: `Get ${row.quantity} for ${this.#money(row.price)}`,
+        // Each piece's share converted on its own, as the bag charges it (ATS-385).
+        title: `Get ${row.quantity} for ${this.#displayMoney(bundleRowDisplayAmount(row, this.#toDisplay, this.#decimals()))}`,
         perPiece,
         // Struck through only when it reads differently from the price per piece (rounding).
         fullPrice: saveEgp > 0 && fullText !== perPiece ? fullText : '',
@@ -742,10 +745,10 @@ export class ProductComponent {
    * than the pieces' own prices, because the bag uses the bundle only when it costs the shopper less.
    */
   readonly addLabel = computed(() => {
-    const total = this.#bundleTotalEgp();
+    const total = this.#bundleTotalDisplay();
     if (total === null) return 'Add to Bag';
     const pieces = this.bundlePieces();
-    const money = this.#money(total);
+    const money = this.#displayMoney(total);
     return pieces === 1 ? `Add to Bag · ${money}` : `Add ${pieces} to Bag · ${money}`;
   });
 
@@ -762,6 +765,26 @@ export class ProductComponent {
       own += pick ? this.#piecePrice(pick.productId) : this.#fullPrice();
     }
     return Math.min(row.price, own);
+  });
+
+  /**
+   * The Bundle price picker's total in the visitor's currency: each piece's share of the row (or its
+   * own price when the row would cost more) converted on its own and added up, the way the bag and
+   * checkout charge one line per piece (ATS-385). Null when no bundle is being picked.
+   */
+  readonly #bundleTotalDisplay = computed<number | null>(() => {
+    const totalEgp = this.#bundleTotalEgp();
+    if (totalEgp === null) return null;
+    const pieces = this.bundlePieces();
+    const picks = this.#bundlePicks();
+    const prices = Array.from({ length: pieces }, (_, piece) => {
+      const pick = picks[piece];
+      return pick ? this.#piecePrice(pick.productId) : this.#fullPrice();
+    });
+    const own = prices.reduce((sum, price) => sum + price, 0);
+    const shares = totalEgp < own ? splitBundleTotal(totalEgp, prices) : prices;
+    const sum = shares.reduce((acc, share) => acc + this.#toDisplay(share), 0);
+    return Number(sum.toFixed(this.#decimals()));
   });
 
   /** EGP total of what Add to Bag adds, for the Meta Pixel AddToCart (ATS-290). */
@@ -1001,6 +1024,17 @@ export class ProductComponent {
   #money(egp: number): string {
     const entry = this.#currency.entry();
     return formatMoney(toDisplayAmount(egp, entry), entry.code, displayDecimals(entry.code));
+  }
+
+  /** An amount already in the visitor's currency, written as money. */
+  #displayMoney(amount: number): string {
+    return formatMoney(amount, this.#currency.entry().code, this.#decimals());
+  }
+
+  readonly #toDisplay = (egp: number): number => toDisplayAmount(egp, this.#currency.entry());
+
+  #decimals(): number {
+    return displayDecimals(this.#currency.entry().code);
   }
 
   readonly isFavorite = computed(() => {

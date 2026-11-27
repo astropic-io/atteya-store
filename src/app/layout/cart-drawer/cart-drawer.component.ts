@@ -21,6 +21,7 @@ import { bagOfferLook, type BagNotesProduct } from '@core/services/cart/bag-offe
 import {
   bundleNudgeText,
   bundleOfferLink,
+  bundleRowDisplayAmount,
   bundleSetNudgeButton,
   bundleSetNudgeText,
   bundleSetStripTitle,
@@ -506,17 +507,37 @@ export class CartDrawerComponent {
     const entry = this.#currency.entry();
     const decimals = displayDecimals(entry.code);
     const money = (egp: number): string => formatMoney(toDisplayAmount(egp, entry), entry.code, decimals);
+    const toDisplay = (egp: number): number => toDisplayAmount(egp, entry);
     const offers = new Map(this.#offers.all().map((offer) => [offer.id, offer]));
     const map = new Map<number, CartBundleBox[]>();
-    for (const bundle of this.#pricedBag().bundles) {
-      const strip = bundleStripTitle({ ...bundle, title: offerTextFor(bundle.title, entry.code) }, money);
-      const nudge = bundleNudgeText(bundle, money);
+    const bag = this.#pricedBag();
+    const lines = this.lines();
+    for (const bundle of bag.bundles) {
+      // What the bundle's lines really cost and save, added up line by line like checkout and
+      // the order (ATS-385); null when a line also holds pieces outside this bundle.
+      const shown = this.#bundleShown(bundle.offerId, bag.lines, lines);
+      const single = bundle.rows.length === 1 && bundle.rows[0]!.count === 1;
+      const rowMoney = (row: { readonly quantity: number; readonly price: number }): string =>
+        formatMoney(
+          single && shown && row === bundle.rows[0]
+            ? shown.total
+            : bundleRowDisplayAmount(row, toDisplay, decimals),
+          entry.code,
+          decimals,
+        );
+      const strip = bundleStripTitle(
+        { ...bundle, title: offerTextFor(bundle.title, entry.code) },
+        money,
+        rowMoney,
+      );
+      const nudge = bundleNudgeText(bundle, money, rowMoney);
       if (!strip && !nudge) continue;
       const offer = offers.get(bundle.offerId);
+      const saving = shown ? shown.saving : toDisplayAmount(bundle.saving, entry);
       const box: CartBundleBox = {
         offerId: bundle.offerId,
         strip,
-        saving: bundle.saving > 0 ? `You save ${money(bundle.saving)}` : '',
+        saving: saving > 0 ? `You save ${formatMoney(saving, entry.code, decimals)}` : '',
         nudge,
         missing: bundle.next?.missing ?? 0,
         shopQuery: offer && canShopOffer(offer) ? offerShopQuery(offer.id) : null,
@@ -551,6 +572,40 @@ export class CartDrawerComponent {
     }
     return map;
   });
+
+  /**
+   * A Bundle price offer's pieces in the visitor's currency, from the bag lines it covers: the
+   * total those lines are charged (`#lineDisplay`) and what they save against their own prices, as
+   * checkout's "You saved" counts it. Null when no line is in the bundle, or a line holds pieces
+   * outside it or another discount too (the line amount is then not the bundle's alone).
+   */
+  #bundleShown(
+    offerId: string,
+    priced: readonly (PricedBagLine | null)[],
+    lines: readonly CartLineDraft[],
+  ): { readonly total: number; readonly saving: number } | null {
+    const entry = this.#currency.entry();
+    const decimals = displayDecimals(entry.code);
+    let total = 0;
+    let base = 0;
+    let found = false;
+    for (const [index, line] of lines.entries()) {
+      const bagLine = priced[index];
+      const deal = bagLine?.deals.deals.find(
+        (entry) => entry.bundle && !entry.set && entry.offerId === offerId,
+      );
+      if (!bagLine || !deal) continue;
+      if (deal.units !== line.quantity || bagLine.deals.deals.length !== 1) return null;
+      found = true;
+      total += this.#lineDisplay(bagLine, line.quantity);
+      base += lineDisplayAmount(toDisplayAmount(bagLine.baseEgp, entry), line.quantity);
+    }
+    if (!found) return null;
+    return {
+      total: Number(total.toFixed(decimals)),
+      saving: Number(Math.max(0, base - total).toFixed(decimals)),
+    };
+  }
 
   setBoxes(index: number): readonly CartSetBox[] {
     return this.#setsByLine().get(index) ?? [];
