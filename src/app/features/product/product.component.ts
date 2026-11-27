@@ -447,7 +447,7 @@ export class ProductComponent {
         if (lines.some((line) => line.text === title) || offerTextFor(title, currency) === '') continue;
         // A Bundle price line opens the offer's Shop page and a Bundle & Save line the offer's own
         // page with this product already picked; there the shopper picks the other pieces.
-        // The Bundle & Save offer this product is in shows as the black strip instead (ATS-281).
+        // The Bundle & Save offer this product is in shows as the Bundle & Save strip instead (ATS-281).
         if (offer && kind === 'bundleSet' && offer.id === this.bundleStrip()?.offerId) continue;
         let link: OfferLink | null = null;
         if (offer && kind === 'bundleSet') {
@@ -792,7 +792,7 @@ export class ProductComponent {
   );
 
   /**
-   * The black Bundle & Save strip under the price (ATS-281): one link to the offer's page with
+   * The Bundle & Save strip under the price (ATS-281, light since ATS-355): one link to the offer's page with
    * this product already picked. Null when the product is in no Bundle & Save offer it can show.
    */
   readonly bundleStrip = computed<{

@@ -76,10 +76,6 @@
     @apply font-label-sm font-mono uppercase tracking-wider;
   }
 
-  /**
-   * Black Bundle & Save strip under the price (ATS-281): the whole strip is one link; See Bundle
-   * sits on the right and drops under the text on a narrow phone.
-   */
   /* Bundle & Save line under the price (ATS-281, lighter in ATS-355): the "Bundle & Save" tag, the
      offer line and "See Bundle ›" on one line, a thin border. Shown only while the Bundle & Save box
      is not on the page. */

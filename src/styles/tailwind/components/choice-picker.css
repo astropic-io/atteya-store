@@ -1,5 +1,5 @@
 @layer components {
-  /*! free gift rows (app-product-gift-box) and the gift panel (app-choice-picker; shell is .side-panel) */
+  /*! offer rows on the product page (Gift Box, Bundle price, Bundle & Save, ATS-355) and the choice panel (app-choice-picker; shell is .side-panel). The .pdp-gift-* row classes are shared by all three boxes. */
 
   /* Gift Box header: white, the black "Free gift" tag, "Worth …" and the heading. */
   .pdp-gift-box__head {
