@@ -39,7 +39,7 @@
       placeholder="Shop by category"
       required
     />
-    <mat-hint>Read by screen readers. Shoppers see the links, not this heading.</mat-hint>
+    <mat-hint>Shown in small capitals above the links.</mat-hint>
   </mat-form-field>
 
   @if (items().length === 0) {
@@ -148,7 +148,27 @@
             placeholder="Rackets"
             required
           />
-          <mat-hint>Shown on the homepage. Up to 40 characters.</mat-hint>
+          <mat-hint>Big text on the homepage. Keep it to one or two words.</mat-hint>
+          <mat-hint align="end">
+            <span [class.text-error]="nameState().over">{{ nameState().label }}</span>
+          </mat-hint>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="w-full">
+          <mat-label>Short line (optional)</mat-label>
+          <input
+            matInput
+            id="nav-list-caption-input"
+            name="nav-list-caption-input"
+            autocomplete="off"
+            [ngModel]="activeItem().caption ?? ''"
+            (ngModelChange)="captionChange.emit($event)"
+            placeholder="Pro-grade rackets for every level"
+          />
+          <mat-hint>Shown on the photo on computers.</mat-hint>
+          <mat-hint align="end">
+            <span [class.text-error]="captionState().over">{{ captionState().label }}</span>
+          </mat-hint>
         </mat-form-field>
 
         <app-nav-target-field

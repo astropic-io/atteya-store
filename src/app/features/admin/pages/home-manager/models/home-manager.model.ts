@@ -5,11 +5,13 @@ import {
   HomeHero,
   HomeNavList,
   HomeNavListItem,
+  HomeHelpBox,
+  HomeOfferBanner,
   HomeShopCategories,
   ShopCategoryCard,
 } from '@features/home/models/home.model';
 
-export type HomeSectionTab = 'hero' | 'categories' | 'navList';
+export type HomeSectionTab = 'hero' | 'categories' | 'navList' | 'offerBanner' | 'helpBox';
 
 export interface ActionMoveEvent {
   readonly index: number;
@@ -25,4 +27,6 @@ export type {
   ShopCategoryCard,
   HomeNavList,
   HomeNavListItem,
+  HomeOfferBanner,
+  HomeHelpBox,
 };

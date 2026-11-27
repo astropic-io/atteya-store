@@ -5,14 +5,29 @@ import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 import { injectFirestore } from '@core/firebase';
 import { createValibotConverter } from '@shared/utils/firebase/firestore-converter';
 import {
+  HomeHelpBoxSchema,
   HomeHeroSchema,
   HomeNavListSchema,
+  HomeOfferBannerSchema,
   HomeSettingsSchema,
   HomeShopCategoriesSchema,
 } from '../schemas/home.schema';
 import { HOME_SETTINGS_KEY, HomeSettingsSeed, toHomeSettingsSeed } from '../resolvers/home-settings.state';
-import { HomeHero, HomeNavList, HomeSettings, HomeShopCategories } from '../models/home.model';
-import { DEFAULT_HOME_HERO, DEFAULT_HOME_NAV_LIST, DEFAULT_HOME_SHOP_CATEGORIES } from '../data/home.data';
+import {
+  HomeHelpBox,
+  HomeHero,
+  HomeNavList,
+  HomeOfferBanner,
+  HomeSettings,
+  HomeShopCategories,
+} from '../models/home.model';
+import {
+  DEFAULT_HOME_HELP_BOX,
+  DEFAULT_HOME_HERO,
+  DEFAULT_HOME_NAV_LIST,
+  DEFAULT_HOME_OFFER_BANNER,
+  DEFAULT_HOME_SHOP_CATEGORIES,
+} from '../data/home.data';
 import {
   heroWithoutDeleted,
   navListWithoutDeleted,
@@ -20,11 +35,21 @@ import {
 } from '../utils/home-defaults.utils';
 import { CatalogService } from '@core/services/products/catalog.service';
 import { NavService } from '@core/services/navigation/nav.service';
-import { heroWithTargets, navListWithTargets, shopCardsWithTargets } from '../utils/home-link-targets.utils';
+import { STORE_INFO, whatsappChatUrl } from '@core/config/store-info';
+import { OffersService } from '@core/services/offers/offers.service';
+import { canShopOffer } from '@core/services/offers/offer-shop';
+import {
+  heroWithTargets,
+  navListWithTargets,
+  offerBannerForStore,
+  shopCardsWithTargets,
+} from '../utils/home-link-targets.utils';
 
 const HERO_STORAGE_KEY = 'atteya_store_home_hero';
 const SHOP_CATEGORIES_STORAGE_KEY = 'atteya_store_home_shop_categories';
 const NAV_LIST_STORAGE_KEY = 'atteya_store_home_nav_list';
+const OFFER_BANNER_STORAGE_KEY = 'atteya_store_home_offer_banner';
+const HELP_BOX_STORAGE_KEY = 'atteya_store_home_help_box';
 
 /**
  * A saved Previous Versions copy of `settings/home` (ATS-251) through today's schema, with the
@@ -37,6 +62,8 @@ export function homeSettingsFromVersion(data: unknown): HomeSettingsUpdate | nul
     hero: parsed.output.hero,
     shopCategories: parsed.output.shopCategories ?? DEFAULT_HOME_SHOP_CATEGORIES,
     navList: parsed.output.navList ?? DEFAULT_HOME_NAV_LIST,
+    offerBanner: parsed.output.offerBanner ?? DEFAULT_HOME_OFFER_BANNER,
+    helpBox: parsed.output.helpBox ?? DEFAULT_HOME_HELP_BOX,
   };
 }
 
@@ -44,6 +71,8 @@ export interface HomeSettingsUpdate {
   readonly hero: HomeHero;
   readonly shopCategories: HomeShopCategories;
   readonly navList: HomeNavList;
+  readonly offerBanner: HomeOfferBanner;
+  readonly helpBox: HomeHelpBox;
 }
 
 /**
@@ -94,6 +123,10 @@ function persistStoredSettings(settings: HomeSettingsSeed | null): void {
   else removeStored(SHOP_CATEGORIES_STORAGE_KEY);
   if (settings?.navList) persistStored(NAV_LIST_STORAGE_KEY, settings.navList);
   else removeStored(NAV_LIST_STORAGE_KEY);
+  if (settings?.offerBanner) persistStored(OFFER_BANNER_STORAGE_KEY, settings.offerBanner);
+  else removeStored(OFFER_BANNER_STORAGE_KEY);
+  if (settings?.helpBox) persistStored(HELP_BOX_STORAGE_KEY, settings.helpBox);
+  else removeStored(HELP_BOX_STORAGE_KEY);
 }
 
 /** How long a client navigation to `/` waits for settings/home before showing the built-in sections. */
@@ -111,6 +144,7 @@ export class HomeService {
   readonly #destroyRef = inject(DestroyRef);
   readonly #catalog = inject(CatalogService);
   readonly #nav = inject(NavService);
+  readonly #offers = inject(OffersService);
   readonly #isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
 
   /** undefined while the first browser snapshot is still outstanding. */
@@ -124,6 +158,8 @@ export class HomeService {
   #storedHero: HomeHero | null = null;
   #storedShopCategories: HomeShopCategories | null = null;
   #storedNavList: HomeNavList | null = null;
+  #storedOfferBanner: HomeOfferBanner | null = null;
+  #storedHelpBox: HomeHelpBox | null = null;
 
   #markFirstAnswer: () => void = () => undefined;
   readonly #firstAnswer = new Promise<void>((resolve) => (this.#markFirstAnswer = resolve));
@@ -139,6 +175,8 @@ export class HomeService {
       this.#storedHero = readStored(HERO_STORAGE_KEY, HomeHeroSchema);
       this.#storedShopCategories = readStored(SHOP_CATEGORIES_STORAGE_KEY, HomeShopCategoriesSchema);
       this.#storedNavList = readStored(NAV_LIST_STORAGE_KEY, HomeNavListSchema);
+      this.#storedOfferBanner = readStored(OFFER_BANNER_STORAGE_KEY, HomeOfferBannerSchema);
+      this.#storedHelpBox = readStored(HELP_BOX_STORAGE_KEY, HomeHelpBoxSchema);
     }
 
     if (!this.#isBrowser) return;
@@ -209,6 +247,41 @@ export class HomeService {
       navListWithoutDeleted(DEFAULT_HOME_NAV_LIST, this.#catalog.deletedBuiltInIds()),
   );
 
+  /** Live Section 4 (Offer Banner, ATS-347); off until an admin sets it up. */
+  readonly offerBanner = computed<HomeOfferBanner>(
+    () => this.#homeDoc()?.offerBanner ?? this.#storedOfferBanner ?? DEFAULT_HOME_OFFER_BANNER,
+  );
+
+  /** Live Section 5 (WhatsApp Help, ATS-348); shows the built-in text until an admin edits it. */
+  readonly helpBox = computed<HomeHelpBox>(
+    () => this.#homeDoc()?.helpBox ?? this.#storedHelpBox ?? DEFAULT_HOME_HELP_BOX,
+  );
+
+  /**
+   * Ids of the offers a banner may open (running, public, for everyone), null until the offers
+   * load (and on the server), when the banner trusts what was published.
+   */
+  readonly #bannerOfferIds = computed<readonly string[] | null>(() =>
+    this.#offers.ready()
+      ? this.#offers
+          .live()
+          .filter(canShopOffer)
+          .map((offer) => offer.id)
+      : null,
+  );
+
+  /** The banner as shoppers see it, or null when it is off or its offer, category or brand can't be shown. */
+  readonly storefrontOfferBanner = computed<HomeOfferBanner | null>(() =>
+    offerBannerForStore(this.offerBanner(), this.#nav.targetCatalog(), this.#bannerOfferIds()),
+  );
+
+  /** The help box as shoppers see it, or null when it is off, empty or the store has no WhatsApp number. */
+  readonly storefrontHelpBox = computed<HomeHelpBox | null>(() => {
+    const box = this.helpBox();
+    if (!box.enabled || !box.headline || !whatsappChatUrl(STORE_INFO.contact.whatsapp)) return null;
+    return box;
+  });
+
   /**
    * The three sections as shoppers see them (ATS-267): each button and link built from what it
    * points at, like the menus, so a renamed category's button follows it and a hidden or deleted
@@ -233,6 +306,8 @@ export class HomeService {
       hero: settings.hero,
       shopCategories: settings.shopCategories,
       navList: settings.navList,
+      offerBanner: settings.offerBanner,
+      helpBox: settings.helpBox,
       updatedAt: serverTimestamp(),
       updatedBy,
     };
@@ -248,6 +323,8 @@ export class HomeService {
         hero: DEFAULT_HOME_HERO,
         shopCategories: DEFAULT_HOME_SHOP_CATEGORIES,
         navList: DEFAULT_HOME_NAV_LIST,
+        offerBanner: DEFAULT_HOME_OFFER_BANNER,
+        helpBox: DEFAULT_HOME_HELP_BOX,
       },
       updatedBy,
     );

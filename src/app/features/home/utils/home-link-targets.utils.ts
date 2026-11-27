@@ -1,6 +1,6 @@
 import { storefrontTargetPath } from '@core/services/navigation/nav-visibility';
 import type { NavTargetCatalog } from '@core/services/navigation/nav-target';
-import type { HomeHero, HomeNavList, HomeShopCategories } from '../models/home.model';
+import type { HomeHero, HomeNavList, HomeOfferBanner, HomeShopCategories } from '../models/home.model';
 
 /**
  * Home buttons and links built from what they point at (ATS-267), the same way as the menus
@@ -53,4 +53,32 @@ export function navListWithTargets(list: HomeNavList, catalog: NavTargetCatalog 
       return link ? [{ ...item, link }] : [];
     }),
   };
+}
+
+/** An address on this store (`/…`, never `//…`), so a banner can't open another site. */
+function isStorePath(link: string): boolean {
+  return link.startsWith('/') && !link.startsWith('//');
+}
+
+/**
+ * The Offer Banner as shoppers see it (ATS-347), or null when it shouldn't show: turned off, no
+ * headline or photo, or what it opens can't be shown. An offer banner keeps its saved address
+ * (`/bundle/<id>` or `/shop?offer=<id>`) and hides once `liveOfferIds` (null until the offers
+ * load) no longer has its offer; a category or brand banner follows the published lists like
+ * the category list, and hides when its category or brand is hidden or gone.
+ */
+export function offerBannerForStore(
+  banner: HomeOfferBanner,
+  catalog: NavTargetCatalog | null,
+  liveOfferIds: readonly string[] | null,
+): HomeOfferBanner | null {
+  if (!banner.enabled || !banner.headline || !banner.imageUrl) return null;
+  const target = banner.target;
+  if (target?.kind === 'url') return null;
+  if (target?.kind === 'offer') {
+    if (liveOfferIds && !liveOfferIds.includes(target.id)) return null;
+    return isStorePath(banner.link) ? banner : null;
+  }
+  const link = storefrontTargetPath(target, banner.link, catalog);
+  return link && isStorePath(link) ? { ...banner, link } : null;
 }

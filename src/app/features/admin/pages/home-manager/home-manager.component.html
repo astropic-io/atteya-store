@@ -12,9 +12,9 @@
     <p class="surface-card p-4 font-body-md font-bold!" role="status">{{ note }}</p>
   }
 
-  <!-- Section Switcher Tabs (Section 1: Hero Banner | Section 2: Shop Categories) -->
+  <!-- Section Switcher Tabs (Sections 1 to 5) -->
   <div
-    class="surface-card p-3 sm:elements-start elements-start-col gap-2 max-sm:[&>button]:w-full"
+    class="surface-card p-3 sm:elements-start sm:flex-wrap elements-start-col gap-2 max-sm:[&>button]:w-full"
     role="tablist"
     aria-label="Select homepage section to manage"
   >
@@ -49,6 +49,28 @@
     >
       <mat-icon name="format_list_bulleted" />
       <span>Section 3: Category List</span>
+    </button>
+
+    <button
+      [matButton]="draft.activeSection() === 'offerBanner' ? 'filled' : 'tonal'"
+      type="button"
+      role="tab"
+      [attr.aria-selected]="draft.activeSection() === 'offerBanner'"
+      (click)="draft.setActiveSection('offerBanner')"
+    >
+      <mat-icon name="local_offer" />
+      <span>Section 4: Offer Banner</span>
+    </button>
+
+    <button
+      [matButton]="draft.activeSection() === 'helpBox' ? 'filled' : 'tonal'"
+      type="button"
+      role="tab"
+      [attr.aria-selected]="draft.activeSection() === 'helpBox'"
+      (click)="draft.setActiveSection('helpBox')"
+    >
+      <mat-icon name="chat_bubble" />
+      <span>Section 5: WhatsApp Help</span>
     </button>
   </div>
 
@@ -119,6 +141,7 @@
         (activeItemChange)="draft.setActiveNavItem($event)"
         (titleChange)="draft.updateNavTitle($event)"
         (labelChange)="draft.updateNavLabel($event)"
+        (captionChange)="draft.updateNavCaption($event)"
         (targetChange)="draft.updateNavTarget($event)"
         (imageUrlChange)="draft.updateNavImageUrl($event)"
         (imageAltChange)="draft.updateNavImageAlt($event)"
@@ -128,6 +151,58 @@
         (itemMove)="draft.moveNavItem($event.index, $event.direction)"
         (itemDrop)="draft.dropNavItem($event)"
         (importMenu)="importNavFromMenu()"
+      />
+    }
+    @case ('offerBanner') {
+      <section class="surface-card p-5 sm:p-6 space-y-4" aria-label="Offer banner preview">
+        <div class="border-b border-outline-variant pb-4">
+          <h3 class="font-title-md font-bold!">Live storefront preview</h3>
+          <p class="font-body-sm opacity-70 pt-0.5">
+            How the banner looks on the store. Shoppers can click anywhere on it.
+          </p>
+        </div>
+        <div
+          class="w-full overflow-hidden border border-outline-variant border-shape bg-surface-container-lowest @container"
+        >
+          <app-offer-banner-section [banner]="draft.draftOfferBanner()" [previewMode]="true" />
+        </div>
+      </section>
+
+      <app-home-offer-banner-editor
+        [banner]="draft.draftOfferBanner()"
+        [note]="bannerNote()"
+        (enabledChange)="draft.setBannerEnabled($event)"
+        (targetChange)="onBannerTargetChange($event)"
+        (labelChange)="draft.updateBannerLabel($event)"
+        (headlineChange)="draft.updateBannerHeadline($event)"
+        (imageUrlChange)="draft.updateBannerImageUrl($event)"
+        (imageAltChange)="draft.updateBannerImageAlt($event)"
+        (phoneImageUrlChange)="draft.updateBannerPhoneImageUrl($event)"
+        (sessionUpload)="draft.registerSessionUpload($event)"
+      />
+    }
+    @case ('helpBox') {
+      <section class="surface-card p-5 sm:p-6 space-y-4" aria-label="WhatsApp help box preview">
+        <div class="border-b border-outline-variant pb-4">
+          <h3 class="font-title-md font-bold!">Live storefront preview</h3>
+          <p class="font-body-sm opacity-70 pt-0.5">
+            How the help box looks near the bottom of the home page.
+          </p>
+        </div>
+        <div
+          class="w-full overflow-hidden border border-outline-variant border-shape bg-surface-container-lowest @container"
+        >
+          <app-help-box-section [helpBox]="draft.draftHelpBox()" [previewMode]="true" />
+        </div>
+      </section>
+
+      <app-home-help-box-editor
+        [helpBox]="draft.draftHelpBox()"
+        [hasNumber]="storeHasWhatsapp"
+        (enabledChange)="draft.setHelpBoxEnabled($event)"
+        (headlineChange)="draft.updateHelpHeadline($event)"
+        (textChange)="draft.updateHelpText($event)"
+        (messageChange)="draft.updateHelpMessage($event)"
       />
     }
   }

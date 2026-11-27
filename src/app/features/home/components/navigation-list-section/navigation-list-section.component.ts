@@ -107,6 +107,12 @@ export class NavigationListSectionComponent {
 
   readonly activeIndex = computed(() => this.#clamp(this.#activeIndex()));
 
+  /** "01 / 07" under the desktop photo. */
+  readonly position = computed(() => {
+    const pad = (value: number): string => String(value).padStart(2, '0');
+    return `${pad(this.activeIndex() + 1)} / ${pad(this.items().length)}`;
+  });
+
   /** Item 0 mounts with the desktop panel. The rest mount on the first pointer or focus. */
   readonly #mounted = signal<ReadonlySet<number>>(new Set([0]));
   /**

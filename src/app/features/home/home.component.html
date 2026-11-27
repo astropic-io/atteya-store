@@ -17,6 +17,16 @@
     </section>
   }
 
+  @if (offerBanner(); as banner) {
+    @defer (hydrate on viewport) {
+      <app-offer-banner-section [banner]="banner" />
+    } @placeholder {
+      <section class="container-content" aria-hidden="true">
+        <app-skeleton class="w-full aspect-4/5 md:aspect-21/9" />
+      </section>
+    }
+  }
+
   @defer (hydrate on viewport) {
     <app-padel-carousel-section />
   } @placeholder {
@@ -31,5 +41,15 @@
     <section class="container-content" aria-hidden="true">
       <app-skeleton class="w-full min-h-120" />
     </section>
+  }
+
+  @if (helpBox(); as box) {
+    @defer (hydrate on viewport) {
+      <app-help-box-section [helpBox]="box" />
+    } @placeholder {
+      <section class="container-content" aria-hidden="true">
+        <app-skeleton class="w-full min-h-40" />
+      </section>
+    }
   }
 </div>

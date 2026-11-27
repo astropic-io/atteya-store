@@ -1,0 +1,26 @@
+@let box = helpBox();
+
+<section class="container-content">
+  <div class="help-box">
+    <div class="elements-start-col min-w-0 gap-1.5">
+      <h2 class="m-0 font-headline-sm md:font-headline-md font-bold!">{{ box.headline }}</h2>
+      @if (box.text) {
+        <p class="m-0 font-body-lg text-on-surface-variant">{{ box.text }}</p>
+      }
+    </div>
+
+    <div class="shrink-0 max-md:w-full max-md:[&>*]:w-full">
+      @if (previewMode()) {
+        <button matButton="filled" type="button">
+          <mat-icon name="chat_bubble" />
+          <span>Message Us on WhatsApp</span>
+        </button>
+      } @else if (whatsappUrl(); as url) {
+        <a matButton="filled" [href]="url" target="_blank" rel="noopener">
+          <mat-icon name="chat_bubble" />
+          <span>Message Us on WhatsApp</span>
+        </a>
+      }
+    </div>
+  </div>
+</section>

@@ -4,9 +4,12 @@ import { StorageAssetTracker } from '@core/services/storage';
 import { NavCategory } from '@core/services/navigation';
 import type { NavTarget } from '@core/services/navigation/nav-target';
 import type { NavTargetChange } from '../../navigation-manager/components/nav-target-field/nav-target-field.component';
+import type { HomeSettingsUpdate } from '@features/home/services/home.service';
 import {
   DEFAULT_HERO_SLIDES,
+  DEFAULT_HOME_HELP_BOX,
   DEFAULT_HOME_NAV_LIST,
+  DEFAULT_HOME_OFFER_BANNER,
   DEFAULT_HOME_SHOP_CATEGORIES,
   DEFAULT_SHOP_CATEGORY_CARDS,
   NAV_LIST_MAX_ITEMS,
@@ -16,9 +19,11 @@ import {
   HeroAction,
   HeroLayoutCount,
   HeroSlide,
+  HomeHelpBox,
   HomeHero,
   HomeNavList,
   HomeNavListItem,
+  HomeOfferBanner,
   HomeSectionTab,
   HomeShopCategories,
   ShopCategoryCard,
@@ -62,8 +67,15 @@ function cloneNavItem(item: HomeNavListItem): HomeNavListItem {
     link: item.link,
     imageUrl: item.imageUrl,
     imageAlt: item.imageAlt ?? '',
+    ...(item.caption ? { caption: item.caption } : {}),
     ...(item.target ? { target: item.target } : {}),
   };
+}
+
+function cloneBanner(banner: HomeOfferBanner): HomeOfferBanner {
+  const next = { ...banner };
+  if (!next.target) delete next.target;
+  return next;
 }
 
 /** A link with the picked target and its address (ATS-267); no target = no `target` key. */
@@ -107,6 +119,10 @@ export class HomeDraftService {
     DEFAULT_HOME_NAV_LIST.items.map((item) => cloneNavItem(item)),
   );
   readonly #activeNavIndex = signal<number>(0);
+
+  // Section 4: Offer Banner; Section 5: WhatsApp Help
+  readonly #offerBanner = signal<HomeOfferBanner>(cloneBanner(DEFAULT_HOME_OFFER_BANNER));
+  readonly #helpBox = signal<HomeHelpBox>({ ...DEFAULT_HOME_HELP_BOX });
 
   readonly #isDirty = signal<boolean>(false);
   readonly #assetTracker = new StorageAssetTracker();
@@ -152,6 +168,18 @@ export class HomeDraftService {
     items: this.#navItems().map((item) => cloneNavItem(item)),
   }));
   readonly navListIsFull = computed(() => this.#navItems().length >= NAV_LIST_MAX_ITEMS);
+
+  readonly draftOfferBanner = computed<HomeOfferBanner>(() => cloneBanner(this.#offerBanner()));
+  readonly draftHelpBox = computed<HomeHelpBox>(() => ({ ...this.#helpBox() }));
+
+  /** Every section as it would publish. */
+  readonly draftSettings = computed<HomeSettingsUpdate>(() => ({
+    hero: this.draftHero(),
+    shopCategories: this.draftShopCategories(),
+    navList: this.draftNavList(),
+    offerBanner: this.draftOfferBanner(),
+    helpBox: this.draftHelpBox(),
+  }));
 
   readonly isDirty = computed(() => this.#isDirty());
 
@@ -316,6 +344,10 @@ export class HomeDraftService {
     );
   }
 
+  updateNavCaption(caption: string): void {
+    this.#updateCurrentNavItem((item) => ({ ...item, caption }));
+  }
+
   updateNavImageUrl(imageUrl: string): void {
     this.#updateCurrentNavItem((item) => ({ ...item, imageUrl }));
   }
@@ -391,6 +423,78 @@ export class HomeDraftService {
     return items.length;
   }
 
+  // --- Section 4: Offer Banner mutations ---
+
+  #updateBanner(updater: (banner: HomeOfferBanner) => HomeOfferBanner): void {
+    this.#offerBanner.update(updater);
+    this.#isDirty.set(true);
+  }
+
+  setBannerEnabled(enabled: boolean): void {
+    this.#updateBanner((banner) => ({ ...banner, enabled }));
+  }
+
+  updateBannerHeadline(headline: string): void {
+    this.#updateBanner((banner) => ({ ...banner, headline }));
+  }
+
+  updateBannerLabel(label: string): void {
+    this.#updateBanner((banner) => ({ ...banner, label }));
+  }
+
+  /**
+   * Links To changed: the target, its address and link text. The small label follows the new
+   * link unless the admin wrote their own (`previousAutoLabel`: what the old link would fill in).
+   */
+  updateBannerTarget(
+    change: NavTargetChange,
+    auto: { label: string; linkText: string; link: string },
+    previousAutoLabel: string,
+  ): void {
+    this.#updateBanner((banner) => {
+      const ownLabel = banner.label.trim() !== '' && banner.label !== previousAutoLabel;
+      return withPicked(
+        { ...banner, link: auto.link, linkText: auto.linkText, label: ownLabel ? banner.label : auto.label },
+        change,
+      );
+    });
+  }
+
+  updateBannerImageUrl(imageUrl: string): void {
+    this.#updateBanner((banner) => ({ ...banner, imageUrl }));
+  }
+
+  updateBannerImageAlt(imageAlt: string): void {
+    this.#updateBanner((banner) => ({ ...banner, imageAlt }));
+  }
+
+  updateBannerPhoneImageUrl(phoneImageUrl: string): void {
+    this.#updateBanner((banner) => ({ ...banner, phoneImageUrl }));
+  }
+
+  // --- Section 5: WhatsApp Help mutations ---
+
+  #updateHelpBox(updater: (box: HomeHelpBox) => HomeHelpBox): void {
+    this.#helpBox.update(updater);
+    this.#isDirty.set(true);
+  }
+
+  setHelpBoxEnabled(enabled: boolean): void {
+    this.#updateHelpBox((box) => ({ ...box, enabled }));
+  }
+
+  updateHelpHeadline(headline: string): void {
+    this.#updateHelpBox((box) => ({ ...box, headline }));
+  }
+
+  updateHelpText(text: string): void {
+    this.#updateHelpBox((box) => ({ ...box, text }));
+  }
+
+  updateHelpMessage(message: string): void {
+    this.#updateHelpBox((box) => ({ ...box, message }));
+  }
+
   // --- Session Upload Tracking & Orphan Cleanup ---
 
   registerSessionUpload(path: string): void {
@@ -402,18 +506,11 @@ export class HomeDraftService {
    * before stay in Storage, because a Previous Versions copy may still show them (ATS-251).
    */
   getOrphanedPathsForPublish(): string[] {
-    return this.#assetTracker.orphansOnPublish(
-      [],
-      this.#imageUrls(this.draftHero(), this.draftShopCategories(), this.draftNavList()),
-    );
+    return this.#assetTracker.orphansOnPublish([], this.#imageUrls(this.draftSettings()));
   }
 
-  getOrphanedPathsForDiscard(
-    liveHero: HomeHero,
-    liveShop: HomeShopCategories,
-    liveNav: HomeNavList,
-  ): string[] {
-    return this.#assetTracker.orphansOnDiscard(this.#imageUrls(liveHero, liveShop, liveNav));
+  getOrphanedPathsForDiscard(live: HomeSettingsUpdate): string[] {
+    return this.#assetTracker.orphansOnDiscard(this.#imageUrls(live));
   }
 
   /** Photos uploaded in this session; the replaced live photos stay for Previous Versions. */
@@ -421,8 +518,8 @@ export class HomeDraftService {
     return this.#assetTracker.orphansOnReset([]);
   }
 
-  resetDraftFromSource(hero: HomeHero, shopCategories: HomeShopCategories, navList: HomeNavList): void {
-    this.#applySource(hero, shopCategories, navList);
+  resetDraftFromSource(source: HomeSettingsUpdate): void {
+    this.#applySource(source);
     this.#assetTracker.clear();
     this.#isDirty.set(false);
   }
@@ -431,12 +528,12 @@ export class HomeDraftService {
    * Opens a saved version as an unsaved draft (Previous Versions, ATS-251). Photos uploaded in
    * this session stay tracked, so the ones the version doesn't use are still cleaned up.
    */
-  loadVersion(hero: HomeHero, shopCategories: HomeShopCategories, navList: HomeNavList): void {
-    this.#applySource(hero, shopCategories, navList);
+  loadVersion(source: HomeSettingsUpdate): void {
+    this.#applySource(source);
     this.#isDirty.set(true);
   }
 
-  #applySource(hero: HomeHero, shopCategories: HomeShopCategories, navList: HomeNavList): void {
+  #applySource({ hero, shopCategories, navList, offerBanner, helpBox }: HomeSettingsUpdate): void {
     this.#layoutCount.set(hero.layoutCount);
     this.#slots.set(buildThreeHeroSlots(hero));
     this.#activeSlotIndex.set(0);
@@ -448,18 +545,23 @@ export class HomeDraftService {
     this.#navTitle.set(navList.title.trim() || DEFAULT_HOME_NAV_LIST.title);
     this.#navItems.set(buildNavItems(navList));
     this.#activeNavIndex.set(0);
+
+    this.#offerBanner.set(cloneBanner(offerBanner));
+    this.#helpBox.set({ ...helpBox });
   }
 
-  discardDraft(sourceHero: HomeHero, sourceShop: HomeShopCategories, sourceNav: HomeNavList): void {
-    this.resetDraftFromSource(sourceHero, sourceShop, sourceNav);
+  discardDraft(source: HomeSettingsUpdate): void {
+    this.resetDraftFromSource(source);
   }
 
-  #imageUrls(hero: HomeHero, shop: HomeShopCategories, navList: HomeNavList): string[] {
+  #imageUrls({ hero, shopCategories, navList, offerBanner }: HomeSettingsUpdate): string[] {
     return [
       ...hero.slides.map((slide) => slide.imageUrl),
-      ...shop.cards.map((card) => card.imageUrl),
+      ...shopCategories.cards.map((card) => card.imageUrl),
       ...navList.items.map((item) => item.imageUrl),
-    ];
+      offerBanner.imageUrl,
+      offerBanner.phoneImageUrl,
+    ].filter((url) => url.length > 0);
   }
 
   markSaved(): void {
