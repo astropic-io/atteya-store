@@ -1,5 +1,5 @@
 @let titleText = title();
-@let current = activeIndex();
+@let shown = shownIndex();
 @let highlight = highlightIndex();
 
 <section class="container-content" (pointerenter)="mountRemaining()" (focusin)="mountRemaining()">
@@ -54,7 +54,7 @@
               class="nav-list-photo"
               data-nav-photo
               [attr.data-nav-index]="idx"
-              [class.is-active]="current === idx"
+              [attr.data-depth]="depthOf(idx)"
             >
               @if (imagePath(item); as src) {
                 <img
@@ -75,9 +75,9 @@
       }
 
       @if (showPhotos() && items().length > 0) {
-        @let activeItem = items()[current];
+        @let shownItem = items()[shown];
         <div class="nav-list-caption">
-          <span class="min-w-0 truncate">{{ activeItem?.caption }}</span>
+          <span class="min-w-0 truncate">{{ shownItem?.caption }}</span>
           <span class="shrink-0 tabular-nums">{{ position() }}</span>
         </div>
       }

@@ -54,13 +54,14 @@
     @apply focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2;
   }
 
-  /* Desktop photo column. Hidden below lg so lazy images are not fetched. */
+  /* Desktop stack of photos (ATS-361). Hidden below lg so lazy images are not fetched.
+     Narrower than its column so the tilted photos behind have room to peek out. */
   .nav-list-panel {
-    @apply relative hidden aspect-4/5 w-full overflow-hidden bg-surface-container-high;
-    @apply lg:block;
+    @apply relative hidden aspect-4/5 w-full;
+    @apply lg:mx-auto lg:block lg:w-[82%];
   }
 
-  /* Short line and "01 / 07" over the bottom of the photo */
+  /* Short line and "01 / 07" over the bottom of the top photo */
   .nav-list-caption {
     @apply absolute inset-x-0 bottom-0 z-10 elements-between gap-4 bg-linear-to-b from-transparent to-black/60 px-6 pt-16 pb-5 font-body-lg text-on-primary;
   }

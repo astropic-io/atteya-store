@@ -1,16 +1,53 @@
+// Desktop photos as a stack (ATS-361): the shown category's photo sits on top,
+// the next two peek out behind it, tilted. Angular sets `data-depth` (0 = top);
+// CSS moves the photos, so a change slides the new photo to the top.
 .nav-list-photo {
   position: absolute;
   inset: 0;
   z-index: 0;
+  overflow: hidden;
+  background: var(--mat-sys-surface-container-high);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 8%),
+    0 14px 34px rgb(0 0 0 / 16%);
   opacity: 0;
-  transform: scale(1.03);
-  transform-origin: center;
-  will-change: opacity, transform;
+  translate: -9% -6%;
+  rotate: -6deg;
+  scale: 0.86;
+  transition:
+    translate 0.7s cubic-bezier(0.2, 0.7, 0.2, 1),
+    rotate 0.7s cubic-bezier(0.2, 0.7, 0.2, 1),
+    scale 0.7s cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 0.45s ease,
+    box-shadow 0.5s ease;
 
-  &.is-active {
+  &[data-depth='0'] {
+    z-index: 3;
+    opacity: 1;
+    // The photo coming to the top turns solid quickly, so the one leaving never shows through it.
+    transition-duration: 0.7s, 0.7s, 0.7s, 0.15s, 0.5s;
+    translate: none;
+    rotate: none;
+    scale: none;
+    box-shadow:
+      0 2px 4px rgb(0 0 0 / 8%),
+      0 24px 50px rgb(0 0 0 / 22%);
+  }
+
+  &[data-depth='1'] {
+    z-index: 2;
+    opacity: 1;
+    translate: 9% -4%;
+    rotate: 5deg;
+    scale: 0.95;
+  }
+
+  &[data-depth='2'] {
     z-index: 1;
     opacity: 1;
-    transform: none;
+    translate: -8% -6%;
+    rotate: -6deg;
+    scale: 0.9;
   }
 }
 
@@ -64,7 +101,10 @@
     transition: none;
   }
 
-  .nav-list-photo,
+  .nav-list-photo {
+    transition: none;
+  }
+
   .nav-list-arrow {
     transform: none;
     will-change: auto;
