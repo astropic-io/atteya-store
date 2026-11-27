@@ -1,5 +1,6 @@
 @let titleText = title();
 @let current = activeIndex();
+@let highlight = highlightIndex();
 
 <section class="container-content" (pointerenter)="mountRemaining()" (focusin)="mountRemaining()">
   <div class="nav-list-layout">
@@ -12,7 +13,7 @@
               <button
                 type="button"
                 class="nav-list-link"
-                [class.is-active]="current === idx"
+                [class.is-active]="highlight === idx"
                 [class.ring-2]="isEdited(idx)"
                 [class.ring-inset]="isEdited(idx)"
                 [class.ring-primary]="isEdited(idx)"
@@ -23,20 +24,20 @@
               >
                 <ng-container
                   [ngTemplateOutlet]="rowLabel"
-                  [ngTemplateOutletContext]="{ $implicit: item, index: idx, active: current === idx }"
+                  [ngTemplateOutletContext]="{ $implicit: item, index: idx, active: highlight === idx }"
                 />
               </button>
             } @else {
               <a
                 class="nav-list-link"
-                [class.is-active]="current === idx"
+                [class.is-active]="highlight === idx"
                 [routerLink]="item.link | linkTarget"
-                (mouseenter)="activate(idx)"
+                (pointerenter)="activate(idx, $event.pointerType === 'mouse')"
                 (focusin)="activate(idx)"
               >
                 <ng-container
                   [ngTemplateOutlet]="rowLabel"
-                  [ngTemplateOutletContext]="{ $implicit: item, index: idx, active: current === idx }"
+                  [ngTemplateOutletContext]="{ $implicit: item, index: idx, active: highlight === idx }"
                 />
               </a>
             }
