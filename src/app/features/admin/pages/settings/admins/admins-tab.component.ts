@@ -74,9 +74,8 @@ export class AdminsTabComponent implements OnInit {
     { id: 'admin', label: 'Admin' },
   ];
 
-  /** What each role can do, shown under the form so the dropdown only needs the role names. */
   /**
-   * Yes / No per role. "Can be given" is what an admin can switch on for one staff member under
+   * What each role can do, shown under the form so the dropdown only needs the role names. Yes / No per role. "Can be given" is what an admin can switch on for one staff member under
    * Extra Access; null when Staff already have it.
    */
   readonly roleGuide: readonly {

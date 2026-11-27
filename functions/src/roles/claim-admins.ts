@@ -133,10 +133,7 @@ function listedMemberFromMirror(
 export async function listTeamViaMirrors(): Promise<readonly ListedMember[]> {
   const db = getFirestore();
   const auth = getAuth();
-  const mirrorSnap = await db
-    .collection('roles')
-    .where('role', 'in', [...TEAM_ROLES])
-    .get();
+  const mirrorSnap = await readTeamMirrors();
 
   if (!mirrorSnap.empty) {
     const byUid = new Map(mirrorSnap.docs.map((doc) => [doc.id, doc.data()] as const));
@@ -193,13 +190,6 @@ export async function listTeamViaMirrors(): Promise<readonly ListedMember[]> {
   );
 }
 
-/**
- * Makes `roles/{uid}` match the current admin and staff claims so the last-admin
- * transaction has documents to count. Does not write an audit record.
- * Claim holders missing a mirror, or with a mirror of another role, get theirs fixed.
- * Mirror docs that still say admin or staff after the claim was removed are marked
- * as regular accounts.
- */
 /** The Team list shows the mirror (ATS-372), so its role, extras and Super Admin must match the claim. */
 function mirrorMatchesClaim(
   data: DocumentData | undefined,
@@ -214,20 +204,31 @@ function mirrorMatchesClaim(
   return sameExtras && (data['owner'] === true) === owner;
 }
 
+/** The admin and staff mirrors. Read them before the claims and pass them to reconcileTeamMirrors. */
+export async function readTeamMirrors(): Promise<QuerySnapshot> {
+  return getFirestore()
+    .collection('roles')
+    .where('role', 'in', [...TEAM_ROLES])
+    .get();
+}
+
+/**
+ * Makes `roles/{uid}` match the admin and staff claims so the Team list and the last-admin
+ * transaction see the right people. Does not write an audit record.
+ * Claim holders missing a mirror, or with a mirror out of step (role, extras, Super Admin), get
+ * theirs fixed. Mirror docs that still say admin or staff after the claim was removed are marked
+ * as regular accounts.
+ * It never overwrites a newer save (ATS-375): `teamSnap` must be read before the claims, a mirror
+ * changed since it was read is skipped, and so is one written in the last 2 minutes. So a mirror
+ * can stay out of step for a moment; the next Team open fixes it.
+ */
 export async function reconcileTeamMirrors(
   claimMembers: readonly Pick<ClaimMember, 'uid' | 'email' | 'role' | 'extras' | 'owner'>[],
-  teamSnap?: QuerySnapshot,
+  teamSnap: QuerySnapshot,
 ): Promise<void> {
   const db = getFirestore();
   const claimRoles = new Map(claimMembers.map((member) => [member.uid, member.role] as const));
-  // Best read before the claims were (listTeamViaMirrors passes its own), so a mirror written after
-  // that read is never overwritten with older claims (ATS-375).
-  const existing =
-    teamSnap ??
-    (await db
-      .collection('roles')
-      .where('role', 'in', [...TEAM_ROLES])
-      .get());
+  const existing = teamSnap;
   const snaps = new Map<string, DocumentSnapshot>(existing.docs.map((doc) => [doc.id, doc] as const));
   const missing = claimMembers.filter((member) => !snaps.has(member.uid));
   if (missing.length > 0) {
@@ -242,7 +243,7 @@ export async function reconcileTeamMirrors(
     const snap = snaps.get(member.uid);
     if (mirrorMatchesClaim(snap?.data(), member.role, extras, owner)) continue;
     writes.push(
-      repairMirror(db.doc(`roles/${member.uid}`), snap, {
+      repairMirror(db.doc(`roles/${member.uid}`), snap, true, {
         role: member.role,
         email: member.email,
         extras,
@@ -253,7 +254,7 @@ export async function reconcileTeamMirrors(
 
   for (const doc of existing.docs) {
     if (claimRoles.has(doc.id)) continue;
-    writes.push(repairMirror(doc.ref, doc, { role: 'user' }));
+    writes.push(repairMirror(doc.ref, doc, true, { role: 'user' }));
   }
 
   await Promise.all(writes);
@@ -271,17 +272,19 @@ const FAILED_PRECONDITION = 9;
 
 /**
  * Rewrites one mirror only if it is unchanged since `snap` was read (ATS-375): a mirror saved by
- * setUserRole or setStaffExtras in the meantime wins, and this repair is skipped.
+ * setUserRole or setStaffExtras in the meantime wins, and this repair is skipped. `skipRecent`
+ * leaves a mirror written in the last 2 minutes alone (background repair only).
  */
 async function repairMirror(
   ref: DocumentReference,
   snap: DocumentSnapshot | undefined,
+  skipRecent: boolean,
   fields: Record<string, unknown>,
 ): Promise<void> {
   const data = { ...fields, updatedAt: FieldValue.serverTimestamp(), updatedBy: 'claim' };
   try {
     if (snap?.exists && snap.updateTime) {
-      if (Date.now() - snap.updateTime.toMillis() < RECENT_MIRROR_MS) return;
+      if (skipRecent && Date.now() - snap.updateTime.toMillis() < RECENT_MIRROR_MS) return;
       await ref.update(data, { lastUpdateTime: snap.updateTime });
     } else {
       await ref.create(data);
@@ -306,7 +309,8 @@ export async function reconcileOneMirror(
   const owner = role === 'admin' && readClaimOwner(claims);
   const snap = await ref.get();
   if (mirrorMatchesClaim(snap.data(), role, extras, owner)) return;
-  await repairMirror(ref, snap, { role, email, extras, owner });
+  // An admin just asked for this person: fix it now, even if the mirror was written moments ago.
+  await repairMirror(ref, snap, false, { role, email, extras, owner });
 }
 
 export function timestampToIso(value: unknown): string | null {
