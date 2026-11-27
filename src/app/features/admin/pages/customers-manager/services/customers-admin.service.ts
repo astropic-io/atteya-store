@@ -37,6 +37,7 @@ import {
 import {
   CUSTOMER_SORT_FIELD,
   CUSTOMERS_PAGE_SIZE,
+  CUSTOMERS_SEARCH_PAGE_SIZE,
   REPEAT_ORDER_COUNT,
   type CustomerFilter,
   type CustomerSort,
@@ -119,25 +120,26 @@ export class CustomersAdminService {
   }
 
   /**
-   * One page of up to `CUSTOMERS_PAGE_SIZE` customers. "Account, No Order Yet" is always newest
+   * One page of up to `CUSTOMERS_PAGE_SIZE` customers (`CUSTOMERS_SEARCH_PAGE_SIZE` with a search). "Account, No Order Yet" is always newest
    * customers first: every other sort is the same (no orders, nothing spent) for all of them.
    */
   async listPage(page: CustomerPageQuery): Promise<CustomerPage> {
     const searching = page.term !== null;
+    const pageSize = searching ? CUSTOMERS_SEARCH_PAGE_SIZE : CUSTOMERS_PAGE_SIZE;
     const sortField = page.filter === 'account-no-order' ? 'createdAt' : CUSTOMER_SORT_FIELD[page.sort];
     const constraints: QueryConstraint[] = [
       ...(searching ? [where('searchTokens', 'array-contains', page.term)] : []),
       ...filterConstraints(page.filter, searching),
       orderBy(sortField, 'desc'),
       ...(page.after ? [startAfter(page.after)] : []),
-      limit(CUSTOMERS_PAGE_SIZE),
+      limit(pageSize),
     ];
     const snap = await getDocs(query(this.#collection(), ...constraints));
     const docs = snap.docs;
     return {
       query: page,
       customers: docs.map((item) => item.data()),
-      next: docs.length === CUSTOMERS_PAGE_SIZE ? (docs[docs.length - 1] ?? null) : null,
+      next: docs.length === pageSize ? (docs[docs.length - 1] ?? null) : null,
     };
   }
 
