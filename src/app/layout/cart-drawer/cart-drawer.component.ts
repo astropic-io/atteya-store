@@ -21,6 +21,7 @@ import { bagOfferLook, type BagNotesProduct } from '@core/services/cart/bag-offe
 import {
   bundleNudgeText,
   bundleOfferLink,
+  bundleRowDisplayAmount,
   bundleSetNudgeButton,
   bundleSetNudgeText,
   bundleSetStripTitle,
@@ -43,7 +44,13 @@ import { cartLineKey, type CartLineDraft } from '@core/services/cart/cart.model'
 import { CartService } from '@core/services/cart/cart.service';
 import { CurrencyService } from '@core/services/currency/currency.service';
 import { injectFirestore } from '@core/firebase';
-import { dealTag, displayDecimals, toDisplayAmount, type BagDealHint } from '@core/services/offers/engine';
+import {
+  dealTag,
+  displayDecimals,
+  toDisplayAmount,
+  type BagBundle,
+  type BagDealHint,
+} from '@core/services/offers/engine';
 import { toPricedProduct } from '@core/services/offers/offer.model';
 import { OffersService } from '@core/services/offers/offers.service';
 import { PRODUCT_GENDERS } from '@core/services/products/product.constants';
@@ -362,12 +369,15 @@ export class CartDrawerComponent {
    * The bag priced like checkout and the order: per-item offers on each piece, then Buy X Get Y
    * over the whole bag (catalog prices until live offers load). Display only.
    */
-  readonly #pricedBag = computed(() => {
+  readonly #pricedBag = computed(() => this.#priceLines(this.lines()));
+
+  /** Prices any bag lines the way `#pricedBag` prices the bag. */
+  #priceLines(lines: readonly CartLineDraft[]): ReturnType<typeof priceBag> {
     const liveMode = this.#offers.ready() && !this.#offers.failed();
     const offers = liveMode ? this.#offers.all() : [];
     const ctx = { now: this.#offers.now(), signedIn: this.#auth.offerSignedIn(), codes: [] };
-    return priceBag(this.lines(), this.#products(), offers, ctx);
-  });
+    return priceBag(lines, this.#products(), offers, ctx);
+  }
 
   /**
    * What the bag gets from offers right now, for the notes that say when an offer stops applying
@@ -506,17 +516,43 @@ export class CartDrawerComponent {
     const entry = this.#currency.entry();
     const decimals = displayDecimals(entry.code);
     const money = (egp: number): string => formatMoney(toDisplayAmount(egp, entry), entry.code, decimals);
+    const toDisplay = (egp: number): number => toDisplayAmount(egp, entry);
     const offers = new Map(this.#offers.all().map((offer) => [offer.id, offer]));
     const map = new Map<number, CartBundleBox[]>();
-    for (const bundle of this.#pricedBag().bundles) {
-      const strip = bundleStripTitle({ ...bundle, title: offerTextFor(bundle.title, entry.code) }, money);
-      const nudge = bundleNudgeText(bundle, money);
+    const bag = this.#pricedBag();
+    const lines = this.lines();
+    for (const bundle of bag.bundles) {
+      // What the bundle's lines really cost and save, added up line by line like checkout and
+      // the order (ATS-385); null when a line also holds pieces outside this bundle.
+      const shown = this.#bundleShown(bundle.offerId, bag.lines, lines);
+      const single = bundle.rows.length === 1 && bundle.rows[0]!.count === 1;
+      const rowMoney = (row: { readonly quantity: number; readonly price: number }): string =>
+        formatMoney(
+          single && shown && row === bundle.rows[0]
+            ? shown.total
+            : bundleRowDisplayAmount(row, toDisplay, decimals),
+          entry.code,
+          decimals,
+        );
+      const strip = bundleStripTitle(
+        { ...bundle, title: offerTextFor(bundle.title, entry.code) },
+        money,
+        rowMoney,
+      );
+      const nudge = bundleNudgeText(bundle, money, (row) =>
+        formatMoney(
+          this.#nudgeTotal(bundle, lines) ?? bundleRowDisplayAmount(row, toDisplay, decimals),
+          entry.code,
+          decimals,
+        ),
+      );
       if (!strip && !nudge) continue;
       const offer = offers.get(bundle.offerId);
+      const saving = shown ? shown.saving : toDisplayAmount(bundle.saving, entry);
       const box: CartBundleBox = {
         offerId: bundle.offerId,
         strip,
-        saving: bundle.saving > 0 ? `You save ${money(bundle.saving)}` : '',
+        saving: saving > 0 ? `You save ${formatMoney(saving, entry.code, decimals)}` : '',
         nudge,
         missing: bundle.next?.missing ?? 0,
         shopQuery: offer && canShopOffer(offer) ? offerShopQuery(offer.id) : null,
@@ -551,6 +587,59 @@ export class CartDrawerComponent {
     }
     return map;
   });
+
+  /**
+   * A Bundle price offer's pieces in the visitor's currency, from the bag lines it covers: the
+   * total those lines are charged (`#lineDisplay`) and what they save against their own prices, as
+   * checkout's "You saved" counts it. Null when no line is in the bundle, or a line holds pieces
+   * outside it or another discount too (the line amount is then not the bundle's alone).
+   */
+  #bundleShown(
+    offerId: string,
+    priced: readonly (PricedBagLine | null)[],
+    lines: readonly CartLineDraft[],
+  ): { readonly total: number; readonly saving: number } | null {
+    const entry = this.#currency.entry();
+    const decimals = displayDecimals(entry.code);
+    let total = 0;
+    let base = 0;
+    let found = false;
+    for (const [index, line] of lines.entries()) {
+      const bagLine = priced[index];
+      const deal = bagLine?.deals.deals.find(
+        (entry) => entry.bundle && !entry.set && entry.offerId === offerId,
+      );
+      if (!bagLine || !deal) continue;
+      if (deal.units !== line.quantity || bagLine.deals.deals.length !== 1) return null;
+      found = true;
+      total += this.#lineDisplay(bagLine, line.quantity);
+      base += lineDisplayAmount(toDisplayAmount(bagLine.baseEgp, entry), line.quantity);
+    }
+    if (!found) return null;
+    return {
+      total: Number(total.toFixed(decimals)),
+      saving: Number(Math.max(0, base - total).toFixed(decimals)),
+    };
+  }
+
+  /**
+   * What the bundle's next row would really be charged once **Add 1** adds the missing pieces to
+   * the last line (they join that line, whose total converts once); null when that bag would not
+   * be priced as exactly that one row.
+   */
+  #nudgeTotal(bundle: BagBundle, lines: readonly CartLineDraft[]): number | null {
+    const next = bundle.next;
+    const last = lines[bundle.lineIndex];
+    if (!next || !last) return null;
+    const after = lines.map((line, index) =>
+      index === bundle.lineIndex ? { ...line, quantity: line.quantity + next.missing } : line,
+    );
+    const priced = this.#priceLines(after);
+    const reached = priced.bundles.find((entry) => entry.offerId === bundle.offerId);
+    const row = reached?.rows.length === 1 ? reached.rows[0] : undefined;
+    if (!row || row.count !== 1 || row.quantity !== next.quantity) return null;
+    return this.#bundleShown(bundle.offerId, priced.lines, after)?.total ?? null;
+  }
 
   setBoxes(index: number): readonly CartSetBox[] {
     return this.#setsByLine().get(index) ?? [];

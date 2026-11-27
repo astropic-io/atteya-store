@@ -89,6 +89,7 @@ import {
   EARNED_LABEL_MAX,
   earnedItemLabel,
   bundleNudgeText,
+  bundleRowDisplayAmount,
   bundleSetNudgeButton,
   bundleOfferLink,
   bundleSetNudgeLoses,
@@ -461,6 +462,32 @@ describe('Bundle price wording', () => {
       'Socks bundle · 2 × 3 for EGP 275 + 1 for EGP 125',
     );
     assert.equal(bundleStripTitle(bagBundle({})), null);
+  });
+
+  it('abroad, a row costs its pieces converted one by one, as the bag charges them (ATS-385)', () => {
+    // AED factor ~0.095: EGP 100 -> 9.5 -> AED 10; EGP 200 -> 19 at once, but two lines of 100 pay 20.
+    const toAed = (egp) => Math.ceil(egp * 0.095 - 1e-9);
+    assert.equal(bundleRowDisplayAmount({ quantity: 2, price: 200 }, toAed, 0), 20);
+    // 275 over 3 pieces: 92 + 92 + 91.
+    assert.equal(bundleRowDisplayAmount({ quantity: 3, price: 275 }, toAed, 0), 2 * toAed(92) + toAed(91));
+    // EGP: the row price itself.
+    assert.equal(
+      bundleRowDisplayAmount({ quantity: 3, price: 275 }, (egp) => egp, 0),
+      275,
+    );
+    const rowMoney = (row) => `AED ${bundleRowDisplayAmount(row, toAed, 0)}`;
+    assert.equal(
+      bundleStripTitle(
+        bagBundle({ units: 2, rows: [{ quantity: 2, price: 200, count: 1 }] }),
+        undefined,
+        rowMoney,
+      ),
+      'Socks bundle · 2 for AED 20',
+    );
+    assert.equal(
+      bundleNudgeText(bagBundle({ next: { missing: 1, quantity: 2, price: 200 } }), undefined, rowMoney),
+      'Add 1 more to get 2 for AED 20',
+    );
   });
 
   it('the nudge says how many more reach the next row', () => {

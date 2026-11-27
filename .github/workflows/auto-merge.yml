@@ -88,8 +88,8 @@ jobs:
           (github.event.workflow_run.name == 'Claude Review' && github.event.workflow_run.conclusion != 'skipped'))) ||
         (github.event_name == 'workflow_dispatch' &&
          github.ref_name == github.event.repository.default_branch &&
-         github.actor == github.repository_owner &&
-         github.triggering_actor == github.repository_owner)
+         github.actor == 'youssefathalla' &&
+         github.triggering_actor == 'youssefathalla')
       )
     # Job-level, not workflow-level: only events that pass the `if:` above join the queue, so an
     # event that is skipped can never replace a waiting check that would have merged. One check
@@ -114,6 +114,9 @@ jobs:
         with:
           script: |
             const owner = context.repo.owner;
+            // The person whose PRs the loop handles. Not the repo owner: the repo belongs to the
+            // astropic-io organisation since 27 Nov 2026, and PRs are opened by this account.
+            const AUTHOR = 'youssefathalla';
             const repo = context.repo.repo;
             const BASE = 'develop';
             const OPT_OUT_LABEL = 'no-auto-merge';
@@ -226,7 +229,7 @@ jobs:
               if (pr.base?.ref !== BASE) { stop(`It does not target ${BASE}.`); return false; }
               if (pr.head?.sha !== sha) { stop('A newer commit was pushed.'); return false; }
               if (pr.head?.repo?.full_name !== `${owner}/${repo}`) { stop('It comes from a fork.'); return false; }
-              if (pr.user?.login !== owner) { stop('It was not opened by the repository owner.'); return false; }
+              if (pr.user?.login !== AUTHOR) { stop(`It was not opened by ${AUTHOR}.`); return false; }
               if ((pr.labels || []).some((l) => l.name === OPT_OUT_LABEL)) { stop(`It has the ${OPT_OUT_LABEL} label.`); return false; }
               if (['develop', 'main'].includes(pr.head?.ref)) { stop('Its branch is develop or main.'); return false; }
 
@@ -478,7 +481,7 @@ jobs:
                   break;
                 }
                 if (checked.has(other.number)) continue;
-                if (other.draft || other.user?.login !== owner) continue;
+                if (other.draft || other.user?.login !== AUTHOR) continue;
                 if (other.head?.repo?.full_name !== `${owner}/${repo}`) continue;
                 checked.add(other.number);
                 try {
