@@ -216,7 +216,7 @@
     }
   }
 
-  /** "Or get the set" line between this product's Add to Bag and the Bundle & Save box (ATS-356). */
+  /** "Or get the bundle" line between this product's Add to Bag and the Bundle & Save box (ATS-356). */
   .pdp-or {
     @apply w-full elements-center gap-3 font-label-md uppercase tracking-wider text-on-surface-variant;
   }
