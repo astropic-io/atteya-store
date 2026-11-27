@@ -70,9 +70,25 @@ export class AdminsTabComponent implements OnInit {
   private readonly removeCell = viewChild<TemplateRef<unknown>>('removeCell');
 
   readonly roleOptions: readonly { readonly id: TeamRole; readonly label: string }[] = [
-    { id: 'staff', label: 'Staff (everything except deleting orders and this page)' },
-    { id: 'admin', label: 'Admin (everything)' },
+    { id: 'staff', label: 'Staff' },
+    { id: 'admin', label: 'Admin' },
   ];
+
+  /** What each role can do, shown under the form so the dropdown only needs the role names. */
+  readonly roleGuide: readonly { readonly task: string; readonly staff: boolean; readonly admin: boolean }[] =
+    [
+      { task: 'Manage orders, products, offers and customers', staff: true, admin: true },
+      { task: 'Change store settings, Home Page and menus', staff: true, admin: true },
+      { task: 'Mark refunds as sent, and send back return fees', staff: false, admin: true },
+      { task: 'Delete orders', staff: false, admin: true },
+      { task: 'Add, change or remove team members (this page)', staff: false, admin: true },
+    ];
+  readonly #showRoleGuide = signal(true);
+  readonly showRoleGuide = this.#showRoleGuide.asReadonly();
+
+  toggleRoleGuide(): void {
+    this.#showRoleGuide.update((shown) => !shown);
+  }
 
   readonly emailModel = signal<{ email: string; role: TeamRole }>({ email: '', role: 'staff' });
   readonly grantForm = form(this.emailModel, (path) => {
