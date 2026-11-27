@@ -2,7 +2,12 @@ import { inject, Service } from '@angular/core';
 import { toGiftChoice } from '@core/services/cart/cart-gifts';
 import type { Offer, OfferBundleSlot, OfferConditions } from '@core/services/offers/engine';
 import { canShopOffer } from '@core/services/offers/offer-shop';
-import { type Product, PRODUCT_TYPE_IDS, type ProductTypeId, ProductService } from '@core/services/products';
+import {
+  isTypeId,
+  type Product,
+  type ProductTypeId,
+  ProductService,
+} from '@core/services/products';
 import { SearchService } from '@core/services/search';
 import { toProductView } from '../../product/models/product-page.model';
 import type { BundleChoice } from '../../product/utils/product-bundle';
@@ -122,7 +127,7 @@ function groupReads(conditions: OfferConditions): { productIds: string[]; lists:
     const field = LIST_FIELDS.find((name) => byField.has(name));
     if (!field) continue;
     for (const value of byField.get(field)!) {
-      if (field === 'type' && !(PRODUCT_TYPE_IDS as readonly string[]).includes(value)) continue;
+      if (field === 'type' && !isTypeId(value)) continue;
       lists.push({ field, value });
     }
   }

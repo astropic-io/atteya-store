@@ -2,7 +2,6 @@ import type { GiftChoiceView } from '@core/services/cart/cart-gifts';
 import { type ChoiceRowView, choiceRowView } from './choice-rows';
 import type { CartLineGift } from '@core/services/cart/cart.model';
 import type { GiftChoiceFacts, ProductGiftOffer } from '@core/services/offers/engine';
-import type { ProductTypeId } from '@core/services/products';
 import type { ChoicePrompt } from '../models/product-page.model';
 
 export { toGiftChoice, type GiftChoiceView, type GiftSizeView } from '@core/services/cart/cart-gifts';
@@ -54,24 +53,10 @@ export interface GiftRow extends ChoiceRowView {
 export const giftStepKey = (giftId: string): string => `gift:${giftId}`;
 export const giftSizeStepKey = (giftId: string): string => `gift-size:${giftId}`;
 
-/** What follows "with" in the heading. Plural products read "these". */
-const PRODUCT_NOUN_PHRASE: Readonly<Record<ProductTypeId, string>> = {
-  rackets: 'this racket',
-  bags: 'this bag',
-  't-shirts': 'this shirt',
-  shorts: 'these shorts',
-  socks: 'these socks',
-  sets: 'this set',
-  grips: 'this grip',
-  balls: 'these balls',
-  bottles: 'this bottle',
-  supports: 'this support',
-};
-
 /** "This racket", "These shorts": the product being viewed, as the Bundle & Save section names it. */
-export function thisProductPhrase(productType: ProductTypeId): string {
-  const phrase = PRODUCT_NOUN_PHRASE[productType] ?? 'this item';
-  return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+export function thisProductPhrase(phrase: string): string {
+  const text = phrase.trim() || 'this item';
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /** Facts the engine needs to pick the live gift offer: every listed choice can be given. */
@@ -95,7 +80,8 @@ function joinNames(names: readonly string[]): string {
 export function buildGiftBox(
   offer: ProductGiftOffer,
   choices: readonly GiftChoiceView[],
-  productType: ProductTypeId,
+  /** "this hoodie" (the type's wording from Types, ATS-388). */
+  productPhrase: string,
 ): GiftBoxView | null {
   const byId = new Map(choices.map((choice) => [choice.productId, choice]));
   const gifts: GiftView[] = [];
@@ -114,7 +100,7 @@ export function buildGiftBox(
   }
   if (gifts.length === 0) return null;
   const nouns = gifts.map((gift) => gift.noun);
-  const phrase = PRODUCT_NOUN_PHRASE[productType] ?? 'this item';
+  const phrase = productPhrase.trim() || 'this item';
   return { offerId: offer.offerId, heading: `Free ${joinNames(nouns)} with ${phrase}`, gifts };
 }
 

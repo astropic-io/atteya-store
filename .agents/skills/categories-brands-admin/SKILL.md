@@ -47,3 +47,17 @@ Moved here word for word from AGENTS.md so that file stays small (<KEY>-282). Th
 - Hide takes a category or brand out of the menus and lists; built-in category pages and Shop routes still open by their address (not once staff deleted them).
 - The product editor's Category and Brand pickers list hidden ones too, marked "(hidden)", so staff can fill a category before showing it.
 - A category or brand added there gets the size chart and Materials / Specifications title from its own **Size Chart** and **Details Title** (or its parent's, <KEY>-250); a sub-category gets the normal `/category/<path>` page and a brand `/brand/<slug>`.
+
+## Types tab (<KEY>-388)
+
+- **Types** is the third tab (`?tab=types`, `components/types-tab/`): the kinds of product (Rackets, Socks, Hoodies…) staff pick in the product editor's Type box, the admin Products Type filter and the Offers "Product type" rule.
+- The list is one doc, `settings/productTypes` = `{ types: [{ id, label, phrase, categoryId }], updatedAt, updatedBy }`, in the order staff set; with no saved list the 10 built-in types (`BUILT_IN_PRODUCT_TYPES` in `core/services/products/product-types.ts`, from `PRODUCT_TYPES`) are the list. The first save writes the built-ins plus the change.
+- The tab writes the whole list from the browser with `ProductTypesService.save()` (the `settings/{docId}` rule lets admin and staff write it; no callable, no rules change). Nothing can be changed until the saved list has loaded, so the built-ins never overwrite a saved list.
+- Each type has a Name, **On the product page** ("this hoodie", "these socks"; suggested from the name until typed, `suggestTypePhrase()`), and an optional **Usual category** the product editor fills in when the type is picked (the old `DEFAULT_CATEGORY_FOR_TYPE` for the built-ins).
+- A new type's id is made once from its name (`newTypeId()`: `a-z 0-9` joined by `-`, `-2` when taken) and never changes; renaming keeps the id, so products and offers keep matching.
+- Delete counts the type's products (live or hidden, one `count()` query); a type in use can't be deleted ("Hoodies is the type of 12 products. Give them another type in Products first."). An offer aimed at a deleted type just stops including it. The list keeps at least one type.
+- `ProductTypesService` (`core/services/products/product-types.service.ts`) is the store's reader: `types()`, `options()`, `label()`, `phrase()`, `defaultCategory()`; it shows the built-ins until the snapshot arrives (and on the server).
+- The product page's Gift Box heading ("Free socks with this hoodie") and Bundle & Save line ("This hoodie") use the type's phrase (`buildGiftBox()`, `thisProductPhrase()` in `features/product/utils/product-gifts.ts`); an unknown type reads "this item".
+- `createProduct`, `updateProduct` and `saveProductModel` accept any well-formed type id (`isTypeId()`) and then check it is in the saved list or the built-ins (`assertKnownType()` in `functions/src/products/product-types.ts`); a product that already has a removed type can still be saved with it. The product editor lists a removed type for a product that still has it.
+- Search records keep the built-in label for built-in types and "Padel caps" from the id for new ones (`readableTypeId()`); renaming a built-in type does not change its search label.
+- The `settings/catalog` type counts and nav-path checks only know the built-in types; a new type is never counted, so nothing hides because of it.

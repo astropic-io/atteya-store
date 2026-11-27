@@ -30,7 +30,9 @@ import {
 } from '@core/services/products/marketing-badge';
 import { PlayerListService } from '@core/services/products/player-list.service';
 import { MAX_PRODUCT_PLAYERS } from '@core/services/products/player.schema';
-import { PRODUCT_GENDERS, PRODUCT_TYPES, SIZE_ORDER } from '@core/services/products/product.constants';
+import { PRODUCT_GENDERS, SIZE_ORDER } from '@core/services/products/product.constants';
+import { BUILT_IN_PRODUCT_TYPES, type ProductTypeEntry } from '@core/services/products/product-types';
+import { ProductTypesService } from '@core/services/products/product-types.service';
 import type { Product, ProductGenderId, ProductTypeId } from '@core/services/products/product.model';
 import {
   defaultNewArrivalUntil,
@@ -172,7 +174,14 @@ export class ProductEditorPageComponent implements OnInit {
   readonly #playerList = inject(PlayerListService);
   readonly #tracker = new StorageAssetTracker();
 
-  readonly types = PRODUCT_TYPES;
+  readonly #productTypes = inject(ProductTypesService);
+  /** Types from Categories & Brands → Types (ATS-388), plus this product's own if it was removed there. */
+  readonly types = computed(() => {
+    const options = this.#productTypes.options();
+    const current = this.model().type;
+    if (!current || options.some((option) => option.id === current)) return options;
+    return [...options, { id: current, label: this.#productTypes.label(current) }];
+  });
   readonly genderOptions = GENDER_OPTIONS;
   readonly maxColours = MAX_COLOURS;
   readonly summaryWords = SUMMARY_WORDS;
@@ -188,7 +197,7 @@ export class ProductEditorPageComponent implements OnInit {
   readonly isSaving = signal(false);
   readonly isDeleting = signal(false);
   readonly formError = signal('');
-  readonly model = signal<SharedFields>(emptyFields());
+  readonly model = signal<SharedFields>(emptyFields(this.#productTypes.types()));
   readonly sizes = signal<readonly ModelSizeDraft[]>([]);
   readonly colours = signal<readonly ColourDraft[]>([]);
   readonly activeIndex = signal(0);
@@ -217,8 +226,8 @@ export class ProductEditorPageComponent implements OnInit {
   readonly #reloadTick = signal(0);
   readonly #savedImagePaths = signal<readonly string[]>([]);
 
-  #lastType: ProductTypeId = PRODUCT_TYPES[0].id;
-  #lastSuggestedCategory = defaultCategoryForType(PRODUCT_TYPES[0].id);
+  #lastType: ProductTypeId = this.model().type;
+  #lastSuggestedCategory = this.model().categoryId;
   #categoryPicked = false;
   /** Last weight the page filled in from the category ('' = none), so a typed weight is kept. */
   #suggestedWeight = '';
@@ -381,7 +390,7 @@ export class ProductEditorPageComponent implements OnInit {
       if (current.type !== this.#lastType) {
         this.#lastType = current.type;
         if (!this.#categoryPicked) {
-          const suggested = defaultCategoryForType(current.type);
+          const suggested = defaultCategoryForType(current.type, untracked(this.#productTypes.types));
           this.#lastSuggestedCategory = suggested;
           untracked(() => this.model.update((prev) => ({ ...prev, categoryId: suggested })));
         }
@@ -868,7 +877,7 @@ export class ProductEditorPageComponent implements OnInit {
     this.picking.set(false);
 
     if (!anchor) {
-      const fields = emptyFields();
+      const fields = emptyFields(this.#productTypes.types());
       this.#lastType = fields.type;
       this.#lastSuggestedCategory = fields.categoryId;
       this.#categoryPicked = false;
@@ -1093,15 +1102,15 @@ export class ProductEditorPageComponent implements OnInit {
   }
 }
 
-function emptyFields(): SharedFields {
-  const type = PRODUCT_TYPES[0].id;
+function emptyFields(types: readonly ProductTypeEntry[]): SharedFields {
+  const type = types[0]?.id ?? BUILT_IN_PRODUCT_TYPES[0]!.id;
   return {
     name: '',
     summary: '',
     description: '',
     details: '',
     type,
-    categoryId: defaultCategoryForType(type),
+    categoryId: defaultCategoryForType(type, types),
     brandId: '',
     gender: '',
     price: '',

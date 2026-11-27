@@ -1,0 +1,85 @@
+<section
+  class="surface-card p-4 @3xl:p-5 w-full elements-start-col items-stretch! gap-4"
+  aria-labelledby="types-title"
+>
+  <div class="w-full elements-between flex-wrap gap-3">
+    <div class="min-w-0">
+      <h2 id="types-title" class="font-title-md font-bold!">Types</h2>
+      <p class="font-body-sm text-on-surface-variant">
+        What kind of item a product is. Offers can be aimed at a type, and the product page uses its wording.
+        Drag to change the order.
+      </p>
+    </div>
+    <button
+      matButton="filled"
+      type="button"
+      class="btn-block-phone"
+      [disabled]="isSaving() || !loaded()"
+      (click)="add()"
+    >
+      <mat-icon name="add" />
+      <span>Add Type</span>
+    </button>
+  </div>
+
+  <ul class="catalog-list" aria-label="Types" cdkDropList (cdkDropListDropped)="drop($event)">
+    @for (type of items(); track type.id) {
+      <li cdkDrag cdkDragLockAxis="y" [cdkDragDisabled]="isSaving()">
+        <div class="catalog-row">
+          <span
+            cdkDragHandle
+            class="drag-handle-wrapper catalog-row__handle"
+            matTooltip="Drag to change the order"
+          >
+            <mat-icon name="drag_indicator" size="lg" />
+          </span>
+          <div class="catalog-row__info">
+            <span class="catalog-row__name">{{ type.label }}</span>
+            <span class="catalog-row__meta truncate">
+              "{{ type.phrase }}" · {{ categoryLabel(type.categoryId) }}
+            </span>
+          </div>
+          <button
+            matIconButton
+            type="button"
+            [attr.aria-label]="'More for ' + type.label"
+            [matMenuTriggerFor]="more"
+          >
+            <mat-icon name="more_vert" />
+          </button>
+          <mat-menu #more="matMenu" xPosition="before">
+            <button mat-menu-item type="button" [disabled]="isSaving() || !loaded()" (click)="edit(type)">
+              <mat-icon name="edit" />
+              <span>Edit</span>
+            </button>
+            @if (!$first) {
+              <button mat-menu-item type="button" [disabled]="isSaving()" (click)="move(type, -1)">
+                <mat-icon name="arrow_upward" />
+                <span>Move Up</span>
+              </button>
+            }
+            @if (!$last) {
+              <button mat-menu-item type="button" [disabled]="isSaving()" (click)="move(type, 1)">
+                <mat-icon name="arrow_downward" />
+                <span>Move Down</span>
+              </button>
+            }
+            <mat-divider />
+            <button
+              mat-menu-item
+              type="button"
+              [disabled]="isSaving() || checkingId() === type.id"
+              (click)="remove(type)"
+            >
+              <mat-icon name="delete" />
+              <span>Delete</span>
+            </button>
+          </mat-menu>
+        </div>
+      </li>
+    }
+  </ul>
+  @if (!loaded()) {
+    <p class="font-body-sm text-on-surface-variant" role="status">Loading the saved types…</p>
+  }
+</section>

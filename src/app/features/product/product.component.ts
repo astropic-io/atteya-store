@@ -61,6 +61,7 @@ import {
   productDetailsTitle,
   ProductService,
 } from '@core/services/products';
+import { ProductTypesService } from '@core/services/products/product-types.service';
 import { SearchService } from '@core/services/search';
 import { SeoService, textFromHtml } from '@core/services/seo';
 import { ShippingSettingsService } from '@core/services/shipping/shipping-settings.service';
@@ -180,6 +181,7 @@ export class ProductComponent {
 
   readonly #seo = inject(SeoService);
   readonly #catalog = inject(CatalogService);
+  readonly #productTypes = inject(ProductTypesService);
   readonly #pixel = inject(MetaPixelService);
   /** Product the Meta Pixel ViewContent was last sent for, so live updates don't repeat it. */
   #viewContentSentFor: string | null = null;
@@ -527,7 +529,7 @@ export class ProductComponent {
       this.#pricingCtx(),
       giftChoiceFacts(choices),
     );
-    return offer ? buildGiftBox(offer, choices, p.type) : null;
+    return offer ? buildGiftBox(offer, choices, this.#productTypes.phrase(p.type)) : null;
   });
 
   /** What the shopper tapped in the Gift Box. Cleared for every new product. */
@@ -927,7 +929,7 @@ export class ProductComponent {
     return bundleSaveSteps(
       bundle,
       p.id,
-      thisProductPhrase(p.type),
+      thisProductPhrase(this.#productTypes.phrase(p.type)),
       ownDone,
       choices,
       this.#bundleSavePicks(),

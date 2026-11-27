@@ -16,12 +16,16 @@
     >
       <mat-button-toggle value="categories">Categories</mat-button-toggle>
       <mat-button-toggle value="brands">Brands</mat-button-toggle>
+      <mat-button-toggle value="types">Types</mat-button-toggle>
     </mat-button-toggle-group>
   </section>
 
   @switch (activeTab()) {
     @case ('brands') {
       <app-brands-tab />
+    }
+    @case ('types') {
+      <app-types-tab />
     }
     @default {
       <app-categories-tab [(openIds)]="openCategories" />

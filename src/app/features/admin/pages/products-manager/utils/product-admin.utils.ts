@@ -1,11 +1,14 @@
 import {
   categoryIdsFor,
   COLOR_PALETTE,
-  DEFAULT_CATEGORY_FOR_TYPE,
   SEED_BRANDS,
   SEED_CATEGORIES,
 } from '@core/services/products/catalog-taxonomy';
-import { PRODUCT_TYPES } from '@core/services/products/product.constants';
+import {
+  BUILT_IN_PRODUCT_TYPES,
+  typeName,
+  type ProductTypeEntry,
+} from '@core/services/products/product-types';
 import type { Brand, Category, Product, ProductTypeId } from '@core/services/products/product.model';
 import { normalizeImageKitPath } from '@shared/utils/image';
 import type {
@@ -17,19 +20,22 @@ import type {
 } from '../models/product-admin.model';
 
 const COLOR_LABELS = new Map<string, string>(COLOR_PALETTE.map((color) => [color.id, color.label]));
-const TYPE_LABELS = new Map(PRODUCT_TYPES.map((type) => [type.id, type.label]));
 /** Fallback only: rows pass the live brand names from Categories & Brands. */
 const SEED_BRAND_LABELS = new Map<string, string>(SEED_BRANDS.map((brand) => [brand.id, brand.name]));
 const SEED_CATEGORY_LABELS = new Map<string, string>(
   SEED_CATEGORIES.map((category) => [category.id, category.name]),
 );
 
-export function defaultCategoryForType(type: ProductTypeId): string {
-  return DEFAULT_CATEGORY_FOR_TYPE[type] ?? 'accessories';
+/** The category a type fills in: the type's own from Types (ATS-388), else the built-in one. */
+export function defaultCategoryForType(
+  type: ProductTypeId,
+  types: readonly ProductTypeEntry[] = BUILT_IN_PRODUCT_TYPES,
+): string {
+  return types.find((entry) => entry.id === type)?.categoryId || 'accessories';
 }
 
-export function typeLabel(id: string): string {
-  return TYPE_LABELS.get(id as ProductTypeId) ?? id;
+export function typeLabel(id: string, types: readonly ProductTypeEntry[] = BUILT_IN_PRODUCT_TYPES): string {
+  return typeName(types, id);
 }
 
 export function brandLabel(id: string, brands?: ReadonlyMap<string, string>): string {
@@ -129,6 +135,7 @@ export function toProductTableRow(
   product: Product,
   categoryNames?: ReadonlyMap<string, string>,
   brandNames?: ReadonlyMap<string, string>,
+  types?: readonly ProductTypeEntry[],
 ): ProductTableRow {
   const path = product.images[0]?.path;
   return {
@@ -138,7 +145,7 @@ export function toProductTableRow(
     categoryIds: product.categoryIds?.length ? product.categoryIds : [product.categoryId],
     categoryLabel: categoryLabel(product.categoryId, categoryNames),
     type: product.type,
-    typeLabel: typeLabel(product.type),
+    typeLabel: typeLabel(product.type, types),
     brandId: product.brandId,
     brandLabel: brandLabel(product.brandId, brandNames),
     modelGroup: product.modelGroup ?? '',
