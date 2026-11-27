@@ -31,6 +31,9 @@ Moved here word for word from AGENTS.md so that file stays small (<KEY>-282). Th
 - The sitemap is built once per hour per server (one read at a time) and sent with `Cache-Control: public, max-age=3600`.
 - A failed or slow (20 s) sitemap read answers 503, never an empty sitemap.
 - `public/robots.txt` names `https://atteyastore.com/sitemap.xml`.
+- `public/meta.json` exists because Facebook's link preview bot asks for `/meta.json` on the live store; without it every hit rendered the full Page Not Found (404, about 178 KB).
+- `public/meta.json` holds only the store name and address, nothing secret.
+- Static files answer before Angular, so `/meta.json` returns 200 with the 1 hour cache.
 
 ## Hosting, first paint and service worker
 
