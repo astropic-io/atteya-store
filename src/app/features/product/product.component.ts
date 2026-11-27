@@ -465,9 +465,17 @@ export class ProductComponent {
       if (!badge.labelOnly) {
         const offer = offers.find((candidate) => candidate.id === badge.offerId);
         if (!offer?.badge?.trim()) {
-          // "Black only": which colours the offer price is for, without the percent.
-          const only = badge.partial ? badge.text.split(' · ').slice(1).join(' · ') : '';
-          if (only) shown.push(`Offer price · ${only}`);
+          if (offer?.reward.kind === 'tiered') {
+            // The struck-through price shows only the first tier: the title says the rest.
+            const title = offer.title.trim();
+            if (title && !lines.some((line) => line.text === title) && offerTextFor(title, currency) !== '') {
+              lines.push({ text: title, link: null });
+            }
+          } else if (badge.partial) {
+            // Only some colours or sizes: say so, without the percent ("Offer price · Black only").
+            const only = / · ([^·]+ only)$/.exec(badge.text)?.[1];
+            shown.push(only ? `Offer price · ${only}` : 'Offer price on some options');
+          }
           continue;
         }
       }
@@ -733,7 +741,7 @@ export class ProductComponent {
         perPiece: this.#money(Math.round(row.price / row.quantity)),
         fullPrice: saveEgp > 0 ? this.#money(full) : '',
         // Savings are written as money, never as a percent.
-        saving: saveEgp > 0 ? `Save ${this.#money(saveEgp)}` : '',
+        saving: saveEgp > 0 ? this.#money(saveEgp) : '',
       };
     });
   });
@@ -913,9 +921,9 @@ export class ProductComponent {
   readonly bundleSaveSaving = computed(() => {
     const bundle = this.bundleSave();
     if (!bundle) return '';
-    const priced = bundle.setReward.type === 'percent' ? this.#bundleSavePriced() : null;
-    if (priced && priced.fullEgp > priced.totalEgp)
-      return `Save ${this.#money(priced.fullEgp - priced.totalEgp)}`;
+    // The set's own saving, as the bag's strip counts it; none when the set doesn't apply.
+    const saving = bundle.setReward.type === 'percent' ? (this.#bundleSavePriced()?.setSavingEgp ?? 0) : 0;
+    if (saving > 0) return `Save ${this.#money(saving)}`;
     return bundleSaveHeaderSaving(bundle.setReward, (egp) => this.#money(egp));
   });
 
@@ -964,10 +972,10 @@ export class ProductComponent {
 
   /**
    * The picked set priced by the bag's own `priceBag` once every piece's product is picked: what
-   * the bag charges for these pieces (`totalEgp`, the set price when it saves) and their own
-   * prices before any offer (`fullEgp`). Null while a piece is open.
+   * the bag charges for these pieces (`totalEgp`, the set price when it saves) and what this
+   * Bundle & Save set saves (`setSavingEgp`, 0 when the set doesn't apply). Null while a piece is open.
    */
-  readonly #bundleSavePriced = computed((): { totalEgp: number; fullEgp: number } | null => {
+  readonly #bundleSavePriced = computed((): { totalEgp: number; setSavingEgp: number } | null => {
     const drafts = this.#bundleSaveDrafts(false);
     const p = this.product();
     const choices = this.#bundleSaveChoices();
@@ -984,13 +992,13 @@ export class ProductComponent {
     const lines = drafts.map(({ gifts: _gifts, ...line }) => line);
     const priced = priceBag(lines, products, this.#offers(), this.#pricingCtx());
     let totalEgp = 0;
-    let fullEgp = 0;
-    for (const [index, line] of priced.lines.entries()) {
+    for (const line of priced.lines) {
       if (!line) return null;
       totalEgp += line.lineEgp;
-      fullEgp += line.baseEgp * (lines[index]?.quantity ?? 0);
     }
-    return { totalEgp, fullEgp };
+    const offerId = this.bundleSave()?.offer.id;
+    const set = priced.sets.find((candidate) => candidate.offerId === offerId && candidate.sets > 0);
+    return { totalEgp, setSavingEgp: set?.saving ?? 0 };
   });
 
   /** "Add Bundle to Bag · EGP 4,900" once every piece's product is picked. */

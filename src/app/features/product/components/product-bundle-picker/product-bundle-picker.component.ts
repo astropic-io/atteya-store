@@ -28,7 +28,7 @@ export interface BundleRowView {
   readonly perPiece: string;
   /** The full price of one piece, struck through; empty when the row saves nothing. */
   readonly fullPrice: string;
-  /** "Save EGP 50" for the whole row; empty hides the tag. */
+  /** What the whole row saves in money ("EGP 50", shown as "Save EGP 50"); empty hides the tag. */
   readonly saving: string;
 }
 

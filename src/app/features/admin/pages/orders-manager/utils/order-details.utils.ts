@@ -226,7 +226,7 @@ function detailItems(
       imageSrc: imagePath ? normalizeImageKitPath(imagePath) : '',
       quantity: line.quantity,
       gift,
-      deal: line.deals?.length ? dealTag(line.deals, line.quantity) || null : null,
+      deal: line.deals?.length ? dealTag(line.deals, line.quantity, { staff: true }) || null : null,
       stock:
         stock.status === 'missing'
           ? 'Product removed'

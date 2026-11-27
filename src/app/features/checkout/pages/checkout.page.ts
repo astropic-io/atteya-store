@@ -726,18 +726,21 @@ export class CheckoutPageComponent implements OnInit {
     });
   });
 
-  /**
-   * Display-only preview. Place-order ignores this and prices again on the server.
-   * Shipping is one converted amount; the parcel itself stays off this screen.
-   */
   /** "EGP 25" the offers take off this order, for the summary's "You saved" line; empty when nothing. */
   readonly savedText = computed((): string => {
     const bag = this.#pricedBag();
     const entry = this.#entry();
     if (bag.state !== 'ready' || !entry || !(bag.savedDisplay > 0)) return '';
+    // After a refusal the summary may show the server's totals; a browser-side saving could
+    // disagree with them, so it is left out until the bag is priced again.
+    if (this.#serverTotals()) return '';
     return formatMoney(bag.savedDisplay, entry.code, displayDecimals(entry.code));
   });
 
+  /**
+   * Display-only preview. Place-order ignores this and prices again on the server.
+   * Shipping is one converted amount; the parcel itself stays off this screen.
+   */
   readonly orderSummary = computed((): CheckoutSummary => {
     if (!isCheckoutCountry(this.shipping().country)) return { state: 'need-country' };
     const bag = this.#pricedBag();

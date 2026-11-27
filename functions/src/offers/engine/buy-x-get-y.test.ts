@@ -257,6 +257,8 @@ describe('buy x get y in the bag', () => {
     assert.equal(dealTag([{ units: 1, percent: 100 }], 3), '1 free');
     assert.equal(dealTag([{ units: 2, percent: 50 }], 2), 'Offer price');
     assert.equal(dealTag([{ units: 1, percent: 50 }], 2), '1 at offer price');
+    assert.equal(dealTag([{ units: 2, percent: 50 }], 2, { staff: true }), '\u221250%');
+    assert.equal(dealTag([{ units: 1, percent: 50 }], 2, { staff: true }), '1 at \u221250%');
   });
 });
 
