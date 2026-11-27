@@ -133,7 +133,8 @@ export class NavigationListSectionComponent {
    * pointer or focus. Mounted photos stay, so they slide away instead of vanishing.
    */
   readonly #mounted = signal<ReadonlySet<number>>(new Set([0, 1, 2]));
-  readonly #loaded = signal<ReadonlySet<number>>(new Set());
+  /** Image paths that have finished downloading. Keyed by path, not row, so a new photo in a row waits for its own download. */
+  readonly #loaded = signal<ReadonlySet<string>>(new Set());
   /** False until the stack shows its first photo; that first one goes up with no wait. */
   #photosSettled = false;
   /**
@@ -203,16 +204,17 @@ export class NavigationListSectionComponent {
     return this.#mounted().has(index);
   }
 
-  /** True once photo `index` has downloaded; the photos behind the top one wait for it. */
-  isLoaded(index: number): boolean {
-    return this.#loaded().has(index);
+  /** True once this row's photo has downloaded; the photos behind the top one wait for it. */
+  isLoaded(item: HomeNavListItem): boolean {
+    const path = this.imagePath(item);
+    return path !== null && this.#loaded().has(path);
   }
 
-  markLoaded(index: number): void {
+  markLoaded(path: string): void {
     this.#loaded.update((current) => {
-      if (current.has(index)) return current;
+      if (current.has(path)) return current;
       const next = new Set(current);
-      next.add(index);
+      next.add(path);
       return next;
     });
   }

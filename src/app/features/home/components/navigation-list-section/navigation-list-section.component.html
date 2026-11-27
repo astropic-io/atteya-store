@@ -53,7 +53,7 @@
               data-nav-photo
               [attr.data-nav-index]="idx"
               [attr.data-depth]="depthOf(idx)"
-              [class.is-loaded]="isLoaded(idx)"
+              [class.is-loaded]="isLoaded(item)"
             >
               @if (imagePath(item); as src) {
                 <img
@@ -64,7 +64,7 @@
                   fill
                   sizes="(min-width: 1280px) 40rem, (min-width: 1024px) 50vw, 100vw"
                   class="object-cover object-center"
-                  (load)="markLoaded(idx)"
+                  (load)="markLoaded(src)"
                 />
               } @else {
                 <div class="absolute inset-0 skeleton"></div>
