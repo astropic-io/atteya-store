@@ -20,31 +20,34 @@
     @if (draft().length === 0) {
       <p class="font-body-md">No players yet. Add the first one below.</p>
     } @else {
-      <ul class="w-full elements-start-col gap-2 list-none m-0 p-0" aria-label="Players">
+      <ul class="w-full grid grid-cols-1 @3xl:grid-cols-2 gap-2 list-none m-0 p-0" aria-label="Players">
         @for (player of draft(); track player.id; let i = $index) {
-          <li class="w-full border border-outline-variant border-shape p-3 elements-between flex-wrap gap-3">
-            <label class="elements-start-col gap-1 font-label-md grow min-w-48">
-              Name
-              <input
-                type="text"
-                [attr.maxlength]="maxName"
-                class="border-shape border border-outline bg-surface px-3 py-2 font-body-md w-full"
-                [value]="player.name"
-                (input)="rename(i, textFrom($event))"
-              />
-            </label>
-            <div class="elements-start-col gap-1 min-w-40">
-              <span class="font-label-md">Link name</span>
-              <span class="font-body-md py-2">/shop?player={{ player.id }}</span>
+          <li
+            class="min-w-0 border border-outline-variant border-shape p-3 elements-start-col items-stretch! gap-2"
+          >
+            <div class="w-full flex items-end gap-2">
+              <label class="elements-start-col gap-1 font-label-md grow min-w-0">
+                Name
+                <input
+                  type="text"
+                  [attr.maxlength]="maxName"
+                  class="border-shape border border-outline bg-surface px-3 py-2 font-body-md w-full"
+                  [value]="player.name"
+                  (input)="rename(i, textFrom($event))"
+                />
+              </label>
+              <button
+                matIconButton
+                type="button"
+                [attr.aria-label]="'Remove ' + (player.name || player.id)"
+                (click)="remove(i)"
+              >
+                <mat-icon name="delete" />
+              </button>
             </div>
-            <button
-              matIconButton
-              type="button"
-              [attr.aria-label]="'Remove ' + (player.name || player.id)"
-              (click)="remove(i)"
-            >
-              <mat-icon name="delete" />
-            </button>
+            <p class="font-body-sm text-on-surface-variant break-all">
+              Link name: <span class="font-mono">/shop?player={{ player.id }}</span>
+            </p>
           </li>
         }
       </ul>
