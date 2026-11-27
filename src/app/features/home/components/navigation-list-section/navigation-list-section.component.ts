@@ -107,6 +107,15 @@ export class NavigationListSectionComponent {
 
   readonly activeIndex = computed(() => this.#clamp(this.#activeIndex()));
 
+  /**
+   * Becomes true on the shopper's first hover or keyboard focus on a row (ATS-360). Until then
+   * no row shows the active line or arrow; the photo panel still shows the first category.
+   */
+  readonly #touched = signal(false);
+
+  /** The row that shows the active line and arrow, or -1 before the shopper touches the list. */
+  readonly highlightIndex = computed(() => (this.previewMode() || this.#touched() ? this.activeIndex() : -1));
+
   /** "01 / 07" under the desktop photo. */
   readonly position = computed(() => {
     const pad = (value: number): string => String(value).padStart(2, '0');
@@ -134,6 +143,7 @@ export class NavigationListSectionComponent {
   #lastAnimated = -1;
   #animatedPhotoCount = 0;
   #lastArrow = -1;
+  #arrowsSettled = false;
   #cancelPhotoWait: (() => void) | null = null;
 
   constructor() {
@@ -151,10 +161,10 @@ export class NavigationListSectionComponent {
       untracked(() => this.#syncPhotos(index));
     });
 
-    // The arrow follows the active row straight away, even while the photo
-    // waits for its download.
+    // The arrow follows the highlighted row straight away, even while the photo
+    // waits for its download. Before the first hover or focus it shows no arrow (ATS-360).
     afterRenderEffect(() => {
-      const index = this.activeIndex();
+      const index = this.highlightIndex();
       const ready = this.#motionReady();
       const desktop = this.#desktopPhotos();
       this.items();
@@ -188,8 +198,13 @@ export class NavigationListSectionComponent {
     });
   }
 
-  activate(index: number): void {
+  /**
+   * `mark` is false for a touch or pen pointer, so a tap on a wide touch screen opens the link
+   * instead of first drawing the row's line and arrow (which iOS treats as a hover and eats the tap).
+   */
+  activate(index: number, mark = true): void {
     const next = this.#clamp(index);
+    if (mark) this.#touched.set(true);
     if (this.#desktopPhotos()) this.#mount(next);
     if (this.#activeIndex() === next) return;
     this.#activeIndex.set(next);
@@ -246,7 +261,7 @@ export class NavigationListSectionComponent {
     this.#stopPhotoWait();
     this.#lastAnimated = -1;
     this.#animatedPhotoCount = 0;
-    this.#lastArrow = -1;
+    this.#arrowsSettled = false;
     this.#ctx?.revert();
     if (this.#gsap) {
       this.#ctx = this.#gsap.context(() => undefined, this.#host.nativeElement);
@@ -258,9 +273,9 @@ export class NavigationListSectionComponent {
     if (!event.matches) return;
     this.#lastAnimated = -1;
     this.#animatedPhotoCount = 0;
-    this.#lastArrow = -1;
+    this.#arrowsSettled = false;
     this.#syncPhotos(this.activeIndex());
-    this.#syncArrows(this.activeIndex());
+    this.#syncArrows(this.highlightIndex());
   };
 
   #syncArrows(index: number): void {
@@ -271,7 +286,8 @@ export class NavigationListSectionComponent {
     const arrows = [...this.#host.nativeElement.querySelectorAll<HTMLElement>('[data-nav-arrow]')];
     if (arrows.length === 0) return;
 
-    const first = this.#lastArrow < 0;
+    const first = !this.#arrowsSettled;
+    this.#arrowsSettled = true;
     if (!first && this.#lastArrow === index) {
       // Same row, but the list may have new rows (admin preview edits).
       ctx.add(() => settleNavListArrows(gsap, arrows, index));
