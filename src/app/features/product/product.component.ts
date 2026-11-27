@@ -735,13 +735,14 @@ export class ProductComponent {
     return this.#pickerRows().map((row) => {
       // The added "Get 1" row is the normal price: nothing to save.
       const saveEgp = offerRows.includes(row) ? bundleSaveAmount(row, full) : 0;
+      const perPiece = this.#money(Math.round(row.price / row.quantity));
+      const fullText = this.#money(full);
       return {
         row,
         title: `Get ${row.quantity} for ${this.#money(row.price)}`,
-        perPiece: this.#money(Math.round(row.price / row.quantity)),
-        fullPrice: saveEgp > 0 ? this.#money(full) : '',
-        // Savings are written as money, never as a percent.
-        saving: saveEgp > 0 ? this.#money(saveEgp) : '',
+        perPiece,
+        // Struck through only when it reads differently from the price per piece (rounding).
+        fullPrice: saveEgp > 0 && fullText !== perPiece ? fullText : '',
       };
     });
   });

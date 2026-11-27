@@ -26,10 +26,8 @@ export interface BundleRowView {
   readonly title: string;
   /** The price of one piece in this row. */
   readonly perPiece: string;
-  /** The full price of one piece, struck through; empty when the row saves nothing. */
+  /** The full price of one piece, struck through; empty when the row saves nothing. The struck price is the only sign of the saving: no extra "Save" tag. */
   readonly fullPrice: string;
-  /** What the whole row saves in money ("EGP 50", shown as "Save EGP 50"); empty hides the tag. */
-  readonly saving: string;
 }
 
 /** One piece of the picked row, as a row that opens the choice panel. */
