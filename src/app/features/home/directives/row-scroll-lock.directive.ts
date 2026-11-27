@@ -70,6 +70,8 @@ export class RowScrollLockDirective {
   readonly #isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
   readonly #destroyRef = inject(DestroyRef);
   readonly #enabled = signal(false);
+  /** The desktop check has run (or GSAP failed to load), so `enabled` is final for now. */
+  readonly #decided = signal(false);
 
   /** Selector of the photos that shrink so the section fits the window while locked. */
   readonly rowLockFit = input<string | null>(null);
@@ -78,7 +80,7 @@ export class RowScrollLockDirective {
   readonly enabled = this.#enabled.asReadonly();
 
   /** The row loops at its ends: true whenever the desktop lock is off. */
-  readonly loops = computed(() => !this.#enabled());
+  readonly loops = computed(() => this.#decided() && !this.#enabled());
 
   #mm: GsapMatchMedia | null = null;
   #trigger: ScrollTriggerClass | null = null;
@@ -105,7 +107,9 @@ export class RowScrollLockDirective {
 
   /**
    * Arrow buttons. While locked, scroll the page to the card's position so the
-   * page and the row stay in step; otherwise scroll the row itself.
+   * page and the row stay in step; otherwise scroll the row itself. Where the
+   * lock is off, next on the last card goes to the first and previous on the
+   * first goes to the last.
    */
   step(direction: 1 | -1): void {
     const trigger = this.#trigger;
@@ -122,12 +126,16 @@ export class RowScrollLockDirective {
   #wrap(direction: 1 | -1): boolean {
     const row = this.#row;
     if (this.#lastLeft() <= EDGE_PX) return false;
+    // Reduced motion: jump, don't sweep across every card.
+    const behavior: ScrollBehavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+      ? 'instant'
+      : 'smooth';
     if (direction === 1 && this.#atEnd()) {
-      row.scrollTo({ left: 0, behavior: 'smooth' });
+      row.scrollTo({ left: 0, behavior });
       return true;
     }
     if (direction === -1 && this.#atStart()) {
-      row.scrollTo({ left: this.#lastLeft(), behavior: 'smooth' });
+      row.scrollTo({ left: this.#lastLeft(), behavior });
       return true;
     }
     return false;
@@ -239,8 +247,9 @@ export class RowScrollLockDirective {
       this.#mm = gsap.matchMedia();
       this.#mm.add(LOCK_QUERY, () => this.#lock(ScrollTrigger));
     } catch {
-      // No lock: normal page scroll, arrows and drag still work.
+      // No lock: normal page scroll, arrows and drag still work (and the row loops).
     }
+    if (!this.#destroyed) this.#decided.set(true);
   }
 
   #inRange(trigger: ScrollTriggerClass): boolean {
