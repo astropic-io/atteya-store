@@ -1,0 +1,161 @@
+@layer components {
+  /*! free gift rows (app-product-gift-box) and the gift panel (app-gift-picker; shell is .side-panel) */
+
+  /* Gift Box header: white, the black "Free gift" tag, "Worth …" and the heading. */
+  .pdp-gift-box__head {
+    @apply elements-start-col items-stretch! gap-2 px-4 pt-4 pb-3 border-b border-outline-variant;
+  }
+
+  .pdp-gift-tag {
+    @apply elements-start gap-1 px-2 py-0.5 bg-primary text-on-primary border-shape font-label-sm font-bold! uppercase;
+  }
+
+  /* One gift. The gift Add to Bag asks for gets a red line on its left. */
+  .pdp-gift-line {
+    @apply w-full border-b border-outline-variant last:border-b-0;
+  }
+
+  .pdp-gift-line--prompt {
+    @apply border-s-2 border-s-error;
+  }
+
+  /* A gift row: photo, title and what is picked, then "Choose" / "Change" (a button) or "Included". */
+  .pdp-gift-item {
+    @apply w-full min-w-0 elements-start gap-3 px-4 py-3 text-start bg-surface;
+  }
+
+  button.pdp-gift-item {
+    @apply cursor-pointer transition-colors;
+  }
+
+  button.pdp-gift-item:enabled:hover {
+    @apply bg-surface-container-low;
+  }
+
+  button.pdp-gift-item:disabled {
+    @apply cursor-not-allowed opacity-60;
+  }
+
+  .pdp-gift-item__text {
+    @apply flex-1 min-w-0 elements-start-col items-stretch! gap-0.5;
+  }
+
+  .pdp-gift-item__detail {
+    @apply font-body-sm truncate;
+  }
+
+  .pdp-gift-item__action {
+    @apply shrink-0 elements-start gap-0.5 font-label-lg font-bold! underline underline-offset-4;
+  }
+
+  .pdp-gift-item__action--plain {
+    @apply no-underline;
+  }
+
+  .pdp-gift-thumb {
+    @apply relative shrink-0 size-14 overflow-hidden border border-outline-variant border-shape bg-surface-container-low;
+  }
+
+  .pdp-gift-thumb--empty {
+    @apply elements-center border-dashed;
+  }
+
+  .pdp-gift-peek {
+    @apply shrink-0 elements-start -space-x-3;
+  }
+
+  .pdp-gift-thumb--peek {
+    @apply size-11 ring-2 ring-surface;
+  }
+
+  .pdp-gift-thumb--more {
+    @apply elements-center bg-primary text-on-primary border-primary font-label-md font-bold!;
+  }
+
+  .pdp-gift-sizes {
+    @apply flex flex-wrap gap-2 px-4 pb-3;
+  }
+
+  .pdp-gift-sizes .pdp-choice {
+    @apply min-w-12;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    button.pdp-gift-item {
+      transition: none;
+    }
+  }
+
+  /* The panel: a sheet from the bottom (92% of the screen) on phone and tablet, 28rem on the right
+     from 1024px, 40rem when the list is long (three cards a row). */
+  .gift-picker {
+    @apply h-[92dvh] border-t border-outline-variant;
+  }
+
+  .gift-picker__body {
+    @apply elements-start-col items-stretch! justify-start! gap-3;
+  }
+
+  /* The search field (.search-panel__field) keeps its own height in the column. */
+  .gift-picker__body > .search-panel__field {
+    @apply flex-none;
+  }
+
+  .gift-picker__filters {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .gift-picker__dot {
+    @apply size-9 elements-center border border-outline-variant rounded-full cursor-pointer;
+  }
+
+  .gift-picker__dot[aria-pressed='true'] {
+    @apply border-primary ring-1 ring-primary;
+  }
+
+  .gift-picker__brand {
+    @apply min-h-10 gap-1.5 max-w-full;
+  }
+
+  .gift-picker__brand[aria-pressed='true'] .gift-picker__count {
+    @apply text-on-primary;
+  }
+
+  .gift-picker__clear {
+    @apply font-label-lg font-bold! underline underline-offset-4 cursor-pointer;
+  }
+
+  .gift-picker__grid {
+    @apply grid grid-cols-2 gap-3;
+  }
+
+  .gift-picker__card {
+    @apply w-full;
+  }
+
+  .gift-picker__footer {
+    @apply elements-start-col items-stretch!;
+  }
+
+  .gift-picker__sizes {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .gift-picker__sizes .pdp-choice {
+    @apply min-w-12;
+  }
+
+  @media (min-width: 1024px) {
+    .gift-picker {
+      @apply h-dvh border-t-0;
+    }
+
+    .gift-picker--wide {
+      @apply w-[40rem];
+    }
+
+    .gift-picker--wide .gift-picker__grid {
+      @apply grid-cols-3;
+    }
+  }
+}

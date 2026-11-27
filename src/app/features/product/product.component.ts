@@ -696,6 +696,8 @@ export class ProductComponent {
       cardColours: colours,
       imagePath: p.images[0]?.path ?? '',
       sizes: null,
+      brandId: p.brandId ?? '',
+      price: Number.isFinite(p.price) ? p.price : 0,
     };
   });
 
