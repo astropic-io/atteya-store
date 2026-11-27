@@ -93,7 +93,7 @@ export class AdminNavService {
       );
       if (match) return match.label;
     }
-    return 'Orders';
+    return environment.adminOverview === true ? 'Overview' : 'Orders';
   });
 
   constructor() {
