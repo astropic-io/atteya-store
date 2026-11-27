@@ -71,7 +71,9 @@
                 <td class="py-2 pr-3 font-body-md" [class.text-on-surface-variant]="row.staffMuted">
                   {{ row.staff }}
                 </td>
-                <td class="py-2 font-body-md">Yes</td>
+                <td class="py-2 font-body-md" [class.text-on-surface-variant]="row.admin !== 'Yes'">
+                  {{ row.admin }}
+                </td>
               </tr>
             }
           </tbody>
@@ -132,7 +134,9 @@
 </div>
 
 <ng-template #removeCell [templateType]="sampleRow" let-row>
-  @if (!isOnlyAdmin(row)) {
+  @if (row.owner) {
+    <span class="font-body-md text-on-surface-variant">Can't be changed</span>
+  } @else if (!isOnlyAdmin(row)) {
     <button
       matButton="text"
       type="button"

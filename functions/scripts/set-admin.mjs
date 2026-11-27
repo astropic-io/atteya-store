@@ -7,6 +7,12 @@
  *   node scripts/set-admin.mjs --project atteya-store-dev --email helper@example.com --role staff
  *   node scripts/set-admin.mjs --project atteya-store-dev --show --email you@example.com
  *   node scripts/set-admin.mjs --project atteya-store-dev --list
+ *   node scripts/set-admin.mjs --project atteya-store-dev --email you@example.com --owner
+ *   node scripts/set-admin.mjs --project atteya-store-dev --email you@example.com --owner off
+ *
+ * --owner makes the account a Super Admin (ATS-372): an admin whose access no one can change or
+ * remove from the website. Only this script sets or removes it. --owner off keeps them Admin.
+ * A Super Admin's role can't be changed here either until --owner off is run first.
  *
  * The custom claim is the source of truth. --list reads claims, not roles/{uid},
  * so it still works when no mirror document exists. Granting or revoking also
@@ -41,7 +47,7 @@ if (arg('list')) {
     for (const user of page.users) {
       const role = user.customClaims?.role;
       if (role === 'admin' || role === 'staff') {
-        console.log(user.uid, user.email ?? '', role);
+        console.log(user.uid, user.email ?? '', user.customClaims?.owner === true ? 'super admin' : role);
       }
     }
     pageToken = page.pageToken;
@@ -65,13 +71,60 @@ if (arg('show')) {
   process.exit(0);
 }
 
+const ownerArg = arg('owner');
+const isOwner = user.customClaims?.owner === true && user.customClaims?.role === 'admin';
+
+if (ownerArg !== undefined) {
+  if (arg('role') !== undefined) throw new Error('Use --owner or --role, not both.');
+  if (ownerArg !== true && ownerArg !== 'off') throw new Error('--owner takes no value, or "off"');
+  const makeOwner = ownerArg === true;
+  if (makeOwner === isOwner) {
+    console.log(`${projectId}: ${email} is ${makeOwner ? 'already' : 'not'} a Super Admin. Nothing changed.`);
+    process.exit(0);
+  }
+  const before = ['admin', 'staff'].includes(user.customClaims?.role) ? user.customClaims.role : 'user';
+  // A Super Admin is always an Admin, with no staff extras. Removing Super Admin keeps them Admin.
+  const { extras: _ownerDroppedExtras, owner: _oldOwner, ...rest } = user.customClaims ?? {};
+  await auth.setCustomUserClaims(user.uid, { ...rest, role: 'admin', ...(makeOwner ? { owner: true } : {}) });
+  await db.doc(`roles/${user.uid}`).set(
+    {
+      role: 'admin',
+      email,
+      extras: [],
+      owner: makeOwner,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: 'cli',
+    },
+    { merge: true },
+  );
+  await db.collection('auditLogs').add({
+    action: 'owner.set',
+    targetUid: user.uid,
+    targetEmail: email,
+    from: isOwner,
+    to: makeOwner,
+    roleBefore: before,
+    actorUid: null,
+    actorEmail: 'cli',
+    at: FieldValue.serverTimestamp(),
+  });
+  console.log(
+    `${projectId}: ${email} (${user.uid}) is ${makeOwner ? 'now a Super Admin' : 'no longer a Super Admin (still Admin)'}`,
+  );
+  process.exit(0);
+}
+
+if (isOwner) {
+  throw new Error(`${email} is a Super Admin. Run --owner off first to change their role.`);
+}
+
 const role = arg('role') ?? 'admin';
 if (!['admin', 'staff', 'user'].includes(role)) throw new Error('--role must be admin, staff or user');
 const RANK = { user: 0, staff: 1, admin: 2 };
 
 const before = ['admin', 'staff'].includes(user.customClaims?.role) ? user.customClaims.role : 'user';
 // A role change starts with no extra access (ATS-368), the same as setUserRole.
-const { extras: _droppedExtras, ...keptClaims } = user.customClaims ?? {};
+const { extras: _droppedExtras, owner: _staleOwner, ...keptClaims } = user.customClaims ?? {};
 await auth.setCustomUserClaims(user.uid, { ...keptClaims, role });
 
 let revokeTimeMs;
@@ -92,6 +145,7 @@ await db.doc(`roles/${user.uid}`).set(
     role,
     email,
     extras: [],
+    owner: false,
     updatedAt: FieldValue.serverTimestamp(),
     updatedBy: 'cli',
     ...(revokeTimeMs === undefined ? {} : { revokeTimeMs }),

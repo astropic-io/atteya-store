@@ -7,6 +7,8 @@ import {
   query,
   Query,
   QueryDocumentSnapshot,
+  Timestamp,
+  where,
 } from 'firebase/firestore';
 import * as v from 'valibot';
 import { callableFrom, injectFirestore, injectFunctionsAsync } from '@core/firebase';
@@ -17,7 +19,11 @@ import {
   RoleAuditSchema,
   SetStaffExtrasResultSchema,
   SetUserRoleResultSchema,
+  TeamMirrorSchema,
 } from '../schemas/admin-role.schema';
+
+/** More than the team will ever hold; the list is not paged. */
+const TEAM_LIMIT = 100;
 
 @Service()
 export class AdminRolesService {
@@ -64,6 +70,18 @@ export class AdminRolesService {
     return parsed.output;
   }
 
+  /**
+   * The Team list straight from the `roles` mirrors (ATS-372), live. Opening Team no longer waits for
+   * the `listAdmins` function to start up. The Auth claim still decides what each person may do.
+   */
+  teamQuery(): Query<AdminRecord | null> {
+    return query(
+      collection(this.#firestore, 'roles').withConverter(teamMirrorConverter),
+      where('role', 'in', ['admin', 'staff']),
+      limit(TEAM_LIMIT),
+    );
+  }
+
   auditLogsQuery(): Query<RoleAudit | null> {
     return query(
       collection(this.#firestore, 'auditLogs').withConverter(roleAuditConverter),
@@ -72,6 +90,33 @@ export class AdminRolesService {
     );
   }
 }
+
+function toIso(value: Timestamp | Date | string | null): string | null {
+  if (value instanceof Timestamp) return value.toDate().toISOString();
+  if (value instanceof Date) return value.toISOString();
+  return value;
+}
+
+const teamMirrorConverter: FirestoreDataConverter<AdminRecord | null> = {
+  toFirestore() {
+    return {};
+  },
+  fromFirestore(snapshot: QueryDocumentSnapshot): AdminRecord | null {
+    // A pending server time reads as Firestore's local estimate, never null.
+    const parsed = v.safeParse(TeamMirrorSchema, snapshot.data({ serverTimestamps: 'estimate' }));
+    if (!parsed.success) return null;
+    const mirror = parsed.output;
+    return {
+      uid: snapshot.id,
+      email: mirror.email.toLowerCase(),
+      role: mirror.role,
+      extras: mirror.role === 'staff' ? mirror.extras : [],
+      owner: mirror.role === 'admin' && mirror.owner,
+      updatedAt: toIso(mirror.updatedAt),
+      updatedBy: mirror.updatedBy,
+    };
+  },
+};
 
 const roleAuditConverter: FirestoreDataConverter<RoleAudit | null> = {
   toFirestore() {

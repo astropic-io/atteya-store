@@ -17,11 +17,23 @@ export const AdminRecordSchema = v.object({
   role: v.optional(v.picklist(['admin', 'staff']), 'admin'),
   // Older functions sent no extras.
   extras: v.optional(EXTRAS, []),
+  // Super Admin (ATS-372). Older functions sent none.
+  owner: v.optional(v.boolean(), false),
   updatedAt: v.nullable(v.pipe(v.string(), v.trim())),
   updatedBy: v.nullable(v.pipe(v.string(), v.trim())),
 });
 
 export const ListAdminsSchema = v.array(AdminRecordSchema);
+
+/** One `roles/{uid}` mirror on the Team list (ATS-372). Only admin and staff rows are queried. */
+export const TeamMirrorSchema = v.object({
+  role: v.picklist(['admin', 'staff']),
+  email: v.optional(v.pipe(v.string(), v.trim()), ''),
+  extras: v.optional(EXTRAS, []),
+  owner: v.optional(v.boolean(), false),
+  updatedAt: v.optional(v.nullable(timestampSchema), null),
+  updatedBy: v.optional(v.nullable(v.pipe(v.string(), v.trim())), null),
+});
 
 export const SetUserRoleResultSchema = v.object({
   changed: v.boolean(),
@@ -52,6 +64,12 @@ export const RoleAuditSchema = v.variant('action', [
     targetEmail: v.pipe(v.string(), v.trim()),
     from: EXTRAS,
     to: EXTRAS,
+  }),
+  v.object({
+    ...auditBase,
+    action: v.literal('owner.set'),
+    targetEmail: v.pipe(v.string(), v.trim()),
+    to: v.boolean(),
   }),
   v.object({
     ...auditBase,

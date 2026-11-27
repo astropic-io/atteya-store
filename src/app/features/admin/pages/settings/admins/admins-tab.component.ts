@@ -79,13 +79,20 @@ export class AdminsTabComponent implements OnInit {
     readonly task: string;
     readonly staff: string;
     readonly staffMuted: boolean;
+    readonly admin: string;
   }[] = [
-    { task: 'Manage orders, products, offers and customers', staff: 'Yes', staffMuted: false },
-    { task: 'Change store settings, Home Page and menus', staff: 'Yes', staffMuted: false },
-    { task: 'Mark refunds as sent, and send back return fees', staff: 'If switched on', staffMuted: true },
-    { task: 'Delete orders', staff: 'If switched on', staffMuted: true },
-    { task: 'See money totals on Overview', staff: 'If switched on', staffMuted: true },
-    { task: 'Add, change or remove team members (this page)', staff: 'No', staffMuted: true },
+    { task: 'Manage orders, products, offers and customers', staff: 'Yes', staffMuted: false, admin: 'Yes' },
+    { task: 'Change store settings, Home Page and menus', staff: 'Yes', staffMuted: false, admin: 'Yes' },
+    {
+      task: 'Mark refunds as sent, and send back return fees',
+      staff: 'If switched on',
+      staffMuted: true,
+      admin: 'Yes',
+    },
+    { task: 'Delete orders', staff: 'If switched on', staffMuted: true, admin: 'Yes' },
+    { task: 'See money totals on Overview', staff: 'If switched on', staffMuted: true, admin: 'Yes' },
+    { task: 'Add, change or remove team members (this page)', staff: 'No', staffMuted: true, admin: 'Yes' },
+    { task: 'Change or remove a Super Admin', staff: 'No', staffMuted: true, admin: 'No' },
   ];
   readonly #showRoleGuide = signal(true);
   readonly showRoleGuide = this.#showRoleGuide.asReadonly();
@@ -101,7 +108,23 @@ export class AdminsTabComponent implements OnInit {
     maxLength(path.email, 254, { message: 'That email address is too long.' });
   });
 
-  readonly adminsResource = resource({
+  /** Live from the `roles` mirrors (ATS-372): opens at once and updates by itself after a change. */
+  readonly #team = signalCollection(this.#roles.teamQuery());
+  readonly #mirrorTeam = computed(() => {
+    const team = this.#team();
+    return team === undefined ? undefined : team.flatMap((member) => (member ? [member] : []));
+  });
+  /** No admin mirror found (access given outside the website, or the read failed): show the server's list. */
+  readonly #needsServerList = computed(() => {
+    const team = this.#mirrorTeam();
+    return team !== undefined && !team.some((member) => member.role === 'admin');
+  });
+  /**
+   * Asked once when Team opens, in the background. The server checks every mirror against the Auth
+   * claims and fixes the ones out of step, and the live list above picks the fixes up. Its answer is
+   * shown only when there is no admin mirror at all.
+   */
+  readonly #serverTeam = resource({
     loader: async () => {
       if (!isPlatformBrowser(this.#platformId)) return [];
       return this.#roles.listAdmins();
@@ -117,19 +140,32 @@ export class AdminsTabComponent implements OnInit {
     email: '',
     role: 'staff',
     extras: [],
+    owner: false,
     roleLabel: '',
     since: '',
     grantedBy: '',
     action: '',
   };
 
-  readonly rows = computed(() => (this.adminsResource.value() ?? []).map(toAdminTableRow));
+  readonly rows = computed(() => {
+    const team = this.#needsServerList() ? (this.#serverTeam.value() ?? []) : (this.#mirrorTeam() ?? []);
+    return [...team]
+      .sort(
+        (left, right) =>
+          Number(right.owner) - Number(left.owner) ||
+          Number(right.role === 'admin') - Number(left.role === 'admin') ||
+          left.email.localeCompare(right.email),
+      )
+      .map(toAdminTableRow);
+  });
   readonly adminCount = computed(() => this.rows().filter((row) => row.role === 'admin').length);
   readonly loadError = computed(() => {
-    const error = this.adminsResource.error();
+    const error = this.#needsServerList() ? this.#serverTeam.error() : undefined;
     return error ? roleActionError(error) : '';
   });
-  readonly showSkeleton = computed(() => this.adminsResource.isLoading() && !this.adminsResource.hasValue());
+  readonly showSkeleton = computed(
+    () => this.#mirrorTeam() === undefined || (this.#needsServerList() && this.#serverTeam.isLoading()),
+  );
   readonly columns = computed((): TableColumn<AdminTableRow>[] => {
     const base: TableColumn<AdminTableRow>[] = [
       { key: 'email', label: 'Email', sortable: true },
@@ -175,7 +211,7 @@ export class AdminsTabComponent implements OnInit {
         } else {
           this.#snackbar.info(`That person is already ${label}.`);
         }
-        this.adminsResource.reload();
+        this.#reloadServerList();
       } catch (error: unknown) {
         this.#snackbar.error(roleActionError(error));
       } finally {
@@ -190,7 +226,7 @@ export class AdminsTabComponent implements OnInit {
   }
 
   async changeRole(row: AdminTableRow, to: TeamRole): Promise<void> {
-    if (this.#removingUid() || !this.#hasEmail(row) || row.role === to) return;
+    if (this.#removingUid() || !this.#hasEmail(row) || row.owner || row.role === to) return;
     if (!(await this.#dialogs.confirmChange(row.email, to))) return;
     await this.#save(row, to, `${row.email} is ${to === 'admin' ? 'an Admin' : 'Staff'} now.`);
   }
@@ -208,7 +244,7 @@ export class AdminsTabComponent implements OnInit {
       } else {
         this.#snackbar.info('Nothing changed.');
       }
-      this.adminsResource.reload();
+      this.#reloadServerList();
     } catch (error: unknown) {
       this.#snackbar.error(roleActionError(error));
     } finally {
@@ -217,9 +253,14 @@ export class AdminsTabComponent implements OnInit {
   }
 
   async removeAdmin(row: AdminTableRow): Promise<void> {
-    if (this.#removingUid() || !this.#hasEmail(row)) return;
+    if (this.#removingUid() || !this.#hasEmail(row) || row.owner) return;
     if (!(await this.#dialogs.confirmRemove(row.email))) return;
     await this.#save(row, 'user', `${row.email} can no longer manage the store.`);
+  }
+
+  /** The mirror list updates by itself; only the server fallback needs asking again. */
+  #reloadServerList(): void {
+    if (this.#needsServerList()) this.#serverTeam.reload();
   }
 
   #hasEmail(row: AdminTableRow): boolean {
@@ -235,7 +276,7 @@ export class AdminsTabComponent implements OnInit {
       } else {
         this.#snackbar.info('Nothing changed. The list is up to date now.');
       }
-      this.adminsResource.reload();
+      this.#reloadServerList();
     } catch (error: unknown) {
       this.#snackbar.error(roleActionError(error));
     } finally {

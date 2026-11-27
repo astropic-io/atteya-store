@@ -56,7 +56,11 @@ export function toAdminTableRow(admin: AdminRecord): AdminTableRow {
     email: admin.email || 'No email on the account',
     role: admin.role,
     extras: admin.role === 'staff' ? admin.extras : [],
-    roleLabel: teamMemberLabel(admin.role, admin.role === 'staff' ? admin.extras : []),
+    owner: admin.role === 'admin' && admin.owner,
+    roleLabel:
+      admin.role === 'admin' && admin.owner
+        ? 'Super Admin'
+        : teamMemberLabel(admin.role, admin.role === 'staff' ? admin.extras : []),
     since: adminSinceLabel(admin.updatedAt),
     grantedBy: grantedByLabel(admin.updatedBy),
     action: '',
@@ -83,6 +87,10 @@ export function describeRoleChange(entry: RoleAudit): string {
       return `${actor} deleted order ${shortOrderRef(entry.orderId)}.`;
     case 'product.delete':
       return `${actor} deleted the product ${entry.name || entry.productId}.`;
+    case 'owner.set':
+      return entry.to
+        ? `${actor} made ${entry.targetEmail} a Super Admin.`
+        : `${actor} made ${entry.targetEmail} a regular Admin again.`;
     case 'extras.set': {
       const added = entry.to.filter((extra) => !entry.from.includes(extra));
       const removed = entry.from.filter((extra) => !entry.to.includes(extra));
