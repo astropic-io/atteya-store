@@ -41,6 +41,9 @@ import {
 } from './utils/product-admin.utils';
 import { countListViews, groupProductRows, matchesListView } from './utils/product-groups.utils';
 
+/** Tabs of the list that `?tab=` may open. */
+const LIST_VIEWS: readonly ProductListView[] = ['all', 'live', 'hidden', 'low', 'out'];
+
 @Component({
   selector: 'app-products-manager',
   host: { class: 'block w-full' },
@@ -65,7 +68,12 @@ export class ProductsManagerComponent implements OnInit {
   readonly category = input<string | undefined>(undefined);
   /** The Category filter: the address's category, until the person picks another. */
   readonly categoryId = linkedSignal(() => this.category()?.trim() || 'all');
-  readonly view = signal<ProductListView>('all');
+  /** `?tab=low` (the Overview's Running low View All) opens the list on that tab. */
+  readonly tab = input<string | undefined>(undefined);
+  readonly view = linkedSignal<ProductListView>(() => {
+    const asked = this.tab();
+    return LIST_VIEWS.find((view) => view === asked) ?? 'all';
+  });
   readonly searchSyncErrors = signal(0);
   /** Product whose Live / Hidden change is saving. */
   readonly switchingId = signal<string | null>(null);
