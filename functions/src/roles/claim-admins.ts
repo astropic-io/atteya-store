@@ -11,6 +11,8 @@ export interface ClaimMember {
   readonly email: string;
   readonly role: TeamRole;
   readonly extras: StaffExtra[];
+  /** Super Admin (ATS-372). */
+  readonly owner: boolean;
 }
 
 const LIST_PAGE_SIZE = 1000;
@@ -25,6 +27,15 @@ export function readRole(claims: UserRecord['customClaims']): Role {
 export function readClaimExtras(claims: UserRecord['customClaims']): StaffExtra[] {
   if (!claims || typeof claims !== 'object') return [];
   return readExtras((claims as { extras?: unknown }).extras);
+}
+
+/**
+ * Super Admin (ATS-372): `owner: true` next to `role: 'admin'`. Set only by the setup script, and
+ * no one can change a Super Admin's access from the website.
+ */
+export function readClaimOwner(claims: UserRecord['customClaims']): boolean {
+  if (!claims || typeof claims !== 'object') return false;
+  return (claims as { owner?: unknown }).owner === true && readRole(claims) === 'admin';
 }
 
 /** The claims without `extras`: a role change starts the person with no extra access. */
@@ -56,6 +67,7 @@ export async function listClaimTeam(): Promise<readonly ClaimMember[]> {
         email: (user.email ?? '').trim().toLowerCase(),
         role,
         extras: readClaimExtras(user.customClaims),
+        owner: readClaimOwner(user.customClaims),
       });
     }
     if (!result.pageToken) return members;
@@ -71,6 +83,8 @@ export interface ListedMember {
   readonly role: TeamRole;
   /** Staff only: the extras in their claim. */
   readonly extras: StaffExtra[];
+  /** Super Admin (ATS-372). */
+  readonly owner: boolean;
   readonly updatedAt: string | null;
   readonly updatedBy: string | null;
 }
@@ -82,6 +96,7 @@ function listedMemberFromMirror(
   email: string,
   role: TeamRole,
   extras: StaffExtra[],
+  owner: boolean,
   data: DocumentData | undefined,
 ): ListedMember {
   const mirrorMatches = data?.['role'] === role;
@@ -91,6 +106,7 @@ function listedMemberFromMirror(
     email,
     role,
     extras: role === 'staff' ? extras : [],
+    owner: role === 'admin' && owner,
     updatedAt: mirrorMatches ? timestampToIso(data?.['updatedAt']) : null,
     updatedBy: mirrorMatches && typeof updatedBy === 'string' ? updatedBy : null,
   };
@@ -135,6 +151,7 @@ export async function listTeamViaMirrors(): Promise<readonly ListedMember[]> {
           (user.email ?? '').trim().toLowerCase(),
           role,
           readClaimExtras(user.customClaims),
+          readClaimOwner(user.customClaims),
           byUid.get(user.uid),
         ),
       );
@@ -153,7 +170,14 @@ export async function listTeamViaMirrors(): Promise<readonly ListedMember[]> {
       : [];
 
   return claimMembers.map((member, index) =>
-    listedMemberFromMirror(member.uid, member.email, member.role, member.extras, snaps[index]?.data()),
+    listedMemberFromMirror(
+      member.uid,
+      member.email,
+      member.role,
+      member.extras,
+      member.owner,
+      snaps[index]?.data(),
+    ),
   );
 }
 
@@ -182,6 +206,7 @@ export async function reconcileTeamMirrors(claimMembers: readonly ClaimMember[])
       {
         role: member.role,
         email: member.email,
+        owner: member.owner,
         updatedAt: FieldValue.serverTimestamp(),
         updatedBy: 'claim',
       },

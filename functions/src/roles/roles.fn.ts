@@ -9,6 +9,7 @@ import {
   listClaimTeam,
   listTeamViaMirrors,
   readClaimExtras,
+  readClaimOwner,
   readRole,
   reconcileTeamMirrors,
   recordSessionRevocation,
@@ -18,6 +19,7 @@ import { parseSetStaffExtrasInput, parseSetUserRoleInput } from './roles.validat
 import { endsSession, isLastAdminRemoval, type TeamRole } from './team-roles.js';
 
 const LAST_ADMIN_MESSAGE = "You're the only admin. Add another admin before changing your access.";
+const OWNER_MESSAGE = "This person is a Super Admin. Their access can't be changed from the website.";
 const UNKNOWN_ACCOUNT_MESSAGE =
   'No account uses that email yet. Ask them to sign in once with Google, or add them under Authentication → Users first.';
 
@@ -28,6 +30,8 @@ export interface AdminRecord {
   readonly role: TeamRole;
   /** Staff only: extra access switched on for them (ATS-368). */
   readonly extras: StaffExtra[];
+  /** Super Admin (ATS-372): set only by the setup script; nobody can change them here. */
+  readonly owner: boolean;
   readonly updatedAt: string | null;
   readonly updatedBy: string | null;
 }
@@ -76,6 +80,11 @@ export const setUserRole = onCall(adminCallableOptions(), async (request): Promi
     throw new HttpsError('internal', 'Could not look up that account. Please try again.');
   }
 
+  // Super Admin (ATS-372): no admin can change or remove them, here or by calling the server directly.
+  if (readClaimOwner(user.customClaims)) {
+    throw new HttpsError('failed-precondition', OWNER_MESSAGE);
+  }
+
   const before = readRole(user.customClaims);
   if (before === input.role) {
     return { changed: false };
@@ -109,6 +118,7 @@ export const setUserRole = onCall(adminCallableOptions(), async (request): Promi
         email: input.email,
         // A new role starts with no extra access (ATS-368).
         extras: [],
+        owner: false,
         updatedAt: FieldValue.serverTimestamp(),
         updatedBy: actorLabel,
       },

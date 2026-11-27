@@ -14,6 +14,8 @@ export interface AdminTableRow {
   readonly email: string;
   readonly role: TeamRole;
   readonly extras: readonly StaffExtra[];
+  /** Super Admin (ATS-372): shown, but nobody can change them from the website. */
+  readonly owner: boolean;
   readonly roleLabel: string;
   readonly since: string;
   readonly grantedBy: string;
