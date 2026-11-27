@@ -49,7 +49,7 @@
         matIconButton
         type="button"
         aria-label="Previous photo"
-        [disabled]="active() === 0"
+        [disabled]="!scrollable()"
         (click)="step(-1)"
       >
         <mat-icon name="arrow_back" />
@@ -58,7 +58,13 @@
         <span aria-hidden="true">{{ counter() }}</span
         ><span class="sr-only">{{ counterSpoken() }}</span>
       </p>
-      <button matIconButton type="button" aria-label="Next photo" [disabled]="atEnd()" (click)="step(1)">
+      <button
+        matIconButton
+        type="button"
+        aria-label="Next photo"
+        [disabled]="!scrollable()"
+        (click)="step(1)"
+      >
         <mat-icon name="arrow_forward" />
       </button>
     </div>
