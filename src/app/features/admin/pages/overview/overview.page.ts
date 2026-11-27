@@ -76,8 +76,8 @@ interface KpiTile {
 /**
  * Admin → Overview (ATS-340): how the store is doing for a chosen range of Cairo days, read from
  * the daily summaries (`storeStats`, and `storeStatsMoney` for admins and staff with Sales Money on), plus live boxes for
- * what needs attention and the catalogue. Dev only until the client agrees to it
- * (`environment.adminOverview`).
+ * what needs attention and the catalogue. On where `environment.adminOverview` is true (dev and
+ * live).
  */
 @Component({
   selector: 'app-overview-page',
