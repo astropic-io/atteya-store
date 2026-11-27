@@ -57,7 +57,7 @@
     </div>
   }
 
-  @if (long) {
+  @if (long || colours().length > 0 || brands().length > 0) {
     <div class="elements-between gap-3" aria-live="polite">
       <p class="font-body-sm text-on-surface-variant">
         {{ filtered().length }} {{ filtered().length === 1 ? 'choice' : 'choices' }}

@@ -150,11 +150,12 @@
       @apply h-dvh border-t-0;
     }
 
-    .choice-picker--wide {
+    /* Every offer's panel is 40rem wide with 3 cards a row on desktop (ATS-359; was 28rem / 2 a row under 9 choices). */
+    .choice-picker {
       @apply w-[40rem];
     }
 
-    .choice-picker--wide .choice-picker__grid {
+    .choice-picker .choice-picker__grid {
       @apply grid-cols-3;
     }
   }
