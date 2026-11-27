@@ -176,10 +176,11 @@
       <div class="surface-card w-full">
         <div class="customer-row__head" aria-hidden="true">
           <span>Customer</span>
+          <span>Type</span>
           <span>Phone</span>
           <span>City</span>
-          <span class="text-center">Orders</span>
-          <span class="text-center">Spent</span>
+          <span class="text-end">Orders</span>
+          <span class="text-end">Spent</span>
           <span>Last Order</span>
           <span></span>
         </div>
@@ -190,24 +191,27 @@
                 <span class="customer-row__avatar" aria-hidden="true">{{ row.initial }}</span>
 
                 <span class="customer-row__who">
-                  <span class="elements-start flex-wrap gap-2 min-w-0">
-                    <span class="font-title-sm font-bold! truncate" dir="auto">{{ row.name }}</span>
-                    <span
-                      class="customer-pill hidden @3xl:inline-flex"
-                      [class.customer-pill--account]="row.customer.hasAccount"
-                    >
-                      {{ row.customer.hasAccount ? 'Account' : 'Guest' }}
-                    </span>
-                  </span>
-                  <span class="customer-row__muted truncate hidden @3xl:block">{{ row.customer.email }}</span>
+                  <span class="font-title-sm font-bold! truncate max-w-full" dir="auto">{{ row.name }}</span>
+                  <span class="customer-row__muted truncate max-w-full hidden @3xl:block">{{
+                    row.customer.email
+                  }}</span>
                   <span class="customer-row__muted @3xl:hidden" dir="auto">{{ row.cardLine }}</span>
                 </span>
 
+                <span class="customer-row__type">
+                  <span class="customer-pill" [class.customer-pill--account]="row.customer.hasAccount">
+                    {{ row.customer.hasAccount ? 'Account' : 'Guest' }}
+                  </span>
+                </span>
                 <span class="customer-row__cell" dir="ltr">{{ row.customer.phone || '—' }}</span>
                 <span class="customer-row__cell" dir="auto">{{ row.customer.city || '—' }}</span>
-                <span class="customer-row__cell text-center">{{ row.customer.orderCount }}</span>
+                <span class="customer-row__cell customer-row__number">{{ row.customer.orderCount }}</span>
 
-                <span class="customer-row__spent">{{ row.customer.spentEgp | egpPrice }}</span>
+                <span
+                  class="customer-row__spent"
+                  [class.customer-row__spent--none]="row.customer.spentEgp === 0"
+                  >{{ row.customer.spentEgp | egpPrice }}</span
+                >
 
                 <span class="customer-row__last">
                   @if (row.lastOrder; as last) {
