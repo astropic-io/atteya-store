@@ -11,6 +11,7 @@ import {
   readClaimExtras,
   readClaimOwner,
   readRole,
+  readTeamMirrors,
   reconcileOneMirror,
   reconcileTeamMirrors,
   recordSessionRevocation,
@@ -96,6 +97,8 @@ export const setUserRole = onCall(adminCallableOptions(), async (request): Promi
     return { changed: false };
   }
 
+  // Mirrors first, then claims, so the repair below never writes older claims over a newer save (ATS-375).
+  const teamMirrors = await readTeamMirrors();
   const claimTeam = await listClaimTeam();
   const otherClaimAdmins = claimTeam.filter(
     (member) => member.role === 'admin' && member.uid !== user.uid,
@@ -104,7 +107,7 @@ export const setUserRole = onCall(adminCallableOptions(), async (request): Promi
     throw new HttpsError('failed-precondition', LAST_ADMIN_MESSAGE);
   }
 
-  await reconcileTeamMirrors(claimTeam);
+  await reconcileTeamMirrors(claimTeam, teamMirrors);
 
   const db = getFirestore();
   const auditRef = db.collection('auditLogs').doc();

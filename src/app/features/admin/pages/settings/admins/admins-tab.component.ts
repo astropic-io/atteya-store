@@ -74,25 +74,23 @@ export class AdminsTabComponent implements OnInit {
     { id: 'admin', label: 'Admin' },
   ];
 
-  /** What each role can do, shown under the form so the dropdown only needs the role names. */
+  /**
+   * What each role can do, shown under the form so the dropdown only needs the role names. Yes / No per role. "Can be given" is what an admin can switch on for one staff member under
+   * Extra Access; null when Staff already have it.
+   */
   readonly roleGuide: readonly {
     readonly task: string;
-    readonly staff: string;
-    readonly staffMuted: boolean;
-    readonly admin: string;
+    readonly staff: boolean;
+    readonly canGive: boolean | null;
+    readonly admin: boolean;
   }[] = [
-    { task: 'Manage orders, products, offers and customers', staff: 'Yes', staffMuted: false, admin: 'Yes' },
-    { task: 'Change store settings, Home Page and menus', staff: 'Yes', staffMuted: false, admin: 'Yes' },
-    {
-      task: 'Mark refunds as sent, and send back return fees',
-      staff: 'If switched on',
-      staffMuted: true,
-      admin: 'Yes',
-    },
-    { task: 'Delete orders', staff: 'If switched on', staffMuted: true, admin: 'Yes' },
-    { task: 'See money totals on Overview', staff: 'If switched on', staffMuted: true, admin: 'Yes' },
-    { task: 'Add, change or remove team members (this page)', staff: 'No', staffMuted: true, admin: 'Yes' },
-    { task: 'Change or remove a Super Admin', staff: 'No', staffMuted: true, admin: 'No' },
+    { task: 'Manage orders, products, offers and customers', staff: true, canGive: null, admin: true },
+    { task: 'Change store settings, Home Page and menus', staff: true, canGive: null, admin: true },
+    { task: 'Mark refunds as sent, and send back return fees', staff: false, canGive: true, admin: true },
+    { task: 'Delete orders', staff: false, canGive: true, admin: true },
+    { task: 'See money totals on Overview', staff: false, canGive: true, admin: true },
+    { task: 'Add, change or remove team members (this page)', staff: false, canGive: false, admin: true },
+    { task: 'Change or remove a Super Admin', staff: false, canGive: false, admin: false },
   ];
   readonly #showRoleGuide = signal(true);
   readonly showRoleGuide = this.#showRoleGuide.asReadonly();
