@@ -28,45 +28,49 @@
         class="scroll-row [--scroll-peek:2.5rem] md:[--scroll-cols:3] md:[--scroll-peek:3rem] xl:[--scroll-cols:5] xl:[--scroll-peek:2.5rem]"
         appHorizontalScroll
         appRowScrollLock
+        [rowLoopCount]="products().length"
         #lock="rowScrollLock"
         [enableWheel]="false"
         [snapToItems]="!lock.enabled()"
       >
-        @for (product of products(); track product.id) {
-          @let path = imagePath(product.images[0]?.path);
-          <a
-            class="scroll-row-item padel-tile"
-            [routerLink]="['/product', product.slug]"
-            [appPrefetchProduct]="product.slug"
-            [attr.aria-label]="product.name"
-          >
-            <div class="padel-tile__media">
-              @if (path) {
-                <img
-                  [ngSrc]="path"
-                  [appImageFallback]="path"
-                  [alt]="product.images[0]?.alt || product.name"
-                  fill
-                  sizes="(max-width: 767px) 70vw, (max-width: 1279px) 30vw, 18vw"
-                  class="padel-tile__photo"
-                />
-              }
-            </div>
-            <span class="padel-tile__label">
-              <span class="padel-tile__name">{{ product.name }}</span>
-              <span class="padel-tile__arrow" aria-hidden="true">
-                <mat-icon name="arrow_outward" size="lg" />
+        @for (copy of lock.loops() ? loopCopies : oneCopy; track copy) {
+          @for (product of products(); track product.id) {
+            @let path = imagePath(product.images[0]?.path);
+            <a
+              class="scroll-row-item padel-tile"
+              [attr.inert]="copy === 1 ? null : ''"
+              [routerLink]="['/product', product.slug]"
+              [appPrefetchProduct]="product.slug"
+              [attr.aria-label]="product.name"
+            >
+              <div class="padel-tile__media">
+                @if (path) {
+                  <img
+                    [ngSrc]="path"
+                    [appImageFallback]="path"
+                    [alt]="product.images[0]?.alt || product.name"
+                    fill
+                    sizes="(max-width: 767px) 70vw, (max-width: 1279px) 30vw, 18vw"
+                    class="padel-tile__photo"
+                  />
+                }
+              </div>
+              <span class="padel-tile__label">
+                <span class="padel-tile__name">{{ product.name }}</span>
+                <span class="padel-tile__arrow" aria-hidden="true">
+                  <mat-icon name="arrow_outward" size="lg" />
+                </span>
               </span>
-            </span>
-          </a>
+            </a>
+          }
         }
       </div>
 
       @if (isBrowser && (canPrev() || canNext())) {
         <app-row-scroll-nav
           [progress]="progress()"
-          [canPrev]="canPrev() || lock.loops()"
-          [canNext]="canNext() || lock.loops()"
+          [canPrev]="canPrev()"
+          [canNext]="canNext()"
           (prev)="lock.step(-1)"
           (next)="lock.step(1)"
         />
