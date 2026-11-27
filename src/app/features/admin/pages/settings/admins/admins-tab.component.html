@@ -2,8 +2,7 @@
   <section class="surface-card p-5 w-full" aria-label="Add someone to the team">
     <h2 class="font-title-lg font-bold!">Add someone to the team</h2>
     <p class="font-body-md pt-1 pb-4">
-      They need an account already. Ask them to sign in with Google once, or create their account first. Staff
-      can do everything an admin can, except delete orders and open this page.
+      They need an account already. Ask them to sign in with Google once, or create their account first.
     </p>
     <form class="elements-end flex-wrap gap-3" novalidate (submit)="onGrant($event)">
       <div class="w-full sm:max-w-md sm:flex-1">
@@ -39,6 +38,47 @@
         </button>
       </div>
     </form>
+
+    <div
+      class="elements-start-col gap-2 w-full mt-5 p-4 border border-outline-variant border-shape bg-surface-container-low"
+    >
+      <div class="elements-between w-full gap-3">
+        <h3 class="font-title-sm font-bold!">What can each role do?</h3>
+        <button
+          matButton="text"
+          type="button"
+          aria-controls="team-role-guide"
+          [attr.aria-expanded]="showRoleGuide()"
+          (click)="toggleRoleGuide()"
+        >
+          {{ showRoleGuide() ? 'Hide' : 'Show' }}
+        </button>
+      </div>
+      @if (showRoleGuide()) {
+        <table id="team-role-guide" class="w-full">
+          <thead>
+            <tr class="border-b border-outline-variant">
+              <th class="py-2 pr-3 text-left font-label-md text-on-surface-variant" scope="col">Can they…</th>
+              <th class="w-16 sm:w-40 py-2 pr-3 text-left font-label-md font-bold!" scope="col">Staff</th>
+              <th class="w-16 sm:w-40 py-2 text-left font-label-md font-bold!" scope="col">Admin</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of roleGuide; track row.task) {
+              <tr class="border-b border-outline-variant last:border-b-0">
+                <th class="py-2 pr-3 text-left font-body-md" scope="row">{{ row.task }}</th>
+                <td class="py-2 pr-3 font-body-md" [class.text-on-surface-variant]="!row.staff">
+                  {{ row.staff ? 'Yes' : 'No' }}
+                </td>
+                <td class="py-2 font-body-md" [class.text-on-surface-variant]="!row.admin">
+                  {{ row.admin ? 'Yes' : 'No' }}
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </div>
   </section>
 
   <section class="surface-card p-5 w-full" aria-label="Current team">
