@@ -54,6 +54,8 @@ export type OrderStatusKey = keyof DayCounts['byStatus'];
 /** One range added up. Money fields are null when the viewer can't read pounds (staff). */
 export interface RangeTotals {
   readonly orders: number;
+  /** Payment Failed orders (not in `orders`). */
+  readonly failedOrders: number;
   readonly soldOrders: number;
   readonly pieces: number;
   readonly delivered: number;
@@ -102,6 +104,7 @@ export function totalsFor(
   const products: Record<string, { name: string; pieces: number }> = {};
   const productEgp: Record<string, number> = {};
   let orders = 0;
+  let failedOrders = 0;
   let soldOrders = 0;
   let pieces = 0;
   let returns = 0;
@@ -114,6 +117,7 @@ export function totalsFor(
     const c = counts.get(day);
     if (c) {
       orders += c.orders;
+      failedOrders += c.failedOrders;
       soldOrders += c.soldOrders;
       pieces += c.pieces;
       returns += c.returns;
@@ -138,6 +142,7 @@ export function totalsFor(
   const hasMoney = money !== null;
   return {
     orders,
+    failedOrders,
     soldOrders,
     pieces,
     delivered: byStatus.delivered,
@@ -170,6 +175,81 @@ export function dayPoints(
   }));
 }
 
+/** Orders lost: Cancelled plus Payment Failed. */
+export function lostOrders(totals: Pick<RangeTotals, 'cancelled' | 'failedOrders'>): number {
+  return totals.cancelled + totals.failedOrders;
+}
+
+/**
+ * Lost orders as a percent of every order placed (Payment Failed included), to one decimal.
+ * Null when nothing was placed.
+ */
+export function lostRate(totals: Pick<RangeTotals, 'orders' | 'cancelled' | 'failedOrders'>): number | null {
+  const placed = totals.orders + totals.failedOrders;
+  return placed > 0 ? Math.round((lostOrders(totals) / placed) * 1000) / 10 : null;
+}
+
+/** Key number tiles that have a trend line. */
+export type TrendTileId =
+  | 'received'
+  | 'orders'
+  | 'average'
+  | 'pieces'
+  | 'new'
+  | 'delivered'
+  | 'returns'
+  | 'refunds'
+  | 'cancelled'
+  | 'failed'
+  | 'lost'
+  | 'lostRate';
+
+/**
+ * One value per day of `range` for a tile's trend line. Null for a pounds tile when the viewer
+ * can't see money. A day with no doc is zero; a rate with nothing placed that day is zero.
+ */
+export function daySeries(
+  id: TrendTileId,
+  range: DayRange,
+  counts: ReadonlyMap<string, DayCounts>,
+  money: ReadonlyMap<string, DayMoney> | null,
+): number[] | null {
+  const needsMoney = id === 'received' || id === 'average' || id === 'refunds';
+  if (needsMoney && !money) return null;
+  return daysOf(range).map((day) => {
+    const c = counts.get(day);
+    const m = money?.get(day);
+    const cancelled = c?.byStatus.cancelled ?? 0;
+    const failed = c?.failedOrders ?? 0;
+    switch (id) {
+      case 'received':
+        return (m?.receivedEgp ?? 0) - (m?.refundsEgp ?? 0);
+      case 'orders':
+        return c?.orders ?? 0;
+      case 'average':
+        return c && c.soldOrders > 0 ? Math.round((m?.receivedEgp ?? 0) / c.soldOrders) : 0;
+      case 'pieces':
+        return c?.pieces ?? 0;
+      case 'new':
+        return c?.byStatus.pending ?? 0;
+      case 'delivered':
+        return c?.byStatus.delivered ?? 0;
+      case 'returns':
+        return c?.returns ?? 0;
+      case 'refunds':
+        return m?.refundsEgp ?? 0;
+      case 'cancelled':
+        return cancelled;
+      case 'failed':
+        return failed;
+      case 'lost':
+        return cancelled + failed;
+      case 'lostRate':
+        return lostRate({ orders: c?.orders ?? 0, cancelled, failedOrders: failed }) ?? 0;
+    }
+  });
+}
+
 export type DeltaTone = 'good' | 'bad' | 'flat';
 
 export interface Delta {
@@ -195,6 +275,25 @@ export function deltaOf(now: number | null, before: number | null, lowerIsBetter
     label: `${up ? '▲' : '▼'} ${percent}%`,
     tone: up !== lowerIsBetter ? 'good' : 'bad',
     description: `${up ? 'Up' : 'Down'} ${percent}% from the period before`,
+  };
+}
+
+/** Change of a rate (a percent) from the period before, in percentage points. */
+export function pointsDeltaOf(
+  now: number | null,
+  before: number | null,
+  lowerIsBetter = false,
+): Delta | null {
+  if (now === null || before === null) return null;
+  const change = Math.round((now - before) * 10) / 10;
+  if (Math.abs(change) < 0.1)
+    return { label: 'Same', tone: 'flat', description: 'Same as the period before' };
+  const up = change > 0;
+  const points = Math.abs(change);
+  return {
+    label: `${up ? '▲' : '▼'} ${points} pts`,
+    tone: up !== lowerIsBetter ? 'good' : 'bad',
+    description: `${up ? 'Up' : 'Down'} ${points} percentage points from the period before`,
   };
 }
 
@@ -255,6 +354,8 @@ export function shareRows(
 
 export interface BestSeller {
   readonly id: string;
+  /** Share of all pieces sold in the range, whole percent. */
+  readonly percent: number;
   readonly name: string;
   readonly pieces: number;
   readonly egp: number | null;
@@ -267,6 +368,7 @@ export function bestSellers(totals: RangeTotals, keep = 5): BestSeller[] {
     .slice(0, keep)
     .map(([id, product]) => ({
       id,
+      percent: percentOf(product.pieces, totals.pieces),
       name: product.name || 'Product',
       pieces: product.pieces,
       egp: totals.productEgp ? (totals.productEgp[id] ?? 0) : null,

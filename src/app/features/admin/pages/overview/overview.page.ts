@@ -1,4 +1,4 @@
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgOptimizedImage } from '@angular/common';
 import {
   Component,
   computed,
@@ -12,6 +12,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { AppImageFallbackDirective } from '@shared/directives/image-fallback';
 import { AuthService } from '@core/services/auth/auth.service';
 import { SeoService } from '@core/services/seo';
 import { EgpPricePipe } from '@shared/pipes/egp-price.pipe';
@@ -20,6 +21,7 @@ import {
   OverviewAdminService,
   type OverviewDays,
   type OverviewLive,
+  type OverviewProduct,
 } from './services/overview-admin.service';
 import {
   cairoToday,
@@ -34,25 +36,41 @@ import {
 import {
   bestSellers,
   dayPoints,
+  daySeries,
   deltaOf,
+  lostOrders,
+  lostRate,
   PAYMENT_LABELS,
   percentOf,
+  pointsDeltaOf,
   shareRows,
   STATUS_ROWS,
   totalsFor,
   type Delta,
   type RangeTotals,
+  type TrendTileId,
 } from './utils/overview-stats.utils';
-import { trendChart, type TrendChart } from './utils/overview-chart.utils';
+import {
+  RING_RADIUS,
+  ringSlices,
+  SPARK_HEIGHT,
+  SPARK_WIDTH,
+  sparkline,
+  trendChart,
+  type Sparkline,
+  type TrendChart,
+} from './utils/overview-chart.utils';
 
 /** One key number box. `money` boxes show "Only admins see pounds" to staff. */
 interface KpiTile {
-  readonly id: string;
+  readonly id: TrendTileId;
   readonly label: string;
   readonly value: string;
   readonly note: string;
   readonly delta: Delta | null;
   readonly money: boolean;
+  /** Trend line across the range's days; null for a single day or pounds staff can't see. */
+  readonly spark: Sparkline | null;
 }
 
 /**
@@ -64,7 +82,7 @@ interface KpiTile {
 @Component({
   selector: 'app-overview-page',
   host: { class: 'block w-full @container' },
-  imports: [RouterLink, EgpPricePipe, SkeletonComponent],
+  imports: [RouterLink, NgOptimizedImage, AppImageFallbackDirective, EgpPricePipe, SkeletonComponent],
   templateUrl: './overview.page.html',
 })
 export class OverviewPageComponent implements OnInit {
@@ -76,6 +94,8 @@ export class OverviewPageComponent implements OnInit {
 
   readonly ranges = OVERVIEW_RANGES;
   readonly statusRows = STATUS_ROWS;
+  readonly sparkBox = `0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`;
+  readonly ringRadius = RING_RADIUS;
 
   readonly today = signal(cairoToday(new Date()));
   readonly rangeId = signal<OverviewRangeId>('d14');
@@ -143,78 +163,115 @@ export class OverviewPageComponent implements OnInit {
   readonly tiles = computed<readonly KpiTile[]>(() => {
     const now = this.current();
     const before = this.previous();
-    if (!now || !before) return [];
+    const days = this.#days();
+    if (!now || !before || !days) return [];
+    const range = this.period().current;
+    const spark = (id: TrendTileId) => sparkline(daySeries(id, range, days.counts, days.money));
     const egp = (value: number | null) => (value === null ? '' : this.#egp.transform(value));
     const whole = (value: number) => value.toLocaleString('en-US');
     const share = (part: number) => `${percentOf(part, now.orders)}% of orders`;
+    const placed = now.orders + now.failedOrders;
+    const lost = lostOrders(now);
+    const rate = lostRate(now);
+    const rateBefore = lostRate(before);
+    const tile = (
+      id: TrendTileId,
+      label: string,
+      value: string,
+      note: string,
+      delta: Delta | null,
+      money = false,
+    ): KpiTile => ({ id, label, value, note, delta, money, spark: spark(id) });
     return [
-      {
-        id: 'received',
-        label: 'Pounds received',
-        value: egp(now.netEgp),
-        note: 'After refunds sent',
-        delta: deltaOf(now.netEgp, before.netEgp),
-        money: true,
-      },
-      {
-        id: 'orders',
-        label: 'Orders',
-        value: whole(now.orders),
-        note: 'Not counting Payment Failed',
-        delta: deltaOf(now.orders, before.orders),
-        money: false,
-      },
-      {
-        id: 'average',
-        label: 'Average order',
-        value: now.averageOrderEgp === null ? '—' : egp(now.averageOrderEgp),
-        note: 'Confirmed orders and up',
-        delta: deltaOf(now.averageOrderEgp, before.averageOrderEgp),
-        money: true,
-      },
-      {
-        id: 'pieces',
-        label: 'Pieces sold',
-        value: whole(now.pieces),
-        note:
-          now.soldOrders > 0
-            ? `${(now.pieces / now.soldOrders).toFixed(1)} per order`
-            : 'Confirmed orders and up',
-        delta: deltaOf(now.pieces, before.pieces),
-        money: false,
-      },
-      {
-        id: 'delivered',
-        label: 'Delivered',
-        value: whole(now.delivered),
-        note: share(now.delivered),
-        delta: deltaOf(now.delivered, before.delivered),
-        money: false,
-      },
-      {
-        id: 'cancelled',
-        label: 'Cancelled',
-        value: whole(now.cancelled),
-        note: share(now.cancelled),
-        delta: deltaOf(now.cancelled, before.cancelled, true),
-        money: false,
-      },
-      {
-        id: 'returns',
-        label: 'Return requests',
-        value: whole(now.returns),
-        note: `${now.returns - now.refundRequests} exchanges, ${now.refundRequests} with a refund`,
-        delta: deltaOf(now.returns, before.returns, true),
-        money: false,
-      },
-      {
-        id: 'refunds',
-        label: 'Refunds sent',
-        value: egp(now.refundsEgp),
-        note: `${now.refundsSent} sent in this range`,
-        delta: deltaOf(now.refundsEgp, before.refundsEgp, true),
-        money: true,
-      },
+      tile(
+        'received',
+        'Pounds received',
+        egp(now.netEgp),
+        'After refunds sent',
+        deltaOf(now.netEgp, before.netEgp),
+        true,
+      ),
+      tile(
+        'orders',
+        'Orders',
+        whole(now.orders),
+        'Not counting Payment Failed',
+        deltaOf(now.orders, before.orders),
+      ),
+      tile(
+        'average',
+        'Average order',
+        now.averageOrderEgp === null ? '—' : egp(now.averageOrderEgp),
+        'Confirmed orders and up',
+        deltaOf(now.averageOrderEgp, before.averageOrderEgp),
+        true,
+      ),
+      tile(
+        'pieces',
+        'Pieces sold',
+        whole(now.pieces),
+        now.soldOrders > 0
+          ? `${(now.pieces / now.soldOrders).toFixed(1)} per order`
+          : 'Confirmed orders and up',
+        deltaOf(now.pieces, before.pieces),
+      ),
+      tile(
+        'new',
+        'Waiting for Payment',
+        whole(now.byStatus.pending),
+        'Placed in this range, not paid or confirmed yet',
+        deltaOf(now.byStatus.pending, before.byStatus.pending),
+      ),
+      tile(
+        'delivered',
+        'Delivered',
+        whole(now.delivered),
+        share(now.delivered),
+        deltaOf(now.delivered, before.delivered),
+      ),
+      tile(
+        'returns',
+        'Return requests',
+        whole(now.returns),
+        `${now.returns - now.refundRequests} exchanges, ${now.refundRequests} with a refund`,
+        deltaOf(now.returns, before.returns, true),
+      ),
+      tile(
+        'refunds',
+        'Refunds sent',
+        egp(now.refundsEgp),
+        `${now.refundsSent} sent in this range`,
+        deltaOf(now.refundsEgp, before.refundsEgp, true),
+        true,
+      ),
+      tile(
+        'cancelled',
+        'Cancelled',
+        whole(now.cancelled),
+        share(now.cancelled),
+        deltaOf(now.cancelled, before.cancelled, true),
+      ),
+      tile(
+        'failed',
+        'Payment Failed',
+        whole(now.failedOrders),
+        "Card payments that didn't go through",
+        deltaOf(now.failedOrders, before.failedOrders, true),
+      ),
+      tile(
+        'lost',
+        'Lost orders',
+        whole(lost),
+        'Cancelled and Payment Failed',
+        deltaOf(lost, lostOrders(before), true),
+      ),
+      tile(
+        'lostRate',
+        'Lost rate',
+        rate === null ? '—' : `${rate}%`,
+        `Of ${whole(placed)} ${placed === 1 ? 'order' : 'orders'} placed`,
+        pointsDeltaOf(rate, rateBefore, true),
+      ),
     ];
   });
 
@@ -248,6 +305,32 @@ export class OverviewPageComponent implements OnInit {
   readonly sellers = computed(() => {
     const now = this.current();
     return now ? bestSellers(now) : [];
+  });
+
+  /** Ring of each best seller's share of the pieces sold, plus everything else. */
+  readonly ring = computed(() => {
+    const now = this.current();
+    return now ? ringSlices(this.sellers(), now.pieces) : [];
+  });
+
+  /** Photos for the best sellers, read when the list changes. */
+  readonly photosResource = resource({
+    // A joined key, so the same five products aren't read again when the range changes.
+    params: () =>
+      this.sellers()
+        .map((seller) => seller.id)
+        .join('\n'),
+    loader: async ({ params }): Promise<ReadonlyMap<string, OverviewProduct>> =>
+      this.#browser && params ? this.#overview.products(params.split('\n')) : new Map(),
+  });
+
+  readonly photos = computed<ReadonlyMap<string, OverviewProduct>>(() =>
+    this.photosResource.hasValue() ? this.photosResource.value() : new Map(),
+  );
+
+  /** Live products running low, fewest pieces first (not affected by the date range). */
+  readonly lowStockResource = resource({
+    loader: async (): Promise<readonly OverviewProduct[]> => (this.#browser ? this.#overview.lowStock() : []),
   });
 
   /** Chart width in px, measured from its box so labels keep their size on a phone. */
@@ -304,5 +387,6 @@ export class OverviewPageComponent implements OnInit {
     this.today.set(cairoToday(new Date()));
     this.daysResource.reload();
     this.liveResource.reload();
+    this.lowStockResource.reload();
   }
 }

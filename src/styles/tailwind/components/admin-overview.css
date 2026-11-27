@@ -52,7 +52,7 @@
     grid-template-areas: 'label value' 'note delta';
 
     @container (min-width: 36rem) {
-      grid-template-areas: 'label delta' 'value value' 'note note';
+      grid-template-areas: 'label delta' 'value value' 'note note' 'spark spark';
     }
   }
 
@@ -80,6 +80,24 @@
   .overview-tile__delta {
     @apply justify-self-end self-start;
     grid-area: delta;
+  }
+
+  /* Trend line under a key number (desktop and tablet; a phone shows rows without it). */
+  .overview-spark {
+    @apply hidden @xl:block w-full h-8 mt-1;
+    grid-area: spark;
+  }
+
+  .overview-spark__line {
+    fill: none;
+    stroke: var(--mat-sys-primary);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+  }
+
+  .overview-spark__area {
+    fill: var(--mat-sys-primary);
+    opacity: 0.06;
   }
 
   /* Needs attention: a coloured edge says how urgent it is. */
@@ -112,12 +130,94 @@
     @apply grid grid-cols-1 @5xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-2.5;
   }
 
-  .overview-trio {
-    @apply grid grid-cols-1 @3xl:grid-cols-2 @5xl:grid-cols-3 gap-2.5;
+  .overview-duo {
+    @apply grid grid-cols-1 @3xl:grid-cols-2 gap-2.5;
   }
 
-  .overview-trio > :first-child {
-    @apply @3xl:@max-5xl:col-span-2;
+  /* Best sellers: the share ring beside the table (above it on a phone). */
+  .overview-sellers {
+    @apply grid grid-cols-1 @3xl:grid-cols-[9rem_minmax(0,1fr)] gap-4 items-center;
+  }
+
+  /* The product column takes the spare width, so long names shorten with "…". */
+  .overview-sellers td:first-child {
+    @apply w-full max-w-0;
+  }
+
+  .overview-ring {
+    @apply relative size-36 mx-auto;
+
+    svg {
+      @apply size-full -rotate-90;
+    }
+  }
+
+  .overview-ring__track,
+  .overview-ring__slice {
+    fill: none;
+    stroke-width: 14;
+  }
+
+  .overview-ring__track {
+    stroke: var(--mat-sys-surface-container);
+  }
+
+  .overview-ring__center {
+    @apply absolute inset-0 elements-center-col text-center;
+  }
+
+  /* Monochrome shades for the ring slices and their swatches (darkest is the top seller). */
+  .overview-tone-0 {
+    --overview-tone: var(--mat-sys-primary);
+  }
+
+  .overview-tone-1 {
+    --overview-tone: color-mix(in srgb, var(--mat-sys-primary) 75%, transparent);
+  }
+
+  .overview-tone-2 {
+    --overview-tone: color-mix(in srgb, var(--mat-sys-primary) 55%, transparent);
+  }
+
+  .overview-tone-3 {
+    --overview-tone: color-mix(in srgb, var(--mat-sys-primary) 38%, transparent);
+  }
+
+  .overview-tone-4 {
+    --overview-tone: color-mix(in srgb, var(--mat-sys-primary) 22%, transparent);
+  }
+
+  .overview-tone-rest {
+    --overview-tone: var(--mat-sys-outline-variant);
+  }
+
+  .overview-ring__slice {
+    stroke: var(--overview-tone);
+  }
+
+  .overview-swatch[class*='overview-tone-'] {
+    background: var(--overview-tone);
+  }
+
+  /* A product photo and name, linking to the product. */
+  .overview-product {
+    @apply elements-start gap-2 min-w-0 hover:underline;
+  }
+
+  .overview-product__name {
+    @apply truncate;
+  }
+
+  .overview-thumb {
+    @apply relative size-9 shrink-0 overflow-hidden border-shape bg-surface-container;
+  }
+
+  .overview-stock-row {
+    @apply elements-between gap-3 py-2 border-b border-outline-variant last:border-b-0;
+  }
+
+  .overview-link {
+    @apply font-label-lg underline underline-offset-4 hover:no-underline;
   }
 
   .overview-chart text {

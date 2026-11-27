@@ -132,7 +132,7 @@
   <section aria-label="Key numbers">
     @if (loadingDays) {
       <div class="overview-grid">
-        @for (n of [1, 2, 3, 4, 5, 6, 7, 8]; track n) {
+        @for (n of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]; track n) {
           <div class="overview-tile">
             <app-skeleton class="h-4 w-24" />
             <app-skeleton class="h-7 w-20 ml-auto @xl:ml-0" />
@@ -159,6 +159,22 @@
               }
             }
             <span class="overview-tile__note">{{ tile.note }}</span>
+            @if (tile.spark && (!tile.money || money)) {
+              <svg
+                class="overview-spark"
+                [attr.viewBox]="sparkBox"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path class="overview-spark__area" [attr.d]="tile.spark.area" />
+                <polyline
+                  class="overview-spark__line"
+                  [attr.points]="tile.spark.line"
+                  vector-effect="non-scaling-stroke"
+                />
+              </svg>
+            }
           </div>
         }
       </div>
@@ -263,41 +279,87 @@
     </div>
   </section>
 
-  <!-- Best sellers, payments, places -->
-  <section class="overview-trio">
+  <!-- Best sellers and running low -->
+  <section class="overview-split">
     <div class="overview-card">
       <div class="overview-card__head">
         <h2 class="font-title-md font-bold!">Best sellers</h2>
-        <span class="overview-hint">By pieces</span>
+        <span class="overview-hint">By pieces, share of all pieces sold</span>
       </div>
-      @if (current()) {
+      @if (current(); as now) {
         @if (sellers().length) {
-          <table class="overview-table">
-            <thead>
-              <tr>
-                <th scope="col">Product</th>
-                <th scope="col">Pieces</th>
-                @if (money) {
-                  <th scope="col">Pounds</th>
+          <div class="overview-sellers">
+            <figure class="overview-ring">
+              <svg
+                viewBox="0 0 100 100"
+                role="img"
+                [attr.aria-label]="sellers()[0].name + ' is ' + sellers()[0].percent + '% of pieces sold'"
+              >
+                <circle class="overview-ring__track" cx="50" cy="50" [attr.r]="ringRadius" />
+                @for (slice of ring(); track slice.key) {
+                  <circle
+                    [class]="'overview-ring__slice overview-tone-' + slice.tone"
+                    cx="50"
+                    cy="50"
+                    [attr.r]="ringRadius"
+                    [attr.stroke-dasharray]="slice.dash"
+                    [attr.stroke-dashoffset]="slice.offset"
+                  >
+                    <title>{{ slice.label }}: {{ slice.percent }}%</title>
+                  </circle>
                 }
-              </tr>
-            </thead>
-            <tbody>
-              @for (seller of sellers(); track seller.id) {
+              </svg>
+              <figcaption class="overview-ring__center">
+                <span class="font-headline-sm font-bold! tabular-nums">{{ sellers()[0].percent }}%</span>
+                <span class="overview-hint">Top seller</span>
+              </figcaption>
+            </figure>
+            <table class="overview-table">
+              <thead>
                 <tr>
-                  <td>
-                    <a [routerLink]="['/admin/products', seller.id]" class="hover:underline">{{
-                      seller.name
-                    }}</a>
-                  </td>
-                  <td>{{ seller.pieces }}</td>
+                  <th scope="col">Product</th>
+                  <th scope="col">Pieces</th>
                   @if (money) {
-                    <td>{{ seller.egp | egpPrice }}</td>
+                    <th scope="col">Pounds</th>
                   }
+                  <th scope="col">Share</th>
                 </tr>
-              }
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                @for (seller of sellers(); track seller.id; let i = $index) {
+                  @let photo = photos().get(seller.id)?.imagePath;
+                  <tr>
+                    <td>
+                      <a [routerLink]="['/admin/products', seller.id]" class="overview-product">
+                        <span [class]="'overview-swatch overview-tone-' + i"></span>
+                        <span class="overview-thumb">
+                          @if (photo) {
+                            <img
+                              [ngSrc]="photo"
+                              [appImageFallback]="photo"
+                              alt=""
+                              width="36"
+                              height="36"
+                              class="size-full object-cover"
+                            />
+                          }
+                        </span>
+                        <span class="overview-product__name">{{ seller.name }}</span>
+                      </a>
+                    </td>
+                    <td>{{ seller.pieces }}</td>
+                    @if (money) {
+                      <td>{{ seller.egp | egpPrice }}</td>
+                    }
+                    <td>{{ seller.percent }}%</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="overview-hint mt-2">
+            {{ now.pieces.toLocaleString('en-US') }} pieces sold in this range.
+          </p>
         } @else {
           <p class="overview-hint">Nothing sold in this range yet.</p>
         }
@@ -306,6 +368,49 @@
       }
     </div>
 
+    <div class="overview-card">
+      <div class="overview-card__head">
+        <h2 class="font-title-md font-bold!">Running low</h2>
+        <a routerLink="/admin/products" [queryParams]="{ tab: 'low' }" class="overview-link">View All</a>
+      </div>
+      <p class="overview-hint mb-2">
+        Live products with 5 or fewer pieces left. Not affected by the date range
+      </p>
+      @if (lowStockResource.isLoading()) {
+        <app-skeleton class="h-40 w-full" />
+      } @else if (lowStockResource.error()) {
+        <p class="overview-hint">The list didn't load. Try again in a moment.</p>
+      } @else {
+        <ul class="grid">
+          @for (product of lowStockResource.value() ?? []; track product.id) {
+            <li class="overview-stock-row">
+              <a [routerLink]="['/admin/products', product.id]" class="overview-product">
+                <span class="overview-thumb">
+                  @if (product.imagePath) {
+                    <img
+                      [ngSrc]="product.imagePath"
+                      [appImageFallback]="product.imagePath"
+                      alt=""
+                      width="36"
+                      height="36"
+                      class="size-full object-cover"
+                    />
+                  }
+                </span>
+                <span class="overview-product__name">{{ product.name || 'Product' }}</span>
+              </a>
+              <span class="overview-delta overview-delta--bad tabular-nums">{{ product.stock }} left</span>
+            </li>
+          } @empty {
+            <li class="overview-hint">Nothing is running low.</li>
+          }
+        </ul>
+      }
+    </div>
+  </section>
+
+  <!-- Payments and places -->
+  <section class="overview-duo">
     <div class="overview-card">
       <div class="overview-card__head"><h2 class="font-title-md font-bold!">How people pay</h2></div>
       @if (current()) {

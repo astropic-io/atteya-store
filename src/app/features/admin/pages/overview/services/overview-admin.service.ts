@@ -6,6 +6,7 @@ import {
   getCountFromServer,
   getDocs,
   limit,
+  orderBy,
   query,
   sum,
   Timestamp,
@@ -16,6 +17,7 @@ import * as v from 'valibot';
 import { injectFirestore } from '@core/firebase';
 import { OFFERS_COLLECTION } from '@core/services/offers/offer.model';
 import { ORDERS_COLLECTION } from '@core/services/orders/order.schema';
+import { normalizeImageKitPath } from '@shared/utils/image';
 import { MAX_RANGE_DAYS, type DayRange } from '../utils/overview-range.utils';
 import {
   DayCountsSchema,
@@ -54,6 +56,37 @@ export interface OverviewLive {
   readonly offersRunning: number | null;
   /** Days until the soonest running offer ends; null when none has an end date. */
   readonly offerEndsInDays: number | null;
+}
+
+/** Most products shown in the low stock list (View All opens the full list). */
+export const LOW_STOCK_LIST_MAX = 5;
+
+/** A product for the low stock list or a best seller photo. */
+export interface OverviewProduct {
+  readonly id: string;
+  readonly name: string;
+  readonly stock: number | null;
+  /** First gallery photo, ready for `[ngSrc]`; null when the product has none. */
+  readonly imagePath: string | null;
+}
+
+/** The few product fields the Overview reads (the full product schema isn't needed here). */
+const OverviewProductSchema = v.object({
+  name: v.fallback(v.string(), ''),
+  stock: v.fallback(v.nullable(v.pipe(v.number(), v.finite())), null),
+  images: v.fallback(v.array(v.object({ path: v.fallback(v.string(), '') })), []),
+});
+
+function toOverviewProduct(id: string, data: unknown): OverviewProduct | null {
+  const parsed = v.safeParse(OverviewProductSchema, data);
+  if (!parsed.success) return null;
+  const path = parsed.output.images.find((image) => image.path)?.path;
+  return {
+    id,
+    name: parsed.output.name,
+    stock: parsed.output.stock,
+    imagePath: path ? normalizeImageKitPath(path) : null,
+  };
 }
 
 const settled = <T>(promise: Promise<T>): Promise<T | null> => promise.catch(() => null);
@@ -180,5 +213,35 @@ export class OverviewAdminService {
     const endsInDays =
       soonestEnd === null ? null : Math.max(0, Math.ceil((soonestEnd - nowMs) / (24 * 60 * 60 * 1000)));
     return { running, endsInDays };
+  }
+
+  /** Live products with 1 to 5 pieces left, fewest first (same index as the Running low count). */
+  async lowStock(): Promise<OverviewProduct[]> {
+    const snap = await getDocs(
+      query(
+        collection(this.#firestore, 'products'),
+        where('published', '==', true),
+        where('stock', '>', 0),
+        where('stock', '<=', OVERVIEW_LOW_STOCK),
+        orderBy('stock', 'asc'),
+        limit(LOW_STOCK_LIST_MAX),
+      ),
+    );
+    return snap.docs.flatMap((item) => toOverviewProduct(item.id, item.data()) ?? []);
+  }
+
+  /** Photos for the best sellers (at most 10 ids: one `in` query). Missing products are left out. */
+  async products(ids: readonly string[]): Promise<ReadonlyMap<string, OverviewProduct>> {
+    const wanted = [...new Set(ids)].filter(Boolean).slice(0, 10);
+    if (!wanted.length) return new Map();
+    const snap = await getDocs(
+      query(collection(this.#firestore, 'products'), where(documentId(), 'in', wanted), limit(wanted.length)),
+    );
+    const out = new Map<string, OverviewProduct>();
+    for (const item of snap.docs) {
+      const product = toOverviewProduct(item.id, item.data());
+      if (product) out.set(item.id, product);
+    }
+    return out;
   }
 }

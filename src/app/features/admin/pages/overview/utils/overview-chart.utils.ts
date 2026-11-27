@@ -141,3 +141,87 @@ export function trendChart(
     empty: points.every((point) => point.orders === 0 && (point.receivedEgp ?? 0) === 0),
   };
 }
+
+// ── Tile trend lines ────────────────────────────────────────────────────────
+
+/** A small trend line drawn in a 100 × 32 box (the SVG stretches it to the tile's width). */
+export interface Sparkline {
+  /** `x,y x,y …` for the line. */
+  readonly line: string;
+  /** Closed path for the soft fill under the line. */
+  readonly area: string;
+}
+
+export const SPARK_WIDTH = 100;
+export const SPARK_HEIGHT = 32;
+
+/** Null when there are fewer than two days to draw (Today), so the tile shows no line. */
+export function sparkline(values: readonly number[] | null): Sparkline | null {
+  if (!values || values.length < 2) return null;
+  const max = Math.max(...values);
+  const min = Math.min(0, ...values);
+  const span = max - min || 1;
+  const step = SPARK_WIDTH / (values.length - 1);
+  // 2 units of room top and bottom so the stroke isn't cut off.
+  const y = (value: number) => +(SPARK_HEIGHT - 2 - ((value - min) / span) * (SPARK_HEIGHT - 4)).toFixed(2);
+  const points = values.map((value, index) => `${+(index * step).toFixed(2)},${y(value)}`);
+  return {
+    line: points.join(' '),
+    // Filled down to the zero line, so a day below zero (refunds over sales) reads as a dip.
+    area: `M0,${y(0)} L${points.join(' L')} L${SPARK_WIDTH},${y(0)} Z`,
+  };
+}
+
+// ── Best sellers ring ───────────────────────────────────────────────────────
+
+/** One slice of the best sellers ring: a stroked circle with a dash for its share. */
+export interface RingSlice {
+  readonly key: string;
+  readonly label: string;
+  readonly percent: number;
+  /** Shade class suffix, matching the product's swatch in the table (`rest` for everything else). */
+  readonly tone: string;
+  /** `stroke-dasharray` value. */
+  readonly dash: string;
+  /** `stroke-dashoffset` value (slices follow each other clockwise from the top). */
+  readonly offset: number;
+}
+
+/** Radius of the ring circle; its length is 2πr. */
+export const RING_RADIUS = 40;
+const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
+
+/**
+ * Slices for the products' shares of the pieces sold, plus "Everything else" for the rest.
+ * Shares are exact fractions so the slices close the ring; labels use whole percents.
+ */
+export function ringSlices(
+  products: readonly { readonly id: string; readonly name: string; readonly pieces: number }[],
+  totalPieces: number,
+): RingSlice[] {
+  if (totalPieces <= 0) return [];
+  const rows = products.map((product, index) => ({
+    key: product.id,
+    label: product.name,
+    pieces: product.pieces,
+    tone: String(index),
+  }));
+  const rest = totalPieces - rows.reduce((sum, row) => sum + row.pieces, 0);
+  if (rest > 0) rows.push({ key: '__rest', label: 'Everything else', pieces: rest, tone: 'rest' });
+  let start = 0;
+  return rows
+    .filter((row) => row.pieces > 0)
+    .map((row) => {
+      const length = (row.pieces / totalPieces) * RING_LENGTH;
+      const slice: RingSlice = {
+        key: row.key,
+        label: row.label,
+        percent: Math.round((row.pieces / totalPieces) * 100),
+        tone: row.tone,
+        dash: `${+length.toFixed(3)} ${+(RING_LENGTH - length).toFixed(3)}`,
+        offset: +(-start).toFixed(3),
+      };
+      start += length;
+      return slice;
+    });
+}
