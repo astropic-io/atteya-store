@@ -86,7 +86,8 @@ export class AdminNavService {
   readonly currentUrl = signal<string>(this.#router.url);
 
   readonly currentPageTitle = computed<string>(() => {
-    const url = this.currentUrl();
+    // The path alone: "/admin/products?tab=low" (Overview's View All) is still Products.
+    const url = this.currentUrl().split(/[?#]/)[0]!;
     for (const cat of this.categories()) {
       const match = cat.subItems?.find(
         (item) => item.path && (url === item.path || url.startsWith(`${item.path}/`)),
