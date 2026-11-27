@@ -20,63 +20,14 @@
     <div class="pdp-gift-line" [class.pdp-gift-line--prompt]="!!message" [attr.data-gift]="row.gift.id">
       @switch (row.kind) {
         @case ('pick') {
-          <button
-            type="button"
-            data-choice
-            class="pdp-gift-item"
+          <app-choice-row
             [attr.data-gift-row]="row.gift.id"
+            [title]="row.title"
+            [view]="row"
             [disabled]="disabled()"
-            [attr.aria-describedby]="message ? messageId : null"
-            aria-haspopup="dialog"
-            (click)="open(row.gift.id, $event.currentTarget)"
-          >
-            @if (row.choice; as choice) {
-              <span class="pdp-gift-thumb">
-                @if (choice.imagePath) {
-                  <img
-                    [ngSrc]="path(choice.imagePath)"
-                    [appImageFallback]="choice.imagePath"
-                    alt=""
-                    width="56"
-                    height="56"
-                    class="size-full object-cover"
-                  />
-                }
-              </span>
-            } @else if (row.peek.length > 0) {
-              <span class="pdp-gift-peek" aria-hidden="true">
-                @for (choice of row.peek; track choice.productId) {
-                  <span class="pdp-gift-thumb pdp-gift-thumb--peek">
-                    @if (choice.imagePath) {
-                      <img
-                        [ngSrc]="path(choice.imagePath)"
-                        [appImageFallback]="choice.imagePath"
-                        alt=""
-                        width="44"
-                        height="44"
-                        class="size-full object-cover"
-                      />
-                    }
-                  </span>
-                }
-                <span class="pdp-gift-thumb pdp-gift-thumb--peek pdp-gift-thumb--more">+{{ row.more }}</span>
-              </span>
-            } @else {
-              <span class="pdp-gift-thumb pdp-gift-thumb--empty" aria-hidden="true">
-                <mat-icon name="add" />
-              </span>
-            }
-            <span class="pdp-gift-item__text">
-              <span class="font-label-lg font-bold!">{{ row.title }}</span>
-              <span class="pdp-gift-item__detail" [class.text-on-surface-variant]="!row.done">{{
-                row.detail
-              }}</span>
-            </span>
-            <span class="pdp-gift-item__action">
-              {{ row.choice ? 'Change' : 'Choose' }}
-              <mat-icon name="chevron_right" aria-hidden="true" />
-            </span>
-          </button>
+            [describedBy]="message ? messageId : null"
+            (opened)="open(row.gift.id, $event)"
+          />
         }
         @case ('sizes') {
           <div class="pdp-gift-item pdp-gift-item--static">

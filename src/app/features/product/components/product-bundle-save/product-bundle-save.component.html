@@ -1,61 +1,45 @@
 <section class="pdp-gift-box" [attr.aria-labelledby]="headingId()">
-  <header class="pdp-gift-box__header elements-between gap-3">
-    <div class="elements-start-col min-w-0 gap-0.5">
-      <p class="font-label-sm uppercase tracking-wider">Bundle &amp; Save</p>
-      <h2 [id]="headingId()" class="font-title-sm font-bold!">{{ title() }}</h2>
+  <header class="pdp-gift-box__head">
+    <div class="elements-between w-full gap-3">
+      <span class="pdp-gift-tag">Bundle &amp; Save</span>
+      <strong class="font-body-sm font-bold!">{{ saving() }}</strong>
     </div>
-    <p class="shrink-0 font-label-lg font-bold! text-end">{{ saving() }}</p>
+    <h2 [id]="headingId()" class="font-title-md font-bold!" dir="auto">{{ title() }}</h2>
   </header>
 
-  <div class="elements-start-col min-w-0 gap-5 p-4">
-    @for (step of steps(); track step.key; let lastStep = $last) {
-      @let promptHere = prompt()?.key === step.key;
-      @let messageId = 'pdp-set-msg-' + step.key;
-      <fieldset
-        class="pdp-gift-step"
-        [class.pdp-gift-step--prompt]="promptHere"
-        [attr.data-set-step]="step.key"
-        [attr.aria-describedby]="promptHere ? messageId : null"
-      >
-        <legend class="sr-only">{{ step.title }}</legend>
-        @switch (step.kind) {
-          @case ('own') {
-            <div class="elements-between w-full gap-3 pb-2">
-              <span class="font-label-lg" aria-hidden="true">{{ step.title }}</span>
-              <span class="font-label-lg text-end">{{ step.text }}{{ step.done ? ' ✓' : '' }}</span>
-            </div>
-            @if (!lastStep) {
-              <div class="pdp-gift-progress" aria-hidden="true"></div>
-            }
+  @for (row of rows(); track row.piece) {
+    @let message = promptFor(row);
+    @let messageId = 'pdp-set-msg-' + row.piece;
+    <div class="pdp-gift-line" [class.pdp-gift-line--prompt]="!!message" [attr.data-set-piece]="row.piece">
+      @if (row.own; as own) {
+        <div class="pdp-gift-item pdp-gift-item--static">
+          <span class="pdp-gift-item__text">
+            <span class="font-label-lg font-bold!">{{ row.title }}</span>
+            <span class="pdp-gift-item__detail text-on-surface-variant">{{ own.text }}</span>
+          </span>
+          @if (own.done) {
+            <span class="pdp-gift-item__action pdp-gift-item__action--plain">
+              <mat-icon name="check" size="lg" weight="700" aria-hidden="true" />
+              Included
+            </span>
           }
-          @case ('piece') {
-            <app-choice-card-row
-              [title]="step.title"
-              [choices]="step.choices"
-              [pickedId]="step.pickedId"
-              [disabled]="disabled()"
-              [divider]="!lastStep"
-              (picked)="productPicked.emit({ piece: step.piece, productId: $event })"
-            />
-          }
-          @case ('size') {
-            <app-choice-size-row
-              [title]="step.title"
-              [sizes]="step.sizes"
-              [pickedId]="step.pickedId"
-              [chosen]="step.chosen"
-              [disabled]="disabled()"
-              (picked)="sizePicked.emit({ piece: step.piece, sizeId: $event })"
-            />
-          }
-        }
+        </div>
+      } @else if (row.view; as view) {
+        <app-choice-row
+          [title]="row.title"
+          [view]="view"
+          [disabled]="disabled()"
+          [describedBy]="message ? messageId : null"
+          (opened)="open(row.piece, $event)"
+        />
+      }
+      @if (message) {
+        <p [id]="messageId" class="font-body-sm text-error px-4 pb-3" role="alert">{{ message }}</p>
+      }
+    </div>
+  }
 
-        @if (promptHere) {
-          <p [id]="messageId" class="font-body-sm text-error pt-2" role="alert">{{ prompt()!.message }}</p>
-        }
-      </fieldset>
-    }
-
+  <div class="p-4">
     <app-add-to-bag-button
       [lines]="lines()"
       [label]="buttonLabel()"

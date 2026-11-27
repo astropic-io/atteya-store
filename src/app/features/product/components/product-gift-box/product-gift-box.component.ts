@@ -15,10 +15,11 @@ import { CurrencyService } from '@core/services/currency/currency.service';
 import { displayDecimals, toDisplayAmount } from '@core/services/offers/engine';
 import { AppImageFallbackDirective } from '@shared/directives/image-fallback';
 import { SharedIconModule } from '@shared/ui/mat-icon';
+import { ChoiceRowComponent } from '../choice-row/choice-row.component';
 import { normalizeImageKitPath } from '@shared/utils/image';
 import { formatMoney } from '@shared/utils/money';
 import type { ChoicePrompt } from '../../models/product-page.model';
-import { GiftPickerService } from '../../dialogs/gift-picker/gift-picker.service';
+import { ChoicePickerService } from '../../dialogs/choice-picker/choice-picker.service';
 import {
   type GiftBoxView,
   type GiftPicks,
@@ -37,13 +38,13 @@ const MIN_WORTH_EGP = 50;
  * the gifts are worth and the heading, then one short row per gift:
  * - one product with no sizes: "Included" with a tick, nothing to tap;
  * - one product with sizes: its size buttons sit in the row;
- * - two or more products: the row opens the gift panel (`GiftPickerService`), a side panel on
+ * - two or more products: the row opens the gift panel (`ChoicePickerService`), a side panel on
  *   desktop and a sheet from the bottom on phone, where the shopper picks the product and size.
  * Add to Bag with a gift still open shows the red message under that row and focuses it.
  */
 @Component({
   selector: 'app-product-gift-box',
-  imports: [NgOptimizedImage, AppImageFallbackDirective, SharedIconModule],
+  imports: [NgOptimizedImage, AppImageFallbackDirective, SharedIconModule, ChoiceRowComponent],
   templateUrl: './product-gift-box.component.html',
   host: { class: 'block w-full' },
 })
@@ -60,7 +61,7 @@ export class ProductGiftBoxComponent {
   readonly #host = inject<ElementRef<HTMLElement>>(ElementRef);
   readonly #injector = inject(Injector);
   readonly #currency = inject(CurrencyService);
-  readonly #picker = inject(GiftPickerService);
+  readonly #picker = inject(ChoicePickerService);
 
   readonly path = normalizeImageKitPath;
 
@@ -102,15 +103,16 @@ export class ProductGiftBoxComponent {
     if (index < 0) return;
     const row = rows[index];
     const next = rows.slice(index + 1).find((entry) => entry.kind !== 'included' && !entry.done) ?? null;
-    let result: Awaited<ReturnType<GiftPickerService['open']>>;
+    let result: Awaited<ReturnType<ChoicePickerService['open']>>;
     try {
       result = await this.#picker.open(
         {
-          gift: row.gift,
+          choices: row.gift.choices,
           title: row.title,
           step: rows.length > 1 ? `Free gift · ${index + 1} of ${rows.length}` : 'Free gift',
           pick: this.picks()[giftId] ?? null,
           next: next?.title ?? null,
+          hint: 'Tap a photo to pick your free gift.',
         },
         trigger instanceof HTMLElement ? trigger : null,
       );
@@ -124,7 +126,7 @@ export class ProductGiftBoxComponent {
     if (!result.next || !next) return;
     if (next.kind === 'pick') {
       const nextRow = this.#host.nativeElement.querySelector<HTMLElement>(
-        `[data-gift-row="${CSS.escape(next.gift.id)}"]`,
+        `[data-gift-row="${CSS.escape(next.gift.id)}"] button`,
       );
       await this.open(next.gift.id, nextRow);
     } else {
