@@ -1,6 +1,13 @@
 import { diffOrphanedPaths } from '@shared/utils/image';
 import type { NavTarget } from '@core/services/navigation/nav-target';
-import { NAV_LIST_MAX_ITEMS, SHOP_CATEGORIES_CARD_COUNT } from '@features/home/data/home.data';
+import {
+  fitsHomeTextLimit,
+  HOME_TEXT_LIMITS,
+  NAV_LIST_MAX_ITEMS,
+  SHOP_CATEGORIES_CARD_COUNT,
+} from '@features/home/data/home.data';
+import type { HomeHelpBox, HomeOfferBanner } from '@features/home/models/home.model';
+import { textLimitRule } from './home-text-limits';
 import {
   HeroAction,
   HeroSlide,
@@ -162,8 +169,11 @@ export function validateNavListItem(
   if (!name) {
     return `${prefix}Add a name.`;
   }
-  if (name.length > 40) {
-    return `${prefix}Use 40 characters or fewer.`;
+  if (!fitsHomeTextLimit(name, HOME_TEXT_LIMITS.navListName)) {
+    return `${prefix}The name is too long for the list. ${textLimitRule(HOME_TEXT_LIMITS.navListName)}`;
+  }
+  if (!fitsHomeTextLimit(item.caption ?? '', HOME_TEXT_LIMITS.navListCaption)) {
+    return `${prefix}Short line: ${textLimitRule(HOME_TEXT_LIMITS.navListCaption)}`;
   }
   const linkProblem = checkLink(item.target, item.link, false);
   if (linkProblem) return `${name}: ${linkProblem}.`;
@@ -197,6 +207,48 @@ export function validateHomeNavListDraft(
   for (let i = 0; i < items.length; i++) {
     const err = validateNavListItem(items[i], i, checkLink);
     if (err) return err;
+  }
+  return null;
+}
+
+/**
+ * Validates Section 4 (Offer Banner, ATS-347) before publishing. A banner that is turned off
+ * publishes as it is, so a half-made one can wait for its photo.
+ */
+export function validateHomeOfferBanner(
+  banner: HomeOfferBanner,
+  checkLink: HomeLinkCheck = NO_LINK_CHECK,
+): string | null {
+  if (!banner.enabled) return null;
+  const prefix = 'Section 4: ';
+  if (!banner.target && !banner.link.trim()) return `${prefix}Pick where the banner goes.`;
+  const linkProblem = checkLink(banner.target, banner.link, false);
+  if (linkProblem) return `${prefix}The banner link: ${linkProblem}.`;
+  if (!isInternalLink(banner.link.trim())) return `${prefix}Pick where the banner goes.`;
+  if (!banner.headline.trim()) return `${prefix}Add a headline.`;
+  if (!fitsHomeTextLimit(banner.headline, HOME_TEXT_LIMITS.bannerHeadline)) {
+    return `${prefix}Headline: ${textLimitRule(HOME_TEXT_LIMITS.bannerHeadline)}`;
+  }
+  if (!fitsHomeTextLimit(banner.label, HOME_TEXT_LIMITS.bannerLabel)) {
+    return `${prefix}Small label: ${textLimitRule(HOME_TEXT_LIMITS.bannerLabel)}`;
+  }
+  if (!banner.imageUrl.trim()) return `${prefix}Add the wide photo.`;
+  return null;
+}
+
+/** Validates Section 5 (WhatsApp Help, ATS-348) before publishing. */
+export function validateHomeHelpBox(box: HomeHelpBox): string | null {
+  if (!box.enabled) return null;
+  const prefix = 'Section 5: ';
+  if (!box.headline.trim()) return `${prefix}Add a headline.`;
+  if (!fitsHomeTextLimit(box.headline, HOME_TEXT_LIMITS.helpHeadline)) {
+    return `${prefix}Headline: ${textLimitRule(HOME_TEXT_LIMITS.helpHeadline)}`;
+  }
+  if (!fitsHomeTextLimit(box.text, HOME_TEXT_LIMITS.helpText)) {
+    return `${prefix}Line under the headline: ${textLimitRule(HOME_TEXT_LIMITS.helpText)}`;
+  }
+  if (!fitsHomeTextLimit(box.message, HOME_TEXT_LIMITS.helpMessage)) {
+    return `${prefix}First message: ${textLimitRule(HOME_TEXT_LIMITS.helpMessage)}`;
   }
   return null;
 }

@@ -1,0 +1,60 @@
+@let item = banner();
+@let wide = widePhoto();
+@let phone = phonePhoto();
+
+<section class="container-content">
+  <div class="mx-auto w-full max-w-7xl">
+    @if (previewMode()) {
+      <div class="offer-banner">
+        <ng-container [ngTemplateOutlet]="content" />
+      </div>
+    } @else {
+      <a class="offer-banner" [routerLink]="item.link | linkTarget">
+        <ng-container [ngTemplateOutlet]="content" />
+      </a>
+    }
+  </div>
+</section>
+
+<ng-template #content>
+  @if (wide) {
+    <img
+      [ngSrc]="wide"
+      ngSrcset="640w, 1280w, 1920w, 2520w"
+      [appImageFallback]="wide"
+      [alt]="item.imageAlt"
+      fill
+      sizes="(min-width: 1280px) 80rem, 100vw"
+      class="offer-banner-photo"
+      [class.hidden]="!!phone"
+      [class.md:block]="!!phone"
+    />
+  } @else {
+    <div class="absolute inset-0 skeleton" aria-hidden="true"></div>
+  }
+  @if (phone) {
+    <img
+      [ngSrc]="phone"
+      ngSrcset="480w, 960w, 1200w"
+      [appImageFallback]="phone"
+      [alt]="item.imageAlt"
+      fill
+      sizes="100vw"
+      class="offer-banner-photo md:hidden"
+    />
+  }
+
+  <div class="offer-banner-fade" aria-hidden="true"></div>
+
+  <div class="offer-banner-text">
+    @if (item.label) {
+      <span class="font-label-lg font-bold! uppercase text-on-primary/85">{{ item.label }}</span>
+    }
+    <h2 class="offer-banner-headline">{{ item.headline || 'Your headline' }}</h2>
+    <span class="offer-banner-cta">{{ linkText() }}</span>
+  </div>
+
+  <span class="offer-banner-go" aria-hidden="true">
+    <mat-icon name="arrow_outward" size="3xl" weight="400" />
+  </span>
+</ng-template>

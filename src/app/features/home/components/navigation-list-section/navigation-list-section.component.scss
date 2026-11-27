@@ -14,7 +14,37 @@
   }
 }
 
-// Desktop arrow after the category name. Every row keeps its arrow so the
+// Desktop "List 1" rows (ATS-346): a black line draws in under the active row
+// and its name nudges right. Phones keep plain rows.
+@media (min-width: 1024px) {
+  .nav-list-link::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    bottom: -1px;
+    height: 1px;
+    background: var(--mat-sys-primary);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.5s cubic-bezier(0.65, 0, 0.35, 1);
+  }
+
+  .nav-list-name {
+    transition: transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+
+  .nav-list-link.is-active {
+    &::after {
+      transform: scaleX(1);
+    }
+
+    .nav-list-name {
+      transform: translateX(1rem);
+    }
+  }
+}
+
+// Desktop arrow at the end of the row. Every row keeps its arrow so the
 // list width never changes; only the active one is visible. GSAP takes over
 // these values once it loads.
 .nav-list-arrow {
@@ -29,6 +59,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .nav-list-name,
+  .nav-list-link::after {
+    transition: none;
+  }
+
   .nav-list-photo,
   .nav-list-arrow {
     transform: none;

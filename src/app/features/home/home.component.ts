@@ -5,6 +5,8 @@ import { ShopCategoriesSectionComponent } from './components/shop-categories-sec
 import { PadelCarouselSectionComponent } from './components/padel-carousel-section/padel-carousel-section.component';
 import { NewArrivalsSectionComponent } from './components/new-arrivals-section/new-arrivals-section.component';
 import { NavigationListSectionComponent } from './components/navigation-list-section/navigation-list-section.component';
+import { OfferBannerSectionComponent } from './components/offer-banner-section/offer-banner-section.component';
+import { HelpBoxSectionComponent } from './components/help-box-section/help-box-section.component';
 import { SkeletonComponent } from '@shared/ui/skeleton';
 import { SeoService } from '@core/services/seo';
 
@@ -19,6 +21,8 @@ import { SeoService } from '@core/services/seo';
     PadelCarouselSectionComponent,
     NewArrivalsSectionComponent,
     NavigationListSectionComponent,
+    OfferBannerSectionComponent,
+    HelpBoxSectionComponent,
     SkeletonComponent,
   ],
   templateUrl: './home.component.html',
@@ -30,6 +34,8 @@ export class HomeComponent implements OnInit {
   readonly hero = this.#homeService.storefrontHero;
   readonly shopCategories = this.#homeService.storefrontShopCategories;
   readonly navList = this.#homeService.storefrontNavList;
+  readonly offerBanner = this.#homeService.storefrontOfferBanner;
+  readonly helpBox = this.#homeService.storefrontHelpBox;
   readonly isLoading = this.#homeService.isLoading;
 
   ngOnInit(): void {

@@ -4,8 +4,10 @@ import {
   HeroLayoutCountSchema,
   HeroSlideSchema,
   HomeHeroSchema,
+  HomeHelpBoxSchema,
   HomeNavListItemSchema,
   HomeNavListSchema,
+  HomeOfferBannerSchema,
   HomeSettingsSchema,
   HomeShopCategoriesSchema,
   ShopCategoryCardSchema,
@@ -20,3 +22,5 @@ export type HomeShopCategories = v.InferOutput<typeof HomeShopCategoriesSchema>;
 export type HomeNavListItem = v.InferOutput<typeof HomeNavListItemSchema>;
 export type HomeNavList = v.InferOutput<typeof HomeNavListSchema>;
 export type HomeSettings = v.InferOutput<typeof HomeSettingsSchema>;
+export type HomeOfferBanner = v.InferOutput<typeof HomeOfferBannerSchema>;
+export type HomeHelpBox = v.InferOutput<typeof HomeHelpBoxSchema>;

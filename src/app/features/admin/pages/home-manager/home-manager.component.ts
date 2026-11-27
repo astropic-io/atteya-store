@@ -1,4 +1,4 @@
-import { Component, effect, inject, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { Router } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { SharedIconModule } from '@shared/ui/mat-icon';
@@ -8,11 +8,19 @@ import { SnackbarService } from '@core/services/snack-bar/snack-bar.service';
 import { StorageUploadService } from '@core/services/storage';
 import { NavService } from '@core/services/navigation';
 import { firebaseErrors } from '@shared/utils/firebase/firebase-errors';
-import { HomeService, homeSettingsFromVersion } from '@features/home/services/home.service';
+import {
+  HomeService,
+  homeSettingsFromVersion,
+  type HomeSettingsUpdate,
+} from '@features/home/services/home.service';
+import { OffersService } from '@core/services/offers/offers.service';
+import { STORE_INFO, whatsappChatUrl } from '@core/config/store-info';
 import { restoredVersionNote, type SettingsVersion } from '@core/services/settings-history';
 import {
+  DEFAULT_HOME_HELP_BOX,
   DEFAULT_HOME_HERO,
   DEFAULT_HOME_NAV_LIST,
+  DEFAULT_HOME_OFFER_BANNER,
   DEFAULT_HOME_SHOP_CATEGORIES,
 } from '@features/home/data/home.data';
 import { HomeManagerHeaderComponent } from './components/home-manager-header/home-manager-header.component';
@@ -22,6 +30,19 @@ import { HomeCategoriesPreviewComponent } from './components/home-categories-pre
 import { HomeCategoriesEditorComponent } from './components/home-categories-editor/home-categories-editor.component';
 import { HomeNavListPreviewComponent } from './components/home-nav-list-preview/home-nav-list-preview.component';
 import { HomeNavListEditorComponent } from './components/home-nav-list-editor/home-nav-list-editor.component';
+import { HomeOfferBannerEditorComponent } from './components/home-offer-banner-editor/home-offer-banner-editor.component';
+import { HomeHelpBoxEditorComponent } from './components/home-help-box-editor/home-help-box-editor.component';
+import { OfferBannerSectionComponent } from '@features/home/components/offer-banner-section/offer-banner-section.component';
+import { HelpBoxSectionComponent } from '@features/home/components/help-box-section/help-box-section.component';
+import type { NavTargetChange } from '../navigation-manager/components/nav-target-field/nav-target-field.component';
+import type { NavTarget } from '@core/services/navigation/nav-target';
+import {
+  bannerAutoText,
+  bannerHiddenReason,
+  bannerOfferPath,
+  bannerToSave,
+  type BannerOfferKind,
+} from './utils/home-offer-banner.utils';
 import { HomeDraftService } from './services/home-draft.service';
 import { HomeDialogService } from './services/home-dialog.service';
 import { NavigationCatalogService } from '../navigation-manager/services/navigation-catalog.service';
@@ -29,8 +50,10 @@ import { homeHiddenLinks, homeLinkProblem, homeWithTargets } from './utils/home-
 import { hiddenTargetsMessage } from '../navigation-manager/utils/navigation-manager.validator';
 import {
   type HomeLinkCheck,
+  validateHomeHelpBox,
   validateHomeHeroDraft,
   validateHomeNavListDraft,
+  validateHomeOfferBanner,
   validateHomeShopCategoriesDraft,
 } from './utils/home-manager.validator';
 import { HeroAction } from './models/home-manager.model';
@@ -48,6 +71,10 @@ import { HeroAction } from './models/home-manager.model';
     HomeCategoriesEditorComponent,
     HomeNavListPreviewComponent,
     HomeNavListEditorComponent,
+    HomeOfferBannerEditorComponent,
+    HomeHelpBoxEditorComponent,
+    OfferBannerSectionComponent,
+    HelpBoxSectionComponent,
   ],
 })
 export class HomeManagerComponent {
@@ -59,6 +86,7 @@ export class HomeManagerComponent {
   readonly #storageUpload = inject(StorageUploadService);
   readonly #auth = inject(AuthService);
   readonly #router = inject(Router);
+  readonly #offers = inject(OffersService);
 
   readonly #isSaving = signal<boolean>(false);
   readonly #isResetting = signal<boolean>(false);
@@ -70,19 +98,51 @@ export class HomeManagerComponent {
   /** "Restored the version from …" while a restored version is still a draft. */
   readonly restoredNote = signal<string | null>(null);
 
+  /** Why shoppers won't see the banner as drafted, or null when they will (Section 4 tab). */
+  readonly storeHasWhatsapp = whatsappChatUrl(STORE_INFO.contact.whatsapp) !== null;
+
+  readonly bannerNote = computed(() =>
+    bannerHiddenReason(this.draft.draftOfferBanner(), this.#linkCatalog.targetCatalog()),
+  );
+
   constructor() {
     effect(() => {
       if (this.#homeService.isLoading()) return;
-
-      const liveHero = this.#homeService.hero();
-      const liveShop = this.#homeService.shopCategories();
-      const liveNav = this.#homeService.navList();
+      const live = this.#liveSettings();
       if (!this.draft.isDirty()) {
         untracked(() => {
-          this.draft.resetDraftFromSource(liveHero, liveShop, liveNav);
+          this.draft.resetDraftFromSource(live);
         });
       }
     });
+  }
+
+  /** The published sections (the store's saved copy while editing starts). */
+  #liveSettings(): HomeSettingsUpdate {
+    return {
+      hero: this.#homeService.hero(),
+      shopCategories: this.#homeService.shopCategories(),
+      navList: this.#homeService.navList(),
+      offerBanner: this.#homeService.offerBanner(),
+      helpBox: this.#homeService.helpBox(),
+    };
+  }
+
+  /** The offer type behind an offer id (Bundle & Save offers open their own page). */
+  readonly #offerKind = (offerId: string): BannerOfferKind =>
+    this.#offers.all().find((offer) => offer.id === offerId)?.reward.kind ?? null;
+
+  /** Links To changed on the banner: fill in the label, link text and address it opens. */
+  onBannerTargetChange(change: NavTargetChange): void {
+    const catalog = this.#linkCatalog.bestCatalog();
+    const kindOf = (target: NavTarget | undefined): BannerOfferKind =>
+      target?.kind === 'offer' ? this.#offerKind(target.id) : null;
+    const target = change.target ?? undefined;
+    const auto = bannerAutoText(target, catalog, kindOf(target));
+    const previous = this.draft.draftOfferBanner().target;
+    const previousLabel = bannerAutoText(previous, catalog, kindOf(previous)).label;
+    const offerPath = target?.kind === 'offer' ? bannerOfferPath(target.id, kindOf(target)) : null;
+    this.draft.updateBannerTarget(change, { ...auto, link: offerPath ?? change.path }, previousLabel);
   }
 
   async openAddActionDialog(): Promise<void> {
@@ -122,14 +182,24 @@ export class HomeManagerComponent {
 
   async publishChanges(): Promise<void> {
     // Every link saved with its target and the address built from it (ATS-267).
+    // A Bundle & Save banner opens its own page: wait until the offers are known.
+    const pickedOffer = this.draft.draftOfferBanner();
+    if (pickedOffer.enabled && pickedOffer.target?.kind === 'offer' && !this.#offers.ready()) {
+      this.#snackbar.info('Your offers are still loading. Try again in a moment.');
+      return;
+    }
+
+    const catalog = this.#linkCatalog.bestCatalog();
     const { hero, shopCategories, navList } = homeWithTargets(
       {
         hero: this.draft.draftHero(),
         shopCategories: this.draft.draftShopCategories(),
         navList: this.draft.draftNavList(),
       },
-      this.#linkCatalog.bestCatalog(),
+      catalog,
     );
+    const offerBanner = bannerToSave(this.draft.draftOfferBanner(), catalog, this.#offerKind);
+    const helpBox = this.draft.draftHelpBox();
     const fullCatalog = this.#linkCatalog.targetCatalog();
     const checkLink: HomeLinkCheck = (target, link, allowOutside) =>
       homeLinkProblem(target, link, fullCatalog, allowOutside);
@@ -155,12 +225,26 @@ export class HomeManagerComponent {
       return;
     }
 
+    const bannerError = validateHomeOfferBanner(offerBanner, checkLink);
+    if (bannerError) {
+      this.draft.setActiveSection('offerBanner');
+      this.#snackbar.error(bannerError);
+      return;
+    }
+
+    const helpError = validateHomeHelpBox(helpBox);
+    if (helpError) {
+      this.draft.setActiveSection('helpBox');
+      this.#snackbar.error(helpError);
+      return;
+    }
+
     this.#isSaving.set(true);
     try {
       const orphanedPaths = this.draft.getOrphanedPathsForPublish();
 
       await this.#homeService.updateHomeSettings(
-        { hero, shopCategories, navList },
+        { hero, shopCategories, navList, offerBanner, helpBox },
         this.#auth.user()?.uid ?? '',
       );
       await this.#storageUpload.deleteImages(orphanedPaths);
@@ -168,6 +252,9 @@ export class HomeManagerComponent {
       this.draft.markSaved();
       this.restoredNote.set(null);
       const hidden = homeHiddenLinks({ hero, shopCategories, navList }, fullCatalog);
+      if (offerBanner.enabled && offerBanner.target && bannerHiddenReason(offerBanner, fullCatalog)) {
+        hidden.push('offer banner');
+      }
       if (hidden.length > 0) this.#snackbar.warning(hiddenTargetsMessage(hidden), 'Close', 8000);
       else this.#snackbar.success('Published! Your homepage sections are now live.');
     } catch (err) {
@@ -182,7 +269,7 @@ export class HomeManagerComponent {
     const choice = await this.#dialogs.openPreviousVersions({
       docId: 'home',
       builtInHint:
-        'The hero, shop cards and category list the store started with. It goes live straight away.',
+        'The hero, shop cards, category list and help box the store started with. It goes live straight away.',
       canRestore: (data) => homeSettingsFromVersion(data) !== null,
     });
     if (!choice) return;
@@ -201,7 +288,7 @@ export class HomeManagerComponent {
       this.#snackbar.error("Can't restore this version.");
       return;
     }
-    this.draft.loadVersion(settings.hero, settings.shopCategories, settings.navList);
+    this.draft.loadVersion(settings);
     this.restoredNote.set(restoredVersionNote(version.savedAtMs));
   }
 
@@ -216,7 +303,13 @@ export class HomeManagerComponent {
       await this.#homeService.resetDefaultHomeSettings(this.#auth.user()?.uid ?? '');
       await this.#storageUpload.deleteImages(orphanedPaths);
 
-      this.draft.resetDraftFromSource(DEFAULT_HOME_HERO, DEFAULT_HOME_SHOP_CATEGORIES, DEFAULT_HOME_NAV_LIST);
+      this.draft.resetDraftFromSource({
+        hero: DEFAULT_HOME_HERO,
+        shopCategories: DEFAULT_HOME_SHOP_CATEGORIES,
+        navList: DEFAULT_HOME_NAV_LIST,
+        offerBanner: DEFAULT_HOME_OFFER_BANNER,
+        helpBox: DEFAULT_HOME_HELP_BOX,
+      });
       this.restoredNote.set(null);
       this.#snackbar.success('Default homepage sections restored.');
     } catch (err) {
@@ -231,12 +324,10 @@ export class HomeManagerComponent {
       const confirmed = await this.#dialogs.confirmDiscardDraft();
       if (!confirmed) return;
     }
-    const liveHero = this.#homeService.hero();
-    const liveShop = this.#homeService.shopCategories();
-    const liveNav = this.#homeService.navList();
-    const orphanedPaths = this.draft.getOrphanedPathsForDiscard(liveHero, liveShop, liveNav);
+    const live = this.#liveSettings();
+    const orphanedPaths = this.draft.getOrphanedPathsForDiscard(live);
     await this.#storageUpload.deleteImages(orphanedPaths);
-    this.draft.discardDraft(liveHero, liveShop, liveNav);
+    this.draft.discardDraft(live);
     this.restoredNote.set(null);
   }
 
