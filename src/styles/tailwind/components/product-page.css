@@ -80,8 +80,15 @@
    * Black Bundle & Save strip under the price (ATS-281): the whole strip is one link; See Bundle
    * sits on the right and drops under the text on a narrow phone.
    */
+  /* Bundle & Save line under the price (ATS-281, lighter in ATS-355): the "Bundle & Save" tag, the
+     offer line and "See Bundle ›" on one line, a thin border. Shown only while the Bundle & Save box
+     is not on the page. */
   .pdp-bundle-strip {
-    @apply elements-between flex-wrap gap-3 w-full p-4 border-shape bg-primary text-on-primary no-underline;
+    @apply elements-start flex-wrap gap-x-3 gap-y-1 w-full px-3 py-2.5 border border-outline-variant border-shape no-underline transition-colors;
+  }
+
+  .pdp-bundle-strip:hover {
+    @apply border-primary;
   }
 
   .pdp-bundle-strip:focus-visible {
@@ -89,11 +96,13 @@
   }
 
   .pdp-bundle-strip-action {
-    @apply shrink-0 px-4 py-2 border border-on-primary border-shape font-label-lg font-bold! uppercase tracking-wider transition-colors;
+    @apply ms-auto shrink-0 elements-start gap-0.5 font-label-lg font-bold! underline underline-offset-4;
   }
 
-  .pdp-bundle-strip:hover .pdp-bundle-strip-action {
-    @apply bg-on-primary text-primary;
+  @media (prefers-reduced-motion: reduce) {
+    .pdp-bundle-strip {
+      transition: none;
+    }
   }
 
   /** Option boxes (size, gift, choice). Selected = aria-pressed. */
@@ -124,19 +133,11 @@
   }
 
   /**
-   * Gift choice as a big card in one sideways row (`.pdp-gift-row`, built on `.scroll-row`):
-   * 156px wide, 4:5 photo, the full name and a colour line under it. Selected = aria-pressed: 2px
-   * black border and a black "Picked" tag on the photo.
+   * Photo card of the choice panel (`app-choice-picker`): 4:5 photo, the full name and a colour line
+   * under it. Selected = aria-pressed: 2px black border and a black "Picked" tag on the photo.
    */
-  .pdp-gift-row {
-    --scroll-gap: 0.75rem;
-    @apply scroll-px-0;
-  }
-
   .pdp-gift-card {
-    @apply relative shrink-0 w-39 flex flex-col border border-outline-variant border-shape bg-surface overflow-hidden cursor-pointer transition-colors;
-    scroll-snap-align: start;
-    scroll-snap-stop: always;
+    @apply relative w-full flex flex-col border border-outline-variant border-shape bg-surface overflow-hidden cursor-pointer transition-colors;
   }
 
   .pdp-gift-card:enabled:hover {
@@ -176,21 +177,6 @@
 
   .pdp-gift-card__picked {
     @apply absolute top-2 start-2 elements-start gap-1 px-2 py-0.5 bg-primary text-on-primary border-shape font-label-sm font-bold!;
-  }
-
-  /** Thin progress line under a gift row. */
-  .pdp-gift-progress {
-    @apply relative h-px w-full mt-3 bg-outline-variant overflow-hidden;
-  }
-
-  .pdp-gift-progress .row-scroll-nav__progress-fill {
-    @apply absolute inset-y-0 left-0 bg-primary;
-    width: calc(var(--row-scroll-progress, 0) * 100%);
-  }
-
-  /** Arrows in a gift step's title row: no padding above them. */
-  .pdp-gift-nav {
-    @apply pt-0 sm:pt-0;
   }
 
   /**
@@ -234,22 +220,9 @@
     }
   }
 
-  /** Gift Box (Free gift offers): bordered box with a black header, then numbered steps. */
+  /** Offer box on the product page (Gift Box, Bundle price pieces, Bundle & Save; rows in `choice-picker.css`). */
   .pdp-gift-box {
     @apply w-full border border-primary border-shape bg-surface overflow-hidden;
-  }
-
-  .pdp-gift-box__header {
-    @apply px-4 py-3 bg-primary text-on-primary;
-  }
-
-  /** One numbered gift step. The step Add to Bag asks for gets a red line on its left. */
-  .pdp-gift-step {
-    @apply w-full min-w-0 m-0 p-0 border-0;
-  }
-
-  .pdp-gift-step--prompt {
-    @apply ps-3 border-s-2 border-error;
   }
 
   /**

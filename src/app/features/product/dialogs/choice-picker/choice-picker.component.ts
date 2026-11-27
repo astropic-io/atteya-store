@@ -9,8 +9,8 @@ import { AppImageFallbackDirective } from '@shared/directives/image-fallback';
 import { ColorSwatchComponent } from '@shared/ui/color-swatch/color-swatch.component';
 import { SharedIconModule } from '@shared/ui/mat-icon';
 import { normalizeImageKitPath } from '@shared/utils/image';
-import { GIFT_LONG_LIST } from '../../utils/product-gifts';
-import type { GiftPickerData, GiftPickerResult } from './gift-picker.model';
+import { CHOICE_LONG_LIST } from '../../utils/choice-rows';
+import type { ChoicePickerData, ChoicePickerResult } from './choice-picker.model';
 
 /** From this many choices the panel shows a search field too. */
 const SEARCH_FROM = 20;
@@ -24,15 +24,16 @@ interface BrandFilter {
 }
 
 /**
- * The gift panel (ATS-349), opened by `GiftPickerService` from a Gift Box row: a side panel on
- * desktop, a sheet from the bottom on phone. Photo cards of the gift's choices, colour and brand
+ * The choice panel (ATS-349, ATS-355), opened by `ChoicePickerService` from a row of the Gift Box,
+ * the Bundle price picker or Bundle & Save: a side panel on
+ * desktop, a sheet from the bottom on phone. Photo cards of the row's choices, colour and brand
  * filters from 9 choices and a search field from 20, 12 cards at a time. The picked product's
  * sizes sit in the pinned footer, with "Next: Your Free Socks" or "Done". Esc, the backdrop and the
  * close button keep what was picked.
  */
 @Component({
-  selector: 'app-gift-picker',
-  host: { class: 'side-panel gift-picker', '[class.gift-picker--wide]': 'long' },
+  selector: 'app-choice-picker',
+  host: { class: 'side-panel choice-picker', '[class.choice-picker--wide]': 'long' },
   imports: [
     NgOptimizedImage,
     AppImageFallbackDirective,
@@ -40,16 +41,16 @@ interface BrandFilter {
     ColorSwatchComponent,
     SharedIconModule,
   ],
-  templateUrl: './gift-picker.component.html',
+  templateUrl: './choice-picker.component.html',
 })
-export class GiftPickerComponent {
-  readonly #ref = inject<DialogRef<GiftPickerResult, GiftPickerComponent>>(DialogRef);
+export class ChoicePickerComponent {
+  readonly #ref = inject<DialogRef<ChoicePickerResult, ChoicePickerComponent>>(DialogRef);
   readonly #catalog = inject(CatalogService);
-  readonly data = inject<GiftPickerData>(DIALOG_DATA);
+  readonly data = inject<ChoicePickerData>(DIALOG_DATA);
 
   readonly path = normalizeImageKitPath;
-  readonly choices = this.data.gift.choices;
-  readonly long = this.choices.length >= GIFT_LONG_LIST;
+  readonly choices = this.data.choices;
+  readonly long = this.choices.length >= CHOICE_LONG_LIST;
   readonly searchable = this.choices.length >= SEARCH_FROM;
 
   readonly selectedId = signal<string | null>(this.#validPick());
@@ -105,7 +106,7 @@ export class GiftPickerComponent {
   readonly nextPage = computed(() => Math.min(PAGE, this.remaining()));
   readonly filtering = computed(() => !!this.colour() || !!this.brand() || this.query().trim() !== '');
 
-  /** "Next: Your Free Socks" when another gift still needs a pick, otherwise "Done". */
+  /** "Next: Your Free Socks" when another row still needs a pick, otherwise "Done". */
   readonly cta = this.data.next ? `Next: ${titleCase(this.data.next)}` : 'Done';
 
   constructor() {
@@ -188,7 +189,7 @@ export class GiftPickerComponent {
 
   #validPick(): string | null {
     const id = this.data.pick?.productId ?? null;
-    return id && this.data.gift.choices.some((choice) => choice.productId === id) ? id : null;
+    return id && this.data.choices.some((choice) => choice.productId === id) ? id : null;
   }
 
   #searchText(choice: GiftChoiceView): string {

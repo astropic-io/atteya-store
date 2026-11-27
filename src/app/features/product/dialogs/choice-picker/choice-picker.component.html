@@ -1,14 +1,14 @@
 <header class="side-panel__header">
   <div class="flex-1 min-w-0">
     <p class="font-label-md text-on-surface-variant">{{ data.step }}</p>
-    <h2 id="gift-picker-title" class="font-title-md font-bold! truncate" dir="auto">{{ data.title }}</h2>
+    <h2 id="choice-picker-title" class="font-title-md font-bold! truncate" dir="auto">{{ data.title }}</h2>
   </div>
   <button matIconButton type="button" aria-label="Close" (click)="close()">
     <mat-icon name="close" />
   </button>
 </header>
 
-<div class="side-panel__body gift-picker__body">
+<div class="side-panel__body choice-picker__body">
   @if (searchable) {
     <div class="search-panel__field">
       <mat-icon name="search" size="xl" aria-hidden="true" />
@@ -16,7 +16,7 @@
         class="search-panel__input"
         type="search"
         placeholder="Search by name, brand or colour"
-        aria-label="Search the free gifts"
+        aria-label="Search the choices"
         autocomplete="off"
         enterkeyhint="search"
         [value]="query()"
@@ -26,11 +26,11 @@
   }
 
   @if (colours().length > 0) {
-    <div class="gift-picker__filters" role="group" aria-label="Colour">
+    <div class="choice-picker__filters" role="group" aria-label="Colour">
       @for (dot of colours(); track dot.id) {
         <button
           type="button"
-          class="gift-picker__dot"
+          class="choice-picker__dot"
           [attr.aria-label]="dot.label"
           [attr.aria-pressed]="colour() === dot.id"
           (click)="setColour(dot.id)"
@@ -42,16 +42,16 @@
   }
 
   @if (brands().length > 0) {
-    <div class="gift-picker__filters" role="group" aria-label="Brand">
+    <div class="choice-picker__filters" role="group" aria-label="Brand">
       @for (entry of brands(); track entry.id) {
         <button
           type="button"
-          class="pdp-choice gift-picker__brand"
+          class="pdp-choice choice-picker__brand"
           [attr.aria-pressed]="brand() === entry.id"
           (click)="setBrand(entry.id)"
         >
           <span class="truncate" dir="auto">{{ entry.name }}</span>
-          <span class="text-on-surface-variant gift-picker__count">{{ entry.count }}</span>
+          <span class="text-on-surface-variant choice-picker__count">{{ entry.count }}</span>
         </button>
       }
     </div>
@@ -63,7 +63,7 @@
         {{ filtered().length }} {{ filtered().length === 1 ? 'choice' : 'choices' }}
       </p>
       @if (filtering()) {
-        <button type="button" class="gift-picker__clear" (click)="clearFilters()">Clear</button>
+        <button type="button" class="choice-picker__clear" (click)="clearFilters()">Clear</button>
       }
     </div>
   }
@@ -75,12 +75,12 @@
       <button matButton="outlined" type="button" (click)="clearFilters()">Clear Filters</button>
     </div>
   } @else {
-    <div class="gift-picker__grid">
+    <div class="choice-picker__grid">
       @for (choice of visible(); track choice.productId) {
         @let isPicked = selectedId() === choice.productId;
         <button
           type="button"
-          class="pdp-gift-card gift-picker__card"
+          class="pdp-gift-card choice-picker__card"
           [attr.aria-label]="choice.label"
           [attr.aria-pressed]="isPicked"
           (click)="pick(choice.productId)"
@@ -125,7 +125,7 @@
   }
 </div>
 
-<footer class="side-panel__footer gift-picker__footer">
+<footer class="side-panel__footer choice-picker__footer">
   @if (sizes(); as list) {
     @if (list.length > 0) {
       <div class="w-full elements-start-col gap-2">
@@ -134,10 +134,10 @@
           <span class="text-on-surface-variant"> · {{ selected()?.cardName }}</span>
         </p>
         <div
-          class="gift-picker__sizes"
+          class="choice-picker__sizes"
           role="group"
           aria-label="Size"
-          [attr.aria-describedby]="needSize() ? 'gift-picker-hint' : null"
+          [attr.aria-describedby]="needSize() ? 'choice-picker-hint' : null"
         >
           @for (size of list; track size.id) {
             <button
@@ -154,9 +154,11 @@
     }
   }
   @if (needSize()) {
-    <p id="gift-picker-hint" class="w-full font-body-sm text-error" role="alert">Pick a size to carry on.</p>
+    <p id="choice-picker-hint" class="w-full font-body-sm text-error" role="alert">
+      Pick a size to carry on.
+    </p>
   } @else if (!selected()) {
-    <p class="w-full font-body-sm text-on-surface-variant">Tap a photo to pick your free gift.</p>
+    <p class="w-full font-body-sm text-on-surface-variant">{{ data.hint }}</p>
   }
   <div class="grid w-full">
     <button matButton="filled" type="button" [disabled]="!selected()" (click)="finish()">{{ cta }}</button>

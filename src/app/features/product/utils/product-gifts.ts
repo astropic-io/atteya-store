@@ -1,4 +1,5 @@
 import type { GiftChoiceView } from '@core/services/cart/cart-gifts';
+import { type ChoiceRowView, choiceRowView } from './choice-rows';
 import type { CartLineGift } from '@core/services/cart/cart.model';
 import type { GiftChoiceFacts, ProductGiftOffer } from '@core/services/offers/engine';
 import type { ProductTypeId } from '@core/services/products';
@@ -41,28 +42,13 @@ export type GiftPicks = Readonly<Record<string, GiftPick>>;
 export type GiftRowKind = 'included' | 'sizes' | 'pick';
 
 /** One gift's row in the Gift Box. */
-export interface GiftRow {
+/** One Gift Box row: the shared row view (`choiceRowView`) plus what kind of row it is. */
+export interface GiftRow extends ChoiceRowView {
   readonly kind: GiftRowKind;
   readonly gift: GiftView;
   /** "Your free shirt". */
   readonly title: string;
-  /** The chosen product, or null. */
-  readonly choice: GiftChoiceView | null;
-  /** The chosen size's id and label, or null. */
-  readonly sizeId: string | null;
-  readonly sizeLabel: string | null;
-  /** Product and size (when it has sizes) both chosen. */
-  readonly done: boolean;
-  /** Photos shown side by side when nothing is chosen yet in a long list (9 or more choices). */
-  readonly peek: readonly GiftChoiceView[];
-  /** How many choices the peek leaves out ("+10"). */
-  readonly more: number;
-  /** The line under the title: what is chosen, or what to do. */
-  readonly detail: string;
 }
-
-/** From this many choices a gift row shows a peek of photos and the panel adds filters. */
-export const GIFT_LONG_LIST = 9;
 
 /** Prompt key for a gift's product step and size step (never clashes with option keys). */
 export const giftStepKey = (giftId: string): string => `gift:${giftId}`;
@@ -159,43 +145,18 @@ export function effectiveGiftPicks(box: GiftBoxView, picks: GiftPicks): GiftPick
 export function giftRows(box: GiftBoxView, picks: GiftPicks): GiftRow[] {
   return box.gifts.map((gift) => {
     const pick = picks[gift.id];
-    const choice = pick ? (gift.choices.find((entry) => entry.productId === pick.productId) ?? null) : null;
-    const size = choice?.sizes?.find((entry) => entry.id === pick?.sizeId) ?? null;
     const only = gift.choices.length === 1 ? gift.choices[0] : null;
     const kind: GiftRowKind = only ? (only.sizes ? 'sizes' : 'included') : 'pick';
-    const done = !!choice && (!choice.sizes || !!size);
-    const long = gift.choices.length >= GIFT_LONG_LIST;
-    const peek = !choice && long ? gift.choices.slice(0, 2) : [];
+    const view = choiceRowView(gift.choices, pick?.productId ?? null, pick?.sizeId ?? null);
     return {
+      ...view,
       kind,
       gift,
       title: `Your free ${gift.noun}`,
-      choice,
-      sizeId: size?.id ?? null,
-      sizeLabel: size?.label ?? null,
-      done,
-      peek,
-      more: peek.length > 0 ? gift.choices.length - peek.length : 0,
-      detail: giftRowDetail(kind, gift, choice, size?.label ?? null),
+      // One product: its name (the sizes or "Included" sit beside it).
+      detail: only ? only.label : view.detail,
     };
   });
-}
-
-function giftRowDetail(
-  kind: GiftRowKind,
-  gift: GiftView,
-  choice: GiftChoiceView | null,
-  sizeLabel: string | null,
-): string {
-  if (kind === 'included') return choice?.label ?? gift.choices[0].label;
-  if (kind === 'sizes') return gift.choices[0].label;
-  if (!choice) {
-    if (gift.choices.length >= GIFT_LONG_LIST) return `${gift.choices.length} to choose from`;
-    return gift.choices.some((entry) => entry.sizes) ? 'Choose one and its size' : 'Choose one';
-  }
-  if (!choice.sizes) return choice.label;
-  // Size first, so it still shows when a long name is cut short.
-  return sizeLabel ? `Size ${sizeLabel} · ${choice.label}` : `Pick a size · ${choice.label}`;
 }
 
 /**
