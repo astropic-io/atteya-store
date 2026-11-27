@@ -75,7 +75,7 @@ interface KpiTile {
 
 /**
  * Admin → Overview (ATS-340): how the store is doing for a chosen range of Cairo days, read from
- * the daily summaries (`storeStats`, and `storeStatsMoney` for admins only), plus live boxes for
+ * the daily summaries (`storeStats`, and `storeStatsMoney` for admins and staff with Sales Money on), plus live boxes for
  * what needs attention and the catalogue. Dev only until the client agrees to it
  * (`environment.adminOverview`).
  */
@@ -103,7 +103,7 @@ export class OverviewPageComponent implements OnInit {
   readonly customTo = signal('');
 
   /** Admins see pounds; staff don't (and Firestore rules keep the money docs from them). */
-  readonly showMoney = computed(() => this.#auth.isAdmin());
+  readonly showMoney = computed(() => this.#auth.hasExtra('money'));
 
   readonly period = computed(() => {
     const custom: DayRange | null =

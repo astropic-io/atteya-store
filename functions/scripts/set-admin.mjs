@@ -70,11 +70,15 @@ if (!['admin', 'staff', 'user'].includes(role)) throw new Error('--role must be 
 const RANK = { user: 0, staff: 1, admin: 2 };
 
 const before = ['admin', 'staff'].includes(user.customClaims?.role) ? user.customClaims.role : 'user';
-await auth.setCustomUserClaims(user.uid, { ...(user.customClaims ?? {}), role });
+// A role change starts with no extra access (ATS-368), the same as setUserRole.
+const { extras: _droppedExtras, ...keptClaims } = user.customClaims ?? {};
+await auth.setCustomUserClaims(user.uid, { ...keptClaims, role });
 
 let revokeTimeMs;
-// Less access than before: end the current sign-in, since the old ID token keeps the old role.
-if (RANK[role] < RANK[before]) {
+// Less access than before, or extra access dropped (ATS-368): end the current sign-in, since the old
+// ID token keeps the old role and extras.
+const hadExtras = Array.isArray(_droppedExtras) && _droppedExtras.length > 0;
+if (RANK[role] < RANK[before] || (hadExtras && role !== 'admin')) {
   await auth.revokeRefreshTokens(user.uid);
   const refreshed = await auth.getUser(user.uid);
   revokeTimeMs = Date.parse(refreshed.tokensValidAfterTime ?? '');
@@ -87,6 +91,7 @@ await db.doc(`roles/${user.uid}`).set(
   {
     role,
     email,
+    extras: [],
     updatedAt: FieldValue.serverTimestamp(),
     updatedBy: 'cli',
     ...(revokeTimeMs === undefined ? {} : { revokeTimeMs }),

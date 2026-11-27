@@ -1,5 +1,5 @@
 import { NgOptimizedImage, NgTemplateOutlet } from '@angular/common';
-import { Component, inject, input, signal } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -161,7 +161,7 @@ import { orderActionError } from '../../utils/order-action-error';
               @if (c.refund; as refund) {
                 <span class="font-label-md font-bold! break-words max-w-40">{{ refund }}</span>
               }
-              @if (canAct() && isAdmin() && c.refundToSendEgp > 0) {
+              @if (canAct() && canSendRefunds() && c.refundToSendEgp > 0) {
                 <button
                   matButton="filled"
                   type="button"
@@ -324,7 +324,8 @@ export class OrderItemsComponent {
 
   /** The item key or cancel id being saved. */
   readonly busy = signal<string | null>(null);
-  readonly isAdmin = this.#auth.isAdmin;
+  /** Admins, and staff with Refunds switched on in Settings → Team (ATS-368). */
+  readonly canSendRefunds = computed(() => this.#auth.hasExtra('refunds'));
 
   canAct(): boolean {
     return this.order() !== null && this.afterChange() !== null;
@@ -345,9 +346,9 @@ export class OrderItemsComponent {
       const pieces = request.quantity === 1 ? 'Item' : `${request.quantity} items`;
       let done = `${pieces} cancelled. New total ${egp(result.totalEgp)}.`;
       if (result.refundEgp > 0) {
-        done += this.isAdmin()
+        done += this.canSendRefunds()
           ? ` Send ${egp(result.refundEgp)} back, then press Refund Sent.`
-          : ` Send ${egp(result.refundEgp)} back, then ask an admin to press Refund Sent.`;
+          : ` Send ${egp(result.refundEgp)} back, then ask an admin, or someone with Refunds switched on, to press Refund Sent.`;
       }
       if (result.notReturned > 0) {
         this.#snackbar.info(

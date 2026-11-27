@@ -5,7 +5,12 @@ import {
   ConfirmDialogComponent,
   ConfirmDialogData,
 } from '@shared/ui/dialogs/confirm-dialog/confirm-dialog.component';
+import type { StaffExtra } from '@core/services/auth/staff-extras';
 import type { TeamRole } from '../models/admin-role.model';
+import {
+  StaffExtrasDialogComponent,
+  type StaffExtrasDialogData,
+} from '../dialogs/staff-extras-dialog/staff-extras-dialog.component';
 
 @Service()
 export class AdminRoleDialogService {
@@ -34,12 +39,21 @@ export class AdminRoleDialogService {
           }
         : {
             title: 'Make Staff?',
-            message: `${email} will keep the dashboard but can no longer delete orders or open this page. They'll need to sign in again.`,
+            message: `${email} will keep the dashboard but can no longer open this page, and starts with no extra access. They'll need to sign in again.`,
             confirmText: 'Make Staff',
             cancelText: 'Cancel',
             theme: 'primary',
           },
     );
+  }
+
+  /** Extra Access (ATS-368): the extras to keep on, or null for Cancel. */
+  async editExtras(email: string, extras: readonly StaffExtra[]): Promise<StaffExtra[] | null> {
+    const dialogRef = this.#dialog.open<StaffExtrasDialogComponent, StaffExtrasDialogData, StaffExtra[]>(
+      StaffExtrasDialogComponent,
+      { data: { email, extras }, width: '520px', maxWidth: '90vw' },
+    );
+    return (await firstValueFrom(dialogRef.afterClosed())) ?? null;
   }
 
   async #confirm(data: ConfirmDialogData): Promise<boolean> {

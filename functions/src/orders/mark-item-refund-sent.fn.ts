@@ -1,7 +1,7 @@
 import { getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { adminCallableOptions } from '../auth/callable-options.js';
-import { requireRole } from '../auth/require-role.js';
+import { requireExtra } from '../auth/require-role.js';
 import { parseItemRefundSentRequest } from '../store/order-item-cancel.js';
 import { markItemRefundSent, type ItemRefundSentResponse } from './order-item-cancel.js';
 
@@ -9,7 +9,7 @@ import { markItemRefundSent, type ItemRefundSentResponse } from './order-item-ca
 export const markItemRefundSentFn = onCall(
   adminCallableOptions(),
   async (request): Promise<ItemRefundSentResponse> => {
-    const actor = await requireRole(request, 'admin');
+    const actor = await requireExtra(request, 'refunds');
     const parsed = parseItemRefundSentRequest(request.data);
     if (!parsed)
       throw new HttpsError(

@@ -3,15 +3,18 @@ import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { adminCallableOptions } from '../auth/callable-options.js';
 import { requireRole } from '../auth/require-role.js';
+import { removesExtra, type StaffExtra } from '../auth/staff-extras.js';
 import {
+  claimsWithoutExtras,
   listClaimTeam,
   listTeamViaMirrors,
+  readClaimExtras,
   readRole,
   reconcileTeamMirrors,
   recordSessionRevocation,
   revertRoleMirror,
 } from './claim-admins.js';
-import { parseSetUserRoleInput } from './roles.validation.js';
+import { parseSetStaffExtrasInput, parseSetUserRoleInput } from './roles.validation.js';
 import { endsSession, isLastAdminRemoval, type TeamRole } from './team-roles.js';
 
 const LAST_ADMIN_MESSAGE = "You're the only admin. Add another admin before changing your access.";
@@ -23,6 +26,8 @@ export interface AdminRecord {
   readonly uid: string;
   readonly email: string;
   readonly role: TeamRole;
+  /** Staff only: extra access switched on for them (ATS-368). */
+  readonly extras: StaffExtra[];
   readonly updatedAt: string | null;
   readonly updatedBy: string | null;
 }
@@ -102,6 +107,8 @@ export const setUserRole = onCall(adminCallableOptions(), async (request): Promi
       {
         role: input.role,
         email: input.email,
+        // A new role starts with no extra access (ATS-368).
+        extras: [],
         updatedAt: FieldValue.serverTimestamp(),
         updatedBy: actorLabel,
       },
@@ -121,9 +128,10 @@ export const setUserRole = onCall(adminCallableOptions(), async (request): Promi
 
   try {
     await getAuth().setCustomUserClaims(user.uid, {
-      ...(user.customClaims ?? {}),
+      ...claimsWithoutExtras(user.customClaims),
       role: input.role,
     });
+    // staff → user is covered by endsSession; staff → admin keeps every extra, so no sign-out.
     if (endsSession(before, input.role)) {
       await recordSessionRevocation(user.uid);
     }
@@ -137,7 +145,14 @@ export const setUserRole = onCall(adminCallableOptions(), async (request): Promi
       // The claim write did not stick. The mirror rollback still runs.
     }
     try {
-      await revertRoleMirror(user.uid, before, input.email, actorLabel, auditRef.path);
+      await revertRoleMirror(
+        user.uid,
+        before,
+        input.email,
+        actorLabel,
+        auditRef.path,
+        readClaimExtras(user.customClaims),
+      );
     } catch {
       // The next role change reconciles the mirror.
     }
@@ -146,3 +161,109 @@ export const setUserRole = onCall(adminCallableOptions(), async (request): Promi
 
   return { changed: true };
 });
+
+export interface SetStaffExtrasResult {
+  readonly changed: boolean;
+}
+
+/**
+ * Settings → Team, Extra Access (ATS-368): switch Refunds, Delete Orders and Sales Money on or off
+ * for one staff member. Admins only. `extras` is the full list to keep on. Switching one off ends
+ * that person's current sign-in, because their ID token keeps the old claim for up to an hour.
+ */
+export const setStaffExtras = onCall(
+  adminCallableOptions(),
+  async (request): Promise<SetStaffExtrasResult> => {
+    const actor = await requireRole(request, 'admin');
+    const input = parseSetStaffExtrasInput(request.data);
+
+    let user;
+    try {
+      user = await getAuth().getUserByEmail(input.email);
+    } catch (error: unknown) {
+      if (isUserNotFound(error)) {
+        throw new HttpsError('not-found', UNKNOWN_ACCOUNT_MESSAGE);
+      }
+      throw new HttpsError('internal', 'Could not look up that account. Please try again.');
+    }
+
+    if (readRole(user.customClaims) !== 'staff') {
+      throw new HttpsError(
+        'failed-precondition',
+        'Extra access is only for Staff. Admins already have it all.',
+      );
+    }
+
+    const before = readClaimExtras(user.customClaims);
+    if (before.length === input.extras.length && before.every((extra) => input.extras.includes(extra))) {
+      return { changed: false };
+    }
+
+    // Read the claims again right before writing, so a role change made meanwhile (Remove Access,
+    // Make Admin) is never undone by this save.
+    const fresh = await getAuth().getUser(user.uid);
+    if (readRole(fresh.customClaims) !== 'staff') {
+      throw new HttpsError(
+        'failed-precondition',
+        'This person is no longer Staff. Refresh the page and try again.',
+      );
+    }
+    const freshBefore = readClaimExtras(fresh.customClaims);
+
+    const db = getFirestore();
+    const auditRef = db.collection('auditLogs').doc();
+    const actorLabel = actor.email ?? actor.uid;
+
+    // Claim first, then the mirror: the mirror write wakes the person's browser to refresh its token,
+    // and that refresh must already see the new extras.
+    try {
+      await getAuth().setCustomUserClaims(user.uid, {
+        ...claimsWithoutExtras(fresh.customClaims),
+        ...(input.extras.length > 0 ? { extras: input.extras } : {}),
+      });
+    } catch {
+      throw new HttpsError('internal', 'Could not update extra access. Please try again.');
+    }
+
+    try {
+      const batch = db.batch();
+      batch.set(
+        db.doc(`roles/${user.uid}`),
+        { extras: input.extras, updatedAt: FieldValue.serverTimestamp(), updatedBy: actorLabel },
+        { merge: true },
+      );
+      batch.set(auditRef, {
+        action: 'extras.set',
+        targetUid: user.uid,
+        targetEmail: input.email,
+        from: freshBefore,
+        to: input.extras,
+        actorUid: actor.uid,
+        actorEmail: actorLabel,
+        at: FieldValue.serverTimestamp(),
+      });
+      await batch.commit();
+    } catch {
+      try {
+        await getAuth().setCustomUserClaims(user.uid, fresh.customClaims ?? {});
+      } catch {
+        // The claim did not roll back. The next save sets it again.
+      }
+      throw new HttpsError('internal', 'Could not update extra access. Please try again.');
+    }
+
+    if (removesExtra(freshBefore, input.extras)) {
+      try {
+        await recordSessionRevocation(user.uid);
+      } catch {
+        // The claim is already narrower; the old token still expires within the hour.
+        throw new HttpsError(
+          'internal',
+          'Extra access was saved, but they may keep the old access for up to an hour. Ask them to sign out and sign in again.',
+        );
+      }
+    }
+
+    return { changed: true };
+  },
+);

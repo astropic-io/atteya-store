@@ -75,14 +75,18 @@ export class AdminsTabComponent implements OnInit {
   ];
 
   /** What each role can do, shown under the form so the dropdown only needs the role names. */
-  readonly roleGuide: readonly { readonly task: string; readonly staff: boolean; readonly admin: boolean }[] =
-    [
-      { task: 'Manage orders, products, offers and customers', staff: true, admin: true },
-      { task: 'Change store settings, Home Page and menus', staff: true, admin: true },
-      { task: 'Mark refunds as sent, and send back return fees', staff: false, admin: true },
-      { task: 'Delete orders', staff: false, admin: true },
-      { task: 'Add, change or remove team members (this page)', staff: false, admin: true },
-    ];
+  readonly roleGuide: readonly {
+    readonly task: string;
+    readonly staff: string;
+    readonly staffMuted: boolean;
+  }[] = [
+    { task: 'Manage orders, products, offers and customers', staff: 'Yes', staffMuted: false },
+    { task: 'Change store settings, Home Page and menus', staff: 'Yes', staffMuted: false },
+    { task: 'Mark refunds as sent, and send back return fees', staff: 'If switched on', staffMuted: true },
+    { task: 'Delete orders', staff: 'If switched on', staffMuted: true },
+    { task: 'See money totals on Overview', staff: 'If switched on', staffMuted: true },
+    { task: 'Add, change or remove team members (this page)', staff: 'No', staffMuted: true },
+  ];
   readonly #showRoleGuide = signal(true);
   readonly showRoleGuide = this.#showRoleGuide.asReadonly();
 
@@ -112,6 +116,7 @@ export class AdminsTabComponent implements OnInit {
     id: '',
     email: '',
     role: 'staff',
+    extras: [],
     roleLabel: '',
     since: '',
     grantedBy: '',
@@ -188,6 +193,27 @@ export class AdminsTabComponent implements OnInit {
     if (this.#removingUid() || !this.#hasEmail(row) || row.role === to) return;
     if (!(await this.#dialogs.confirmChange(row.email, to))) return;
     await this.#save(row, to, `${row.email} is ${to === 'admin' ? 'an Admin' : 'Staff'} now.`);
+  }
+
+  /** Extra Access (ATS-368): switch Refunds, Delete Orders and Sales Money for one staff member. */
+  async editExtras(row: AdminTableRow): Promise<void> {
+    if (this.#removingUid() || !this.#hasEmail(row) || row.role !== 'staff') return;
+    const extras = await this.#dialogs.editExtras(row.email, row.extras);
+    if (!extras) return;
+    this.#removingUid.set(row.id);
+    try {
+      const result = await this.#roles.setStaffExtras(row.email, extras);
+      if (result.changed) {
+        this.#snackbar.success(`Extra access saved for ${row.email}.`);
+      } else {
+        this.#snackbar.info('Nothing changed.');
+      }
+      this.adminsResource.reload();
+    } catch (error: unknown) {
+      this.#snackbar.error(roleActionError(error));
+    } finally {
+      this.#removingUid.set(null);
+    }
   }
 
   async removeAdmin(row: AdminTableRow): Promise<void> {

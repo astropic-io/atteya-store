@@ -1,6 +1,7 @@
 import { getAuth, type UserRecord } from 'firebase-admin/auth';
 import { FieldValue, getFirestore, type DocumentData, type WriteResult } from 'firebase-admin/firestore';
 import { roleFromClaim, type Role } from '../auth/require-role.js';
+import { readExtras, type StaffExtra } from '../auth/staff-extras.js';
 import { revokeTimeMs } from '../auth/session-revocation.js';
 import { isTeamRole, TEAM_ROLES, type TeamRole } from './team-roles.js';
 
@@ -9,6 +10,7 @@ export interface ClaimMember {
   readonly uid: string;
   readonly email: string;
   readonly role: TeamRole;
+  readonly extras: StaffExtra[];
 }
 
 const LIST_PAGE_SIZE = 1000;
@@ -17,6 +19,18 @@ const MAX_LIST_PAGES = 20;
 export function readRole(claims: UserRecord['customClaims']): Role {
   if (!claims || typeof claims !== 'object') return 'user';
   return roleFromClaim((claims as { role?: unknown }).role);
+}
+
+/** Extra access switched on for a staff member (ATS-368). Admins and normal accounts have none stored. */
+export function readClaimExtras(claims: UserRecord['customClaims']): StaffExtra[] {
+  if (!claims || typeof claims !== 'object') return [];
+  return readExtras((claims as { extras?: unknown }).extras);
+}
+
+/** The claims without `extras`: a role change starts the person with no extra access. */
+export function claimsWithoutExtras(claims: UserRecord['customClaims']): Record<string, unknown> {
+  const { extras: _dropped, ...rest } = (claims ?? {}) as Record<string, unknown>;
+  return rest;
 }
 
 /**
@@ -41,6 +55,7 @@ export async function listClaimTeam(): Promise<readonly ClaimMember[]> {
         uid: user.uid,
         email: (user.email ?? '').trim().toLowerCase(),
         role,
+        extras: readClaimExtras(user.customClaims),
       });
     }
     if (!result.pageToken) return members;
@@ -54,6 +69,8 @@ export interface ListedMember {
   readonly uid: string;
   readonly email: string;
   readonly role: TeamRole;
+  /** Staff only: the extras in their claim. */
+  readonly extras: StaffExtra[];
   readonly updatedAt: string | null;
   readonly updatedBy: string | null;
 }
@@ -64,6 +81,7 @@ function listedMemberFromMirror(
   uid: string,
   email: string,
   role: TeamRole,
+  extras: StaffExtra[],
   data: DocumentData | undefined,
 ): ListedMember {
   const mirrorMatches = data?.['role'] === role;
@@ -72,6 +90,7 @@ function listedMemberFromMirror(
     uid,
     email,
     role,
+    extras: role === 'staff' ? extras : [],
     updatedAt: mirrorMatches ? timestampToIso(data?.['updatedAt']) : null,
     updatedBy: mirrorMatches && typeof updatedBy === 'string' ? updatedBy : null,
   };
@@ -111,7 +130,13 @@ export async function listTeamViaMirrors(): Promise<readonly ListedMember[]> {
       const role = readRole(user.customClaims);
       if (!isTeamRole(role)) continue;
       members.push(
-        listedMemberFromMirror(user.uid, (user.email ?? '').trim().toLowerCase(), role, byUid.get(user.uid)),
+        listedMemberFromMirror(
+          user.uid,
+          (user.email ?? '').trim().toLowerCase(),
+          role,
+          readClaimExtras(user.customClaims),
+          byUid.get(user.uid),
+        ),
       );
     }
 
@@ -128,7 +153,7 @@ export async function listTeamViaMirrors(): Promise<readonly ListedMember[]> {
       : [];
 
   return claimMembers.map((member, index) =>
-    listedMemberFromMirror(member.uid, member.email, member.role, snaps[index]?.data()),
+    listedMemberFromMirror(member.uid, member.email, member.role, member.extras, snaps[index]?.data()),
   );
 }
 
@@ -216,6 +241,7 @@ export async function revertRoleMirror(
   email: string,
   actor: string,
   auditPath: string,
+  extras: readonly StaffExtra[] = [],
 ): Promise<WriteResult[]> {
   const db = getFirestore();
   const batch = db.batch();
@@ -224,6 +250,7 @@ export async function revertRoleMirror(
     {
       role,
       email,
+      extras: [...extras],
       updatedAt: FieldValue.serverTimestamp(),
       updatedBy: actor,
     },

@@ -3,7 +3,8 @@ rules_version = '2';
 // Four roles:
 //  - Visitor (signed out): public storefront reads only.
 //  - Normal user (signed in, no admin or staff claim): same as a visitor, plus read of their own roles/{uid} mirror.
-//  - Staff (token.role == 'staff' AND session not revoked): manage store content (canManageStore()).
+//  - Staff (token.role == 'staff' AND session not revoked): manage store content (canManageStore()),
+//    plus any extra access an admin switched on for them (token.extras, hasExtra(); ATS-368).
 //  - Admin (token.role == 'admin' AND session not revoked): same as staff, plus the Team list,
 //    its audit trail, and (through callables) deleting orders and changing roles.
 // roles/ and auditLogs/ are written only by the Admin SDK (Cloud Functions / scripts).
@@ -21,6 +22,17 @@ service cloud.firestore {
     // Admin or staff: everything the dashboard reads and writes from the browser.
     function canManageStore() {
       return isSignedIn() && request.auth.token.role in ['admin', 'staff'] && sessionIsCurrent();
+    }
+
+    // Staff with one extra switched on for them in Settings → Team (ATS-368). Admins have every extra.
+    // Keep the names in step with STAFF_EXTRAS in functions/src/auth/staff-extras.ts.
+    function hasExtra(extra) {
+      return isAdmin()
+        || (isSignedIn()
+          && request.auth.token.role == 'staff'
+          && request.auth.token.get('extras', []) is list
+          && extra in request.auth.token.get('extras', [])
+          && sessionIsCurrent());
     }
 
     // An ID token keeps its role claim until it expires. After refresh tokens are
@@ -140,7 +152,7 @@ service cloud.firestore {
     }
 
     match /storeStatsMoney/{day} {
-      allow read: if isAdmin();
+      allow read: if hasExtra('money');
       allow write: if false;
     }
 
