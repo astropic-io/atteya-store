@@ -15,7 +15,7 @@ export const ADMIN_ROUTES: Routes = [
       {
         path: '',
         pathMatch: 'full',
-        redirectTo: OVERVIEW_ON ? 'overview' : 'navigation',
+        redirectTo: OVERVIEW_ON ? 'overview' : 'orders',
       },
       ...(OVERVIEW_ON
         ? [

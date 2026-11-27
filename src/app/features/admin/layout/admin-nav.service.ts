@@ -93,7 +93,7 @@ export class AdminNavService {
       );
       if (match) return match.label;
     }
-    return 'Navigation & Menus';
+    return 'Orders';
   });
 
   constructor() {
