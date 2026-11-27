@@ -99,7 +99,8 @@
                 <img
                   [ngSrc]="previewImg"
                   [appImageFallback]="previewImg"
-                  [alt]="asset()?.alt || 'Phone preview'"
+                  alt=""
+                  loading="eager"
                   fill
                   sizes="120px"
                   class="object-cover object-center"
