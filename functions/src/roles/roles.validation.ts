@@ -1,5 +1,6 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 import type { Role } from '../auth/require-role.js';
+import { isStaffExtra, readExtras, type StaffExtra } from '../auth/staff-extras.js';
 
 const MAX_EMAIL_LENGTH = 254;
 
@@ -32,4 +33,32 @@ export function parseSetUserRoleInput(data: unknown): SetUserRoleInput {
   }
 
   return { email, role };
+}
+
+export interface SetStaffExtrasInput {
+  readonly email: string;
+  readonly extras: StaffExtra[];
+}
+
+function parseEmail(value: unknown): string {
+  if (typeof value !== 'string') {
+    throw new HttpsError('invalid-argument', 'Enter a valid email address.');
+  }
+  const email = value.trim().toLowerCase();
+  if (email.length === 0 || email.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(email)) {
+    throw new HttpsError('invalid-argument', 'Enter a valid email address.');
+  }
+  return email;
+}
+
+/** `setStaffExtras`: an email and the extras to switch on (every other extra is switched off). */
+export function parseSetStaffExtrasInput(data: unknown): SetStaffExtrasInput {
+  if (!isRecord(data) || !Array.isArray(data['extras'])) {
+    throw new HttpsError('invalid-argument', 'Choose which extra access to give.');
+  }
+  const raw = data['extras'] as unknown[];
+  if (raw.length > 10 || !raw.every(isStaffExtra)) {
+    throw new HttpsError('invalid-argument', 'Choose which extra access to give.');
+  }
+  return { email: parseEmail(data['email']), extras: readExtras(raw) };
 }

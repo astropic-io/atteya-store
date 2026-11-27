@@ -11,7 +11,13 @@ import {
 import * as v from 'valibot';
 import { callableFrom, injectFirestore, injectFunctionsAsync } from '@core/firebase';
 import { AdminRecord, AssignableRole, RoleAudit, SetUserRoleResult } from '../models/admin-role.model';
-import { ListAdminsSchema, RoleAuditSchema, SetUserRoleResultSchema } from '../schemas/admin-role.schema';
+import type { StaffExtra } from '@core/services/auth/staff-extras';
+import {
+  ListAdminsSchema,
+  RoleAuditSchema,
+  SetStaffExtrasResultSchema,
+  SetUserRoleResultSchema,
+} from '../schemas/admin-role.schema';
 
 @Service()
 export class AdminRolesService {
@@ -38,6 +44,20 @@ export class AdminRolesService {
       role,
     });
     const parsed = v.safeParse(SetUserRoleResultSchema, result.data);
+    if (!parsed.success) {
+      throw new Error('The update finished, but the response was unexpected. Refresh the page.');
+    }
+    return parsed.output;
+  }
+
+  /** Extra access for one staff member (ATS-368): the full list to keep on. */
+  async setStaffExtras(email: string, extras: readonly StaffExtra[]): Promise<SetUserRoleResult> {
+    const setStaffExtras = await callableFrom<{ email: string; extras: StaffExtra[] }, unknown>(
+      this.#functions(),
+      'setStaffExtras',
+    );
+    const result = await setStaffExtras({ email: email.trim().toLowerCase(), extras: [...extras] });
+    const parsed = v.safeParse(SetStaffExtrasResultSchema, result.data);
     if (!parsed.success) {
       throw new Error('The update finished, but the response was unexpected. Refresh the page.');
     }

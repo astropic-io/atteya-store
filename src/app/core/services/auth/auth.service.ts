@@ -31,6 +31,7 @@ import { AUTH_ERROR_MAPPINGS, DEFAULT_AUTH_ERROR } from './auth.errors';
 import { syncSignedInHint } from './signed-in-hint';
 import { AppRole, GoogleSignInOutcome, roleFromClaims } from './auth.model';
 import { parseRoleMirror, RoleMirror } from './role-mirror.schema';
+import { readExtras, sameExtras, StaffExtra } from './staff-extras';
 import {
   authErrorCode,
   isPopupFallback,
@@ -76,6 +77,8 @@ export class AuthService {
   /** Whether the signed-in account's email is confirmed (ID token `email_verified`; Google counts). */
   readonly #emailVerified = signal(false);
   readonly #role = signal<AppRole>('anon');
+  /** Staff only: extra access switched on for them (ID token `extras` claim, ATS-368). */
+  readonly #extras = signal<readonly StaffExtra[]>([]);
   readonly #isAuthReady = signal(false);
   readonly #needsGoogleLink = signal(false);
   readonly #pendingGoogleEmail = signal('');
@@ -111,6 +114,11 @@ export class AuthService {
   readonly isAuthenticated = computed(() => this.#user() !== null);
   /** Admin only: the Team tab and Delete Order. */
   readonly isAdmin = computed(() => this.#role() === 'admin');
+  /** Admin, or staff with this extra switched on in Settings → Team. The server checks it too. */
+  hasExtra(extra: StaffExtra): boolean {
+    const role = this.#role();
+    return role === 'admin' || (role === 'staff' && this.#extras().includes(extra));
+  }
   /** Admin or staff: opens the dashboard. */
   readonly canManageStore = computed(() => this.#role() === 'admin' || this.#role() === 'staff');
   /**
@@ -643,7 +651,9 @@ export class AuthService {
           const mirror = snapshot.exists() ? parseRoleMirror(snapshot.data()) : null;
           subscriber.next(mirror);
           const tokenRole = this.#role();
-          if (!mirror || tokenRole === 'anon' || mirror.role === tokenRole) return;
+          if (!mirror || tokenRole === 'anon') return;
+          const extrasChanged = mirror.role === 'staff' && !sameExtras(mirror.extras, this.#extras());
+          if (mirror.role === tokenRole && !extrasChanged) return;
           void this.refreshRole(true);
         },
         () => subscriber.next(null),
@@ -669,6 +679,7 @@ export class AuthService {
         const result = await firebaseUser.getIdTokenResult();
         if (generation !== this.#generation) return;
         this.#role.set(roleFromClaims(result.claims));
+        this.#extras.set(readExtras(result.claims['extras']));
         this.#emailVerified.set(result.claims['email_verified'] === true);
         this.#user.set(firebaseUser);
         this.#markReady();
@@ -722,6 +733,7 @@ export class AuthService {
       if (this.#auth.currentUser?.uid !== current.uid) return this.#role();
       const role = roleFromClaims(result.claims);
       this.#role.set(role);
+      this.#extras.set(readExtras(result.claims['extras']));
       this.#emailVerified.set(result.claims['email_verified'] === true);
       this.#user.set(current);
       return role;

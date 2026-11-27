@@ -1,6 +1,7 @@
 import { Timestamp } from 'firebase/firestore';
 import { shortOrderRef } from '@core/services/orders/order-ref';
 import { firebaseErrors } from '@shared/utils/firebase/firebase-errors';
+import type { StaffExtra } from '@core/services/auth/staff-extras';
 import { AdminRecord, AdminTableRow, AssignableRole, RoleAudit, TeamRole } from '../models/admin-role.model';
 
 const WHEN_FORMAT = new Intl.DateTimeFormat('en', {
@@ -32,12 +33,30 @@ export function teamRoleLabel(role: TeamRole): string {
   return role === 'admin' ? 'Admin' : 'Staff';
 }
 
+/** Names and one-line hints for the extra access switches (ATS-368). */
+export const STAFF_EXTRA_COPY: Record<StaffExtra, { readonly label: string; readonly hint: string }> = {
+  refunds: { label: 'Refunds', hint: 'Mark refunds as sent and send back return fees' },
+  deleteOrders: { label: 'Delete orders', hint: 'Remove a cancelled or failed order for good' },
+  money: { label: 'Sales money', hint: 'See money totals on Overview' },
+};
+
+/** "Staff", or "Staff + Refunds, Sales money" when extras are switched on. */
+export function teamMemberLabel(role: TeamRole, extras: readonly StaffExtra[]): string {
+  if (role !== 'staff' || extras.length === 0) return teamRoleLabel(role);
+  return `Staff + ${extras.map((extra) => STAFF_EXTRA_COPY[extra].label).join(', ')}`;
+}
+
+function extrasList(extras: readonly StaffExtra[]): string {
+  return extras.map((extra) => STAFF_EXTRA_COPY[extra].label).join(', ');
+}
+
 export function toAdminTableRow(admin: AdminRecord): AdminTableRow {
   return {
     id: admin.uid,
     email: admin.email || 'No email on the account',
     role: admin.role,
-    roleLabel: teamRoleLabel(admin.role),
+    extras: admin.role === 'staff' ? admin.extras : [],
+    roleLabel: teamMemberLabel(admin.role, admin.role === 'staff' ? admin.extras : []),
     since: adminSinceLabel(admin.updatedAt),
     grantedBy: grantedByLabel(admin.updatedBy),
     action: '',
@@ -64,6 +83,17 @@ export function describeRoleChange(entry: RoleAudit): string {
       return `${actor} deleted order ${shortOrderRef(entry.orderId)}.`;
     case 'product.delete':
       return `${actor} deleted the product ${entry.name || entry.productId}.`;
+    case 'extras.set': {
+      const added = entry.to.filter((extra) => !entry.from.includes(extra));
+      const removed = entry.from.filter((extra) => !entry.to.includes(extra));
+      const parts = [
+        added.length > 0 ? `gave ${entry.targetEmail} ${extrasList(added)}` : '',
+        removed.length > 0 ? `took ${extrasList(removed)} away from ${entry.targetEmail}` : '',
+      ].filter(Boolean);
+      return parts.length > 0
+        ? `${actor} ${parts.join(' and ')}.`
+        : `${actor} saved extra access for ${entry.targetEmail}.`;
+    }
     case 'role.set':
       if (entry.to === 'user') {
         return `${actor} removed dashboard access from ${entry.targetEmail}.`;

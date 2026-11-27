@@ -198,7 +198,9 @@ export class OrderActionsComponent {
 
   /** Same rule as the server's `deleteOrder`: admins only, and only a finished-for-good order. */
   readonly canDelete = computed(
-    () => this.#auth.isAdmin() && (this.row().status === 'cancelled' || this.row().status === 'failed'),
+    () =>
+      this.#auth.hasExtra('deleteOrders') &&
+      (this.row().status === 'cancelled' || this.row().status === 'failed'),
   );
 
   /** The number can't be turned into a WhatsApp link safely: let staff copy and check it. */

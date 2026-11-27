@@ -22,7 +22,7 @@ export { onProductCountsChange } from './products/product-counts.trigger.js';
 export { onProductColorSiblingsChange } from './products/color-siblings.trigger.js';
 export { onOfferWritten } from './offers/on-offer-written.trigger.js';
 export { refreshOfferPricing } from './offers/refresh-offer-pricing.schedule.js';
-export { listAdmins, setUserRole } from './roles/roles.fn.js';
+export { listAdmins, setStaffExtras, setUserRole } from './roles/roles.fn.js';
 export { reindexSearch } from './search/reindex.fn.js';
 export { syncProductSearch } from './search/sync-product.trigger.js';
 export { onShippingSettingsWritten } from './shipping/on-shipping-settings-written.trigger.js';

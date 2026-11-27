@@ -103,7 +103,7 @@ export class OverviewPageComponent implements OnInit {
   readonly customTo = signal('');
 
   /** Admins see pounds; staff don't (and Firestore rules keep the money docs from them). */
-  readonly showMoney = computed(() => this.#auth.isAdmin());
+  readonly showMoney = computed(() => this.#auth.hasExtra('money'));
 
   readonly period = computed(() => {
     const custom: DayRange | null =

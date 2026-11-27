@@ -70,7 +70,9 @@ if (!['admin', 'staff', 'user'].includes(role)) throw new Error('--role must be 
 const RANK = { user: 0, staff: 1, admin: 2 };
 
 const before = ['admin', 'staff'].includes(user.customClaims?.role) ? user.customClaims.role : 'user';
-await auth.setCustomUserClaims(user.uid, { ...(user.customClaims ?? {}), role });
+// A role change starts with no extra access (ATS-368), the same as setUserRole.
+const { extras: _droppedExtras, ...keptClaims } = user.customClaims ?? {};
+await auth.setCustomUserClaims(user.uid, { ...keptClaims, role });
 
 let revokeTimeMs;
 // Less access than before: end the current sign-in, since the old ID token keeps the old role.

@@ -1,7 +1,7 @@
 import { FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { adminCallableOptions } from '../auth/callable-options.js';
-import { requireRole } from '../auth/require-role.js';
+import { requireExtra } from '../auth/require-role.js';
 import {
   orderDeleteBlockedReason,
   paymobFailedDeleteBlockedReason,
@@ -21,7 +21,7 @@ export interface DeleteOrderResponse {
  * the guest view, and `sendOrderEmails` sends nothing for a delete. Saved `orderEmails` records stay.
  */
 export const deleteOrder = onCall(adminCallableOptions(), async (request): Promise<DeleteOrderResponse> => {
-  const actor = await requireRole(request, 'admin');
+  const actor = await requireExtra(request, 'deleteOrders');
   const orderId = readDocIdRequest(request.data, 'orderId');
   if (!orderId) throw new HttpsError('invalid-argument', 'Choose an order and try again.');
 
