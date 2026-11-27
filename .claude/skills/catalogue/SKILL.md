@@ -29,7 +29,7 @@ Moved here word for word from AGENTS.md so that file stays small (<KEY>-282). Th
   - The loop works for the arrows, a mouse drag (measured by how far the mouse moved, since the row cannot scroll past an end) and a touch swipe that pushes past an end.
   - A swipe wrap waits until the row has stopped scrolling for 120 ms, because iOS drops a scroll started during its edge bounce.
   - The arrows are only disabled when every photo already fits.
-  - The home page rows (New Arrivals, Padel) do not loop.
+  - The home page rows (New Arrivals, Padel) loop the same way wherever the desktop scroll lock is off (see the `navigation-and-home` skill).
 
 ## Catalogue tree and stock
 

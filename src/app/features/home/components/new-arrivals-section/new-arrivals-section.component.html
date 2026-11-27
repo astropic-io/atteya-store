@@ -51,8 +51,8 @@
       @if (isBrowser && (canPrev() || canNext())) {
         <app-row-scroll-nav
           [progress]="progress()"
-          [canPrev]="canPrev()"
-          [canNext]="canNext()"
+          [canPrev]="canPrev() || lock.loops()"
+          [canNext]="canNext() || lock.loops()"
           (prev)="lock.step(-1)"
           (next)="lock.step(1)"
         />

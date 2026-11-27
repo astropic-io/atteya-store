@@ -1,6 +1,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import {
   afterNextRender,
+  computed,
   DestroyRef,
   Directive,
   ElementRef,
@@ -31,6 +32,12 @@ const FIT_MEDIA_VAR = '--row-lock-media-max';
 /** Skip a row write this close to the page-driven position (keeps native trackpad scrolling smooth). */
 const SYNC_TOLERANCE_PX = 3;
 const REFRESH_DELAY_MS = 200;
+/** Scroll positions this close to an end count as being at that end (sub-pixel rounding). */
+const EDGE_PX = 2;
+/** Pixels a swipe or mouse drag must cover, at the first or last card, to wrap to the other end. */
+const WRAP_PX = 40;
+/** Quiet time with no scroll events before a swipe wrap starts, so the edge bounce is over. */
+const SETTLE_MS = 120;
 
 /**
  * Home product rows (New Arrivals, Padel): on desktop, once the whole section is
@@ -48,6 +55,11 @@ const REFRESH_DELAY_MS = 200;
  * everything else in the section and sets `--row-lock-media-max` (px) on the
  * section; the section's CSS caps the photos' height with it, so the heading,
  * cards and arrows all fit below the nav.
+ *
+ * Wherever the lock is off (phones, tablets, reduced motion, a section that
+ * doesn't fit), the row loops instead: next on the last card goes back to the
+ * first, previous on the first goes to the last (arrows, touch swipe and mouse
+ * drag alike), the same way the product page photos loop.
  */
 @Directive({
   selector: '[appRowScrollLock]',
@@ -56,6 +68,7 @@ const REFRESH_DELAY_MS = 200;
 export class RowScrollLockDirective {
   readonly #row = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
   readonly #isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
+  readonly #destroyRef = inject(DestroyRef);
   readonly #enabled = signal(false);
 
   /** Selector of the photos that shrink so the section fits the window while locked. */
@@ -64,16 +77,27 @@ export class RowScrollLockDirective {
   /** True while the desktop lock is set up (the page scroll drives the row). */
   readonly enabled = this.#enabled.asReadonly();
 
+  /** The row loops at its ends: true whenever the desktop lock is off. */
+  readonly loops = computed(() => !this.#enabled());
+
   #mm: GsapMatchMedia | null = null;
   #trigger: ScrollTriggerClass | null = null;
   #travel = 0;
   #destroyed = false;
+  /** Touch or mouse press in progress, to wrap when it pushes past the first or last card. */
+  #press: { x: number; y: number; atStart: boolean; atEnd: boolean } | null = null;
+  /** Stops a pending swipe wrap (waiting for the edge bounce to finish). */
+  #cancelSettle: (() => void) | null = null;
 
   constructor() {
     if (!this.#isBrowser) return;
-    afterNextRender(() => void this.#boot());
-    inject(DestroyRef).onDestroy(() => {
+    afterNextRender(() => {
+      void this.#boot();
+      this.#watchWrap();
+    });
+    this.#destroyRef.onDestroy(() => {
       this.#destroyed = true;
+      this.#cancelSettle?.();
       this.#mm?.revert();
       this.#mm = null;
     });
@@ -90,7 +114,121 @@ export class RowScrollLockDirective {
       window.scrollTo({ top: trigger.start + target, behavior: 'smooth' });
       return;
     }
+    if (this.loops() && this.#wrap(direction)) return;
     scrollRowByItem(this.#row, direction);
+  }
+
+  /** At the last card going forward (or the first going back): jump to the other end. */
+  #wrap(direction: 1 | -1): boolean {
+    const row = this.#row;
+    if (this.#lastLeft() <= EDGE_PX) return false;
+    if (direction === 1 && this.#atEnd()) {
+      row.scrollTo({ left: 0, behavior: 'smooth' });
+      return true;
+    }
+    if (direction === -1 && this.#atStart()) {
+      row.scrollTo({ left: this.#lastLeft(), behavior: 'smooth' });
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Native swiping and the mouse drag stop at the ends. A clear sideways swipe or drag that
+   * starts at the last card and pushes on (or at the first card and pulls back) wraps around.
+   */
+  #watchWrap(): void {
+    const row = this.#row;
+    const start = (x: number, y: number): void => {
+      // A new touch takes over from a wrap still waiting to start.
+      this.#cancelSettle?.();
+      this.#press =
+        this.loops() && this.#lastLeft() > EDGE_PX
+          ? { x, y, atStart: this.#atStart(), atEnd: this.#atEnd() }
+          : null;
+    };
+    const end = (x: number, y: number): void => {
+      const press = this.#press;
+      this.#press = null;
+      if (!press || !this.loops()) return;
+      const dx = x - press.x;
+      const dy = y - press.y;
+      if (Math.abs(dx) < WRAP_PX || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      const direction = dx < 0 ? 1 : -1;
+      if (direction === 1 ? !(press.atEnd && this.#atEnd()) : !(press.atStart && this.#atStart())) return;
+      // Wait for the edge bounce (iOS) to finish: a scroll started during it is dropped.
+      this.#afterScrollSettles(() => this.#wrap(direction));
+    };
+
+    // Passive listeners so native swiping is never held up.
+    const onTouchStart = (event: TouchEvent): void => {
+      const touch = event.touches[0];
+      if (!touch || event.touches.length > 1) {
+        this.#press = null;
+        return;
+      }
+      start(touch.clientX, touch.clientY);
+    };
+    const onTouchEnd = (event: TouchEvent): void => {
+      const touch = event.changedTouches[0];
+      if (touch) end(touch.clientX, touch.clientY);
+      else this.#press = null;
+    };
+    const onCancel = (): void => {
+      this.#press = null;
+    };
+    const onMouseDown = (event: MouseEvent): void => {
+      if (event.button !== 0) return;
+      start(event.clientX, event.clientY);
+      window.addEventListener('mouseup', onMouseUp, { once: true });
+    };
+    const onMouseUp = (event: MouseEvent): void => end(event.clientX, event.clientY);
+
+    row.addEventListener('touchstart', onTouchStart, { passive: true });
+    row.addEventListener('touchend', onTouchEnd, { passive: true });
+    row.addEventListener('touchcancel', onCancel, { passive: true });
+    row.addEventListener('mousedown', onMouseDown, { passive: true });
+    this.#destroyRef.onDestroy(() => {
+      row.removeEventListener('touchstart', onTouchStart);
+      row.removeEventListener('touchend', onTouchEnd);
+      row.removeEventListener('touchcancel', onCancel);
+      row.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mouseup', onMouseUp);
+    });
+  }
+
+  /** Runs `done` once the row has had no scroll events for SETTLE_MS. */
+  #afterScrollSettles(done: () => void): void {
+    const row = this.#row;
+    this.#cancelSettle?.();
+    let timer = 0;
+    const stop = (): void => {
+      clearTimeout(timer);
+      row.removeEventListener('scroll', restart);
+      this.#cancelSettle = null;
+    };
+    const restart = (): void => {
+      clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        stop();
+        done();
+      }, SETTLE_MS);
+    };
+    row.addEventListener('scroll', restart, { passive: true });
+    this.#cancelSettle = stop;
+    restart();
+  }
+
+  #lastLeft(): number {
+    return Math.max(0, this.#row.scrollWidth - this.#row.clientWidth);
+  }
+
+  #atStart(): boolean {
+    return this.#row.scrollLeft <= EDGE_PX;
+  }
+
+  #atEnd(): boolean {
+    return this.#row.scrollLeft >= this.#lastLeft() - EDGE_PX;
   }
 
   async #boot(): Promise<void> {
