@@ -373,7 +373,8 @@ Located in `src/app/shared/utils/`:
   - `buildImageKitUrl(pathOrUrl, tr?)`: Explicit ImageKit CDN URL for probes, `og:image`, and JSON-LD.
   - `parseImageInput(raw)`: Pure ReDoS-safe classifier returning `external-url`, `managed-path`, or `invalid`.
   - `diffOrphanedPaths(candidates, kept, protectedPaths?)`: Computes unreferenced Storage paths for cleanup.
-  - `sanitizeAltFromFilename(filename)`: Pre-fills clean, human-readable alt text from filenames.
+  - `sanitizeAltFromFilename(filename)`: Pre-fills clean, human-readable alt text from filenames; returns '' for a machine-made name (<KEY>-366).
+  - `isMachineFileName(text)`: true for a storage id or hash (one word of 16+ hex characters with 4+ digits), which is never offered or shown as alt text (<KEY>-366).
 
 ---
 
@@ -424,6 +425,7 @@ All storefront visual media (hero banners, product showcases, category headers) 
 ### 📤 Image Uploads & Admin Pickers (`ImageSourceService` / `ImagePicker` / `ImageGalleryEditor`)
 
 - In admin forms, use `<app-image-picker>` for single images or `<app-image-gallery-editor>` for multi-image galleries (up to 8 images, `products/<productId>/` folder).
+- `<app-image-picker>` keeps a portrait spot's preview narrow and centred (`max-w-80`, about 20 × 25 rem for 4:5), and with `[altOptional]="true"` leaves the description empty on upload instead of using the file name (<KEY>-366).
 - Track session uploads with `StorageAssetTracker` so discarded or replaced files are automatically cleaned up from Firebase Storage.
 
 ### Admin role

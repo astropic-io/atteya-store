@@ -14,6 +14,13 @@
   }
 }
 
+// Admin preview: the link being edited is shaded at every width (ATS-366), which a
+// hover never copies, so it stays clear which link the editor below changes.
+.nav-list-link.is-edited {
+  background: var(--mat-sys-surface-container);
+  padding-inline: 0.75rem;
+}
+
 // Desktop "List 1" rows (ATS-346): a black line draws in under the active row
 // and its name nudges right. Phones keep plain rows.
 @media (min-width: 1024px) {
@@ -33,8 +40,7 @@
     transition: transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
   }
 
-  .nav-list-link.is-active,
-  .nav-list-link.is-edited {
+  .nav-list-link.is-active {
     &::after {
       transform: scaleX(1);
     }
