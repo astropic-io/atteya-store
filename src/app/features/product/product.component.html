@@ -167,7 +167,18 @@
               />
             }
           }
+          <app-add-to-bag-button
+            [lines]="bagLines()"
+            [label]="addLabel()"
+            [valueEgp]="addValueEgp()"
+            [unavailable]="!inStock()"
+            (choiceMissing)="onChoiceMissing()"
+          />
           @if (bundleSave(); as set) {
+            <!-- Two offers, two choices (ATS-356): this product's own Add to Bag sits right under its own offer, then "Or", then the set with its own button. -->
+            @if (bundleSaveLoading() || bundleSaveSteps().length > 0) {
+              <p class="pdp-or">Or get the bundle</p>
+            }
             @if (bundleSaveLoading()) {
               <app-choice-box-skeleton [header]="true" [button]="true" />
             } @else if (bundleSaveSteps().length > 0) {
@@ -185,13 +196,6 @@
               />
             }
           }
-          <app-add-to-bag-button
-            [lines]="bagLines()"
-            [label]="addLabel()"
-            [valueEgp]="addValueEgp()"
-            [unavailable]="!inStock()"
-            (choiceMissing)="onChoiceMissing()"
-          />
         </div>
 
         <div class="w-full border-t border-outline xl:col-start-1 xl:row-start-2">
