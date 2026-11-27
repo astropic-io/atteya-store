@@ -1,5 +1,6 @@
 import { HttpsError } from 'firebase-functions/v2/https';
-import { collapseSpaces, PRODUCT_TYPES, type ProductTypeId } from './catalog-mapping.js';
+import { collapseSpaces, type ProductTypeId } from './catalog-mapping.js';
+import { isTypeId } from './product-types.js';
 import { COLOR_IDS, type ColorId } from './catalog-taxonomy.js';
 import { isMarketingBadgeKind, isMarketingBadgeStyle, type MarketingBadge } from './marketing-badge.js';
 import { isPlayerId, MAX_PRODUCT_PLAYERS } from './players.js';
@@ -30,7 +31,6 @@ const MAX_COUNT = 100_000;
 const MAX_WEIGHT_GRAMS = 100_000;
 const MAX_OPTIONS = 8;
 
-const TYPE_IDS = new Set<string>(PRODUCT_TYPES.map((type) => type.id));
 const COLOR_ID_SET = new Set<string>(COLOR_IDS);
 export const PRODUCT_GENDER_IDS = ['women', 'men', 'unisex'] as const;
 export type ProductGenderId = (typeof PRODUCT_GENDER_IDS)[number];
@@ -347,9 +347,10 @@ export function detailLine(value: string): string {
   return collapseSpaces(value.trim().replace(/^•\s*/u, ''));
 }
 
+/** A well-formed type id; the callable then checks it is in Types (`assertKnownType`, ATS-388). */
 export function readType(value: unknown): ProductTypeId {
-  if (typeof value !== 'string' || !TYPE_IDS.has(value)) invalid('Choose a product type.');
-  return value as ProductTypeId;
+  if (!isTypeId(value)) invalid('Choose a product type.');
+  return value;
 }
 
 export function readSlugId(value: unknown, message: string): string {

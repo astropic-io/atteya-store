@@ -1,5 +1,15 @@
 import { inject, Service } from '@angular/core';
-import { collection, doc, getDoc, getDocs, limit, orderBy, query } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getCountFromServer,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  where,
+} from 'firebase/firestore';
 import * as v from 'valibot';
 import { callableFrom, injectFirestore, injectFunctionsAsync } from '@core/firebase';
 import { AuthService } from '@core/services/auth/auth.service';
@@ -8,7 +18,11 @@ import { NavSettingsSchema } from '@core/services/navigation/nav.schema';
 import type { NavCategory } from '@core/services/navigation/nav.model';
 import { BrandSchema, CategorySchema } from '@core/services/products/category.schema';
 import type { Brand, Category } from '@core/services/products/product.model';
-import { BRANDS_COLLECTION, CATEGORIES_COLLECTION } from '@core/services/products/product.constants';
+import {
+  BRANDS_COLLECTION,
+  CATEGORIES_COLLECTION,
+  PRODUCTS_COLLECTION,
+} from '@core/services/products/product.constants';
 import { SearchService } from '@core/services/search';
 import type { BrandDraft, CatalogKind, CategoryDraft } from '../utils/catalog-manager.utils';
 import {
@@ -90,6 +104,19 @@ export class CatalogAdminService {
       const parsed = v.safeParse(CategorySchema, { ...item.data(), id: item.id });
       return parsed.success ? [parsed.output] : [];
     });
+  }
+
+  /** Products of one type, live or hidden (ATS-388): a type in use can't be deleted. One count query. */
+  async countProductsOfType(typeId: string): Promise<number> {
+    const snap = await getCountFromServer(
+      query(collection(this.#firestore, PRODUCTS_COLLECTION), where('type', '==', typeId)),
+    );
+    return snap.data().count;
+  }
+
+  /** The signed-in staff member, for `updatedBy`. */
+  currentUid(): string | null {
+    return this.#auth.user()?.uid ?? null;
   }
 
   async listBrands(): Promise<readonly Brand[]> {

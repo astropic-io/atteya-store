@@ -1,0 +1,73 @@
+<form class="catalog-dialog" (submit)="$event.preventDefault(); save()">
+  <h2 mat-dialog-title class="font-title-lg font-bold!">{{ title }}</h2>
+  <mat-dialog-content>
+    <div class="catalog-dialog-body">
+      <mat-form-field class="w-full" appearance="outline" subscriptSizing="dynamic">
+        <mat-label>Name</mat-label>
+        <input
+          matInput
+          type="text"
+          required
+          placeholder="e.g. Hoodies"
+          [attr.maxlength]="maxName"
+          [value]="name()"
+          (input)="name.set(textFrom($event)); error.set('')"
+        />
+        <mat-hint>What staff pick in the product's Type box and in offers.</mat-hint>
+        <mat-hint align="end">{{ name().length }} / {{ maxName }}</mat-hint>
+      </mat-form-field>
+
+      <mat-form-field class="w-full" appearance="outline" subscriptSizing="dynamic">
+        <mat-label>On the product page</mat-label>
+        <input
+          matInput
+          type="text"
+          required
+          placeholder="e.g. this hoodie"
+          [attr.maxlength]="maxPhrase"
+          [value]="phrase()"
+          (input)="setPhrase(textFrom($event))"
+        />
+        <mat-hint>
+          @if (example()) {
+            Reads as "{{ example() }}". Use "these" for things sold in pairs, like socks.
+          } @else {
+            How the page names one, like "this hoodie" or "these socks".
+          }
+        </mat-hint>
+      </mat-form-field>
+
+      <mat-form-field class="w-full" appearance="outline" subscriptSizing="dynamic">
+        <mat-label>Usual category</mat-label>
+        <mat-select [value]="categoryId()" (selectionChange)="categoryId.set($event.value)">
+          <mat-option value="">None</mat-option>
+          @for (option of categories; track option.id) {
+            <mat-option [value]="option.id">{{ option.label }}</mat-option>
+          }
+        </mat-select>
+        <mat-hint
+          >Filled in when someone picks this type for a new product. They can still change it.</mat-hint
+        >
+      </mat-form-field>
+
+      @if (error()) {
+        <p class="font-body-sm text-error" role="alert">{{ error() }}</p>
+      }
+    </div>
+  </mat-dialog-content>
+  <mat-dialog-actions class="catalog-dialog-actions">
+    @if (!isNew) {
+      <span class="catalog-dialog-actions__delete">
+        <button matButton="text" type="button" class="btn-block-phone" (click)="requestDelete()">
+          <mat-icon name="delete" />
+          <span>Delete</span>
+        </button>
+      </span>
+    }
+    <button matButton="text" type="button" [mat-dialog-close]="undefined">Cancel</button>
+    <button matButton="filled" type="submit">
+      <mat-icon name="check" />
+      <span>{{ saveLabel }}</span>
+    </button>
+  </mat-dialog-actions>
+</form>

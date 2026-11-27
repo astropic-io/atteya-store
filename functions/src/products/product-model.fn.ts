@@ -13,6 +13,7 @@ import { requireRole } from '../auth/require-role.js';
 import { LOCKABLE_FIELDS, type LockableField } from './lockable-fields.js';
 import { descriptionToHtml } from './product-form.js';
 import { assertImportIdle, assertKnownPlayers, categoryIdsFrom, claimSlug } from './product-form.fn.js';
+import { assertKnownType } from './product-types.js';
 import { readModelGroup as modelGroupOf } from './color-siblings.js';
 import {
   colourSizes,
@@ -120,6 +121,12 @@ export const saveProductModel = onCall(
         throw new HttpsError('failed-precondition', 'That brand no longer exists. Reload the page.');
       }
       await assertKnownPlayers(tx, db, shared.players);
+      await assertKnownType(
+        tx,
+        db,
+        shared.type,
+        [...live.values()].map((snap) => snap.data()?.['type']),
+      );
       const categoryIds = categoryIdsFrom(categorySnap.data() ?? {}, shared.categoryId);
 
       const modelGroup =

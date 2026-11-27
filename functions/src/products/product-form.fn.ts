@@ -19,6 +19,7 @@ import {
   type SaveProductResponse,
 } from './product-form.js';
 import { PLAYERS_DOC_PATH, readPlayerList } from './players.js';
+import { assertKnownType } from './product-types.js';
 import { buildSearchTokens } from './search-tokens.js';
 import { nextSlug, slugBase } from './slug.js';
 import { readSizeValueIds, stockFields } from './stock.js';
@@ -38,7 +39,7 @@ export const createProduct = onCall(adminCallableOptions(), async (request): Pro
     if (existing.exists) {
       throw new HttpsError('already-exists', 'This product was already saved. Reload the page.');
     }
-    const catalogue = await readCatalogue(tx, db, input);
+    const catalogue = await readCatalogue(tx, db, input, []);
     const slug = await claimSlug(tx, db, slugBase(input.slug ?? '', input.name));
     const { options, sizeIds } = nextSizeOption([], input.sizes);
     const stock =
@@ -108,7 +109,7 @@ export const updateProduct = onCall(adminCallableOptions(), async (request): Pro
       throw new HttpsError('not-found', 'This product no longer exists. Reload the page.');
     }
     assertPricePair(input.price, input.compareAtPrice);
-    const catalogue = await readCatalogue(tx, db, input);
+    const catalogue = await readCatalogue(tx, db, input, [live['type']]);
     const locks = changedLocks(live, input, catalogue.categoryIds);
 
     const patch: DocumentData = {
@@ -183,6 +184,7 @@ async function readCatalogue(
   tx: Transaction,
   db: Firestore,
   input: ProductFormInput,
+  liveTypes: readonly unknown[],
 ): Promise<{ categoryIds: string[]; searchTokens: readonly string[] }> {
   const categorySnap = await tx.get(db.collection('categories').doc(input.categoryId));
   if (!categorySnap.exists) {
@@ -193,6 +195,7 @@ async function readCatalogue(
     throw new HttpsError('failed-precondition', 'That brand no longer exists. Reload the page.');
   }
   await assertKnownPlayers(tx, db, input.players);
+  await assertKnownType(tx, db, input.type, liveTypes);
   return {
     categoryIds: categoryIdsFrom(categorySnap.data() ?? {}, input.categoryId),
     searchTokens: buildSearchTokens(input.name, input.modelGroup),

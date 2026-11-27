@@ -5,7 +5,7 @@ import { COLOR_IDS } from './catalog-taxonomy';
 import { MARKETING_BADGE_KINDS, MARKETING_BADGE_STYLES } from './marketing-badge';
 import { MAX_PRODUCT_PLAYERS, PlayerIdSchema } from './player.schema';
 import { MAX_DETAIL_LINE, MAX_DETAIL_LINES } from './utils/product-details';
-import { LOCKABLE_PRODUCT_FIELDS, PRODUCT_GENDER_IDS, PRODUCT_TYPE_IDS } from './product.constants';
+import { LOCKABLE_PRODUCT_FIELDS, PRODUCT_GENDER_IDS } from './product.constants';
 
 const wholeNumber = v.pipe(v.number(), v.integer(), v.minValue(0));
 const countMap = v.record(v.string(), wholeNumber);
@@ -86,7 +86,8 @@ export const ProductSchema = v.pipe(
     detailImages: v.pipe(v.array(ProductImageSchema), v.maxLength(8)),
     categoryId: slugSchema,
     categoryIds: v.pipe(v.array(slugSchema), v.minLength(1), v.maxLength(10)),
-    type: v.picklist(PRODUCT_TYPE_IDS),
+    /** Any saved type id (ATS-388): staff add types in Categories & Brands → Types. */
+    type: slugSchema,
     brandId: slugSchema,
     modelGroup: v.nullable(v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(80))),
     /** An unknown stored gender (e.g. a retired 'kids') reads as not set; it never drops the product. */
