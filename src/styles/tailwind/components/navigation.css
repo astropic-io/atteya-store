@@ -57,7 +57,7 @@
   /* Desktop stack of photos (ATS-361). Hidden below lg so lazy images are not fetched.
      Narrower than its column so the tilted photos behind have room to peek out. */
   .nav-list-panel {
-    @apply relative hidden aspect-4/5 w-full;
+    @apply relative hidden aspect-4/5 w-full bg-surface-container-high;
     @apply lg:mx-auto lg:block lg:w-[82%];
   }
 

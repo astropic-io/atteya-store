@@ -7,9 +7,7 @@
   z-index: 0;
   overflow: hidden;
   background: var(--mat-sys-surface-container-high);
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 8%),
-    0 14px 34px rgb(0 0 0 / 16%);
+  box-shadow: var(--mat-sys-level3);
   opacity: 0;
   translate: -9% -6%;
   rotate: -6deg;
@@ -24,19 +22,18 @@
   &[data-depth='0'] {
     z-index: 3;
     opacity: 1;
-    // The photo coming to the top turns solid quickly, so the one leaving never shows through it.
-    transition-duration: 0.7s, 0.7s, 0.7s, 0.15s, 0.5s;
+    // The photo coming to the top is solid at once, so no photo behind it ever shows through.
+    transition-duration: 0.7s, 0.7s, 0.7s, 0s, 0.5s;
     translate: none;
     rotate: none;
     scale: none;
-    box-shadow:
-      0 2px 4px rgb(0 0 0 / 8%),
-      0 24px 50px rgb(0 0 0 / 22%);
+    box-shadow: var(--mat-sys-level5);
   }
 
+  // A photo behind the top one shows only once its picture has loaded, so no empty
+  // or shimmering frame ever sticks out of the stack.
   &[data-depth='1'] {
     z-index: 2;
-    opacity: 1;
     translate: 9% -4%;
     rotate: 5deg;
     scale: 0.95;
@@ -44,10 +41,14 @@
 
   &[data-depth='2'] {
     z-index: 1;
-    opacity: 1;
     translate: -8% -6%;
     rotate: -6deg;
     scale: 0.9;
+  }
+
+  &[data-depth='1'].is-loaded,
+  &[data-depth='2'].is-loaded {
+    opacity: 1;
   }
 }
 

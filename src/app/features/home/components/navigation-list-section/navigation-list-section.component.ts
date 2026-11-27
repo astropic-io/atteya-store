@@ -127,8 +127,15 @@ export class NavigationListSectionComponent {
     return `${pad(this.shownIndex() + 1)} / ${pad(this.items().length)}`;
   });
 
-  /** Item 0 mounts with the desktop panel. The rest mount on the first pointer or focus. */
-  readonly #mounted = signal<ReadonlySet<number>>(new Set([0]));
+  /**
+   * The top photo and the two behind it mount with the desktop panel (ATS-361), and the two
+   * behind any photo coming to the top mount before it moves. The rest mount on the first
+   * pointer or focus. Mounted photos stay, so they slide away instead of vanishing.
+   */
+  readonly #mounted = signal<ReadonlySet<number>>(new Set([0, 1, 2]));
+  readonly #loaded = signal<ReadonlySet<number>>(new Set());
+  /** False until the stack shows its first photo; that first one goes up with no wait. */
+  #photosSettled = false;
   /**
    * Stays false until the browser confirms the lg layout. Starting false keeps
    * the photo out of the server HTML and the first client render, so a phone
@@ -161,9 +168,12 @@ export class NavigationListSectionComponent {
       const photosEnabled = this.#desktopPhotos();
       const mounted = this.#mounted();
       if (!photosEnabled) return;
-      // The admin preview can pick a row whose photo is not in the page yet: add it, then come back.
-      if (!mounted.has(index)) {
-        untracked(() => this.#mount(index));
+      // The admin preview can pick a row whose photo is not in the page yet: add it and
+      // the two that will sit behind it, then come back.
+      const count = this.items().length;
+      const around = [index, (index + 1) % count, (index + 2) % count].filter((i) => i < count);
+      if (around.some((i) => !mounted.has(i))) {
+        untracked(() => around.forEach((i) => this.#mount(i)));
         return;
       }
       untracked(() => this.#syncPhotos(index));
@@ -189,9 +199,22 @@ export class NavigationListSectionComponent {
     return path;
   }
 
-  /** The top photo and the two that peek out behind it always mount; the rest on the first hover or focus. */
   isMounted(index: number): boolean {
-    return this.#mounted().has(index) || this.depthOf(index) <= 2;
+    return this.#mounted().has(index);
+  }
+
+  /** True once photo `index` has downloaded; the photos behind the top one wait for it. */
+  isLoaded(index: number): boolean {
+    return this.#loaded().has(index);
+  }
+
+  markLoaded(index: number): void {
+    this.#loaded.update((current) => {
+      if (current.has(index)) return current;
+      const next = new Set(current);
+      next.add(index);
+      return next;
+    });
   }
 
   /** Place in the desktop stack: 0 is the top photo, 1 and 2 peek out behind it, the rest are hidden. */
@@ -275,6 +298,7 @@ export class NavigationListSectionComponent {
     this.#desktopPhotos.set(event.matches);
     if (event.matches) return;
     this.#stopPhotoWait();
+    this.#photosSettled = false;
     this.#arrowsSettled = false;
     this.#ctx?.revert();
     if (this.#gsap) {
@@ -320,12 +344,14 @@ export class NavigationListSectionComponent {
    */
   #syncPhotos(index: number, skipWait = false): void {
     if (!this.#desktopPhotos()) return;
+    const first = !this.#photosSettled;
+    this.#photosSettled = true;
     if (this.shownIndex() === index) {
       this.#stopPhotoWait();
       return;
     }
     this.#stopPhotoWait();
-    if (!skipWait) {
+    if (!skipWait && !first) {
       const photos = [...this.#host.nativeElement.querySelectorAll<HTMLElement>('[data-nav-photo]')];
       const pending = pendingNavListImage(photos, index);
       if (pending) {
