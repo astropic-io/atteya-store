@@ -229,7 +229,7 @@ jobs:
               if (pr.base?.ref !== BASE) { stop(`It does not target ${BASE}.`); return false; }
               if (pr.head?.sha !== sha) { stop('A newer commit was pushed.'); return false; }
               if (pr.head?.repo?.full_name !== `${owner}/${repo}`) { stop('It comes from a fork.'); return false; }
-              if (pr.user?.login !== AUTHOR) { stop('It was not opened by the repository owner.'); return false; }
+              if (pr.user?.login !== AUTHOR) { stop(`It was not opened by ${AUTHOR}.`); return false; }
               if ((pr.labels || []).some((l) => l.name === OPT_OUT_LABEL)) { stop(`It has the ${OPT_OUT_LABEL} label.`); return false; }
               if (['develop', 'main'].includes(pr.head?.ref)) { stop('Its branch is develop or main.'); return false; }
 
