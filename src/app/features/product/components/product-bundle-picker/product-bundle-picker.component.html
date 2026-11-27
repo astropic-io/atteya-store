@@ -14,8 +14,9 @@
           <!-- Stretches the label over the whole row, so a click anywhere on it picks this row. -->
           <span class="pdp-bundle-row__hit" aria-hidden="true"></span>
           <span>{{ view.title }}</span>
+          <span class="sr-only">, {{ view.perPiece }} each</span>
           @if (view.fullPrice) {
-            <span class="sr-only">, {{ view.perPiece }} each instead of {{ view.fullPrice }}</span>
+            <span class="sr-only"> instead of {{ view.fullPrice }}</span>
           }
         </mat-radio-button>
         <span class="pdp-bundle-row__price" aria-hidden="true">
