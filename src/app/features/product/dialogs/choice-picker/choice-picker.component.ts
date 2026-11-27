@@ -27,7 +27,8 @@ interface BrandFilter {
  * The choice panel (ATS-349, ATS-355), opened by `ChoicePickerService` from a row of the Gift Box,
  * the Bundle price picker or Bundle & Save: a side panel on
  * desktop (40rem, 3 cards a row), a sheet from the bottom on phone. Photo cards of the row's choices,
- * colour and brand filters whenever there are 2 or more of either (ATS-359), a search field from 20, 12 cards at a time. The picked product's
+ * colour and brand filters whenever there are 2 or more of either (ATS-359), a search
+ * field from 20, 12 cards at a time. The picked product's
  * sizes sit in the pinned footer, with "Next: Your Free Socks" or "Done". Esc, the backdrop and the
  * close button keep what was picked.
  */
@@ -85,6 +86,9 @@ export class ChoicePickerComponent {
       .map(([id, count]) => ({ id, count, name: this.#catalog.brandBySlug(id)?.name ?? id }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   });
+
+  /** The count line and Clear: on a long list, or whenever there is a filter to clear. */
+  readonly showCount = computed(() => this.long || this.colours().length > 0 || this.brands().length > 0);
 
   readonly filtered = computed(() => {
     const colour = this.colour();
