@@ -11,7 +11,7 @@
     @for (category of categories(); track category.id) {
       <div class="space-y-1">
         <!-- Category Group Header -->
-        <div class="px-3 py-1 font-label-sm font-bold! opacity-50 uppercase tracking-widest">
+        <div class="px-3 py-1 font-label-md font-bold! opacity-50 uppercase tracking-widest">
           {{ category.label }}
         </div>
 
@@ -21,11 +21,11 @@
             <a
               [routerLink]="item.path"
               routerLinkActive="bg-surface-container-high font-bold!"
-              class="elements-between px-3 py-2 border-shape opacity-80 hover:opacity-100 hover:bg-surface-container transition-colors font-body-sm"
+              class="elements-between px-3 py-2.5 border-shape opacity-80 hover:opacity-100 hover:bg-surface-container transition-colors font-body-lg"
             >
               <div class="flex items-center gap-3">
                 @if (item.icon) {
-                  <mat-icon [name]="item.icon" size="sm" />
+                  <mat-icon [name]="item.icon" size="xl" />
                 }
                 <span>{{ item.label }}</span>
               </div>
