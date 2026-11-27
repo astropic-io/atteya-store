@@ -19,90 +19,89 @@
     <p class="p-4 bg-surface-container-low panel-border font-body-md" role="status">{{ text }}</p>
   }
 
-  <div class="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
-    <div class="space-y-4 bg-surface-container-low p-5 panel-border">
-      <div>
-        <span class="block font-label-md font-bold! uppercase opacity-80">Where it goes</span>
-        <p class="font-body-sm opacity-70">
-          Pick a running offer, a category, a brand or a store page. A buy-together offer opens its own page.
-        </p>
-      </div>
-
-      <app-nav-target-field
-        fieldId="offer-banner"
-        [target]="item.target"
-        [path]="item.link"
-        [allowOutside]="false"
-        (targetChange)="targetChange.emit($event)"
-      />
-
-      <mat-form-field appearance="outline" class="w-full">
-        <mat-label>Headline</mat-label>
-        <input
-          matInput
-          id="offer-banner-headline"
-          name="offer-banner-headline"
-          autocomplete="off"
-          [ngModel]="item.headline"
-          (ngModelChange)="headlineChange.emit($event)"
-          placeholder="The more socks, the less you pay."
-          required
-        />
-        <mat-hint>Up to {{ limits.bannerHeadline.words }} words.</mat-hint>
-        <mat-hint align="end">
-          <span [class.text-error]="headlineState().over">{{ headlineState().label }}</span>
-        </mat-hint>
-      </mat-form-field>
-
-      <mat-form-field appearance="outline" class="w-full">
-        <mat-label>Small label</mat-label>
-        <input
-          matInput
-          id="offer-banner-label"
-          name="offer-banner-label"
-          autocomplete="off"
-          [ngModel]="item.label"
-          (ngModelChange)="labelChange.emit($event)"
-          placeholder="Bundle & Save"
-        />
-        <mat-hint>Filled in from the link. Up to {{ limits.bannerLabel.words }} words.</mat-hint>
-        <mat-hint align="end">
-          <span [class.text-error]="labelState().over">{{ labelState().label }}</span>
-        </mat-hint>
-      </mat-form-field>
-
-      <p class="font-body-sm">
-        <span class="opacity-70">Link text:</span>
-        <span class="font-bold!">{{ item.linkText || 'Pick where it goes first' }}</span>
-        <span class="block opacity-70">Written for you from the link, so it always matches.</span>
+  <div class="grid grid-cols-1 items-start gap-4 bg-surface-container-low p-5 panel-border lg:grid-cols-2">
+    <div class="lg:col-span-2">
+      <span class="block font-label-md font-bold! uppercase opacity-80">Where it goes</span>
+      <p class="font-body-sm opacity-70">
+        Pick a running offer, a category, a brand or a store page. A buy-together offer opens its own page.
       </p>
     </div>
 
-    <div class="space-y-6">
-      <app-image-picker
-        folder="hero"
-        spot="homeOfferBanner"
-        label="Wide photo (computers and tablets)"
-        subtitle="Required. Keep the left side calm: the text sits there."
-        altPlaceholder="e.g. Padel rackets on a court bench"
-        [altOptional]="true"
-        [asset]="wideAsset()"
-        (assetChange)="onWideChange($event)"
-        (uploaded)="sessionUpload.emit($event)"
-      />
+    <app-nav-target-field
+      class="lg:col-span-2"
+      fieldId="offer-banner"
+      [target]="item.target"
+      [path]="item.link"
+      [allowOutside]="false"
+      (targetChange)="targetChange.emit($event)"
+    />
 
-      <app-image-picker
-        folder="hero"
-        spot="homeOfferBannerPhone"
-        label="Phone photo (optional)"
-        subtitle="Without one, phones show the middle of the wide photo."
-        altPlaceholder="Uses the wide photo's description."
-        [altOptional]="true"
-        [allowRemove]="true"
-        [asset]="phoneAsset()"
-        (assetChange)="onPhoneChange($event)"
-        (uploaded)="sessionUpload.emit($event)"
+    <mat-form-field appearance="outline" class="w-full">
+      <mat-label>Headline</mat-label>
+      <input
+        matInput
+        id="offer-banner-headline"
+        name="offer-banner-headline"
+        autocomplete="off"
+        [ngModel]="item.headline"
+        (ngModelChange)="headlineChange.emit($event)"
+        placeholder="The more socks, the less you pay."
+        required
       />
-    </div>
+      <mat-hint>Up to {{ limits.bannerHeadline.words }} words.</mat-hint>
+      <mat-hint align="end">
+        <span [class.text-error]="headlineState().over">{{ headlineState().label }}</span>
+      </mat-hint>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="w-full">
+      <mat-label>Small label</mat-label>
+      <input
+        matInput
+        id="offer-banner-label"
+        name="offer-banner-label"
+        autocomplete="off"
+        [ngModel]="item.label"
+        (ngModelChange)="labelChange.emit($event)"
+        placeholder="Bundle & Save"
+      />
+      <mat-hint>Filled in from the link. Up to {{ limits.bannerLabel.words }} words.</mat-hint>
+      <mat-hint align="end">
+        <span [class.text-error]="labelState().over">{{ labelState().label }}</span>
+      </mat-hint>
+    </mat-form-field>
+
+    <p class="font-body-sm lg:col-span-2">
+      <span class="opacity-70">Link text:</span>
+      <span class="font-bold!">{{ item.linkText || 'Pick where it goes first' }}</span>
+      <span class="block opacity-70">Written for you from the link, so it always matches.</span>
+    </p>
+  </div>
+
+  <div class="grid grid-cols-1 items-start gap-6 xl:grid-cols-[3fr_2fr]">
+    <app-image-picker
+      folder="hero"
+      spot="homeOfferBanner"
+      label="Wide photo (computers and tablets)"
+      subtitle="Required. Keep the left side calm: the text sits there."
+      altPlaceholder="e.g. Padel rackets on a court bench"
+      [altOptional]="true"
+      [asset]="wideAsset()"
+      (assetChange)="onWideChange($event)"
+      (uploaded)="sessionUpload.emit($event)"
+    />
+
+    <app-image-picker
+      folder="hero"
+      spot="homeOfferBannerPhone"
+      label="Phone photo (optional)"
+      subtitle="Without one, phones show the middle of the wide photo."
+      altPlaceholder="Uses the wide photo's description."
+      [altOptional]="true"
+      [allowRemove]="true"
+      [asset]="phoneAsset()"
+      (assetChange)="onPhoneChange($event)"
+      (uploaded)="sessionUpload.emit($event)"
+    />
   </div>
 </section>
