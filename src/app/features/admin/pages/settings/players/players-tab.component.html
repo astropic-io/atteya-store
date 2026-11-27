@@ -23,19 +23,18 @@
       <ul class="w-full grid grid-cols-1 @3xl:grid-cols-2 gap-2 list-none m-0 p-0" aria-label="Players">
         @for (player of draft(); track player.id; let i = $index) {
           <li
-            class="min-w-0 border border-outline-variant border-shape p-3 elements-start-col items-stretch! gap-2"
+            class="min-w-0 border border-outline-variant border-shape p-3 elements-start-col items-stretch! justify-start! gap-1"
           >
-            <div class="w-full flex items-end gap-2">
-              <label class="elements-start-col gap-1 font-label-md grow min-w-0">
-                Name
-                <input
-                  type="text"
-                  [attr.maxlength]="maxName"
-                  class="border-shape border border-outline bg-surface px-3 py-2 font-body-md w-full"
-                  [value]="player.name"
-                  (input)="rename(i, textFrom($event))"
-                />
-              </label>
+            <label class="font-label-md" [for]="'player-name-' + player.id">Name</label>
+            <div class="elements-start gap-2">
+              <input
+                type="text"
+                [id]="'player-name-' + player.id"
+                [attr.maxlength]="maxName"
+                class="border-shape border border-outline bg-surface px-3 py-2 font-body-md grow min-w-0"
+                [value]="player.name"
+                (input)="rename(i, textFrom($event))"
+              />
               <button
                 matIconButton
                 type="button"
@@ -45,8 +44,8 @@
                 <mat-icon name="delete" />
               </button>
             </div>
-            <p class="font-body-sm text-on-surface-variant break-all">
-              Link name: <span class="font-mono">/shop?player={{ player.id }}</span>
+            <p class="font-body-sm text-on-surface-variant">
+              Link name: <span class="font-mono break-all">/shop?player={{ player.id }}</span>
             </p>
           </li>
         }
