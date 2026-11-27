@@ -46,7 +46,7 @@ export const shopCategoriesResolver: ResolveFn<void> = async () => {
 };
 
 /**
- * Browser tab title for `/category/:slug` ("Padel | Atteya Store"), so a filter change on the
+ * Browser tab title for `/category/:slug` ("Rackets | Atteya Store"), so a filter change on the
  * same route never puts a generic title back over the page's own.
  */
 export const shopCategoryTitle: ResolveFn<string> = async (route) => {

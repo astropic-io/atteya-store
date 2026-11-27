@@ -22,12 +22,11 @@ export const NAV_CATEGORIES: readonly NavCategory[] = [
       {
         title: 'TOP BRANDS',
         links: [
-          { label: 'Bullpadel', path: '/brand/bullpadel', isBrand: true },
-          { label: 'Nox', path: '/brand/nox', isBrand: true },
-          { label: 'Babolat', path: '/brand/babolat', isBrand: true },
-          { label: 'Head', path: '/brand/head', isBrand: true },
-          { label: 'Siux', path: '/brand/siux', isBrand: true },
-          { label: 'Adidas', path: '/brand/adidas', isBrand: true },
+          // A brand under a category opens that brand in that category, not the brand page (ATS-389).
+          { label: 'Bullpadel', path: '/shop?category=rackets&brand=Bullpadel' },
+          { label: 'Nox', path: '/shop?category=rackets&brand=Nox' },
+          { label: 'Siux', path: '/shop?category=rackets&brand=Siux' },
+          { label: 'Adidas', path: '/shop?category=rackets&brand=Adidas' },
         ],
       },
     ],
@@ -52,10 +51,10 @@ export const NAV_CATEGORIES: readonly NavCategory[] = [
       {
         title: 'BRANDS IN APPAREL',
         links: [
-          { label: 'Adidas', path: '/brand/adidas' },
-          { label: 'Bullpadel', path: '/brand/bullpadel' },
-          { label: 'Nox', path: '/brand/nox' },
-          { label: 'Head', path: '/brand/head' },
+          { label: 'Adidas', path: '/shop?category=apparel&brand=Adidas' },
+          { label: 'Bullpadel', path: '/shop?category=apparel&brand=Bullpadel' },
+          { label: 'Nox', path: '/shop?category=apparel&brand=Nox' },
+          { label: 'Head', path: '/shop?category=apparel&brand=Head' },
         ],
       },
     ],

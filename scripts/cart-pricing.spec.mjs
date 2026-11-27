@@ -1197,7 +1197,7 @@ describe('Shop tabs and Category filter from the category list (ATS-249)', () =>
   const counts = { apparel: 3, rackets: 4, accessories: 2, bags: 2, grips: 0, caps: 1, shoes: 0, hidden: 9 };
 
   it('names a tab by its saved name, else the built-in name, else the category name', () => {
-    assert.equal(shopTabLabel({ id: 'rackets', name: 'Rackets' }), 'Padel');
+    assert.equal(shopTabLabel({ id: 'rackets', name: 'Rackets' }), 'Rackets');
     assert.equal(shopTabLabel({ id: 'rackets', name: 'Rackets', shopLabel: 'Rackets' }), 'Rackets');
     assert.equal(shopTabLabel({ id: 'caps', name: 'Caps', shopLabel: '  ' }), 'Caps');
     assert.equal(shopTabLabel({ id: 'caps', name: 'Caps', shopLabel: 'Hats & Caps' }), 'Hats & Caps');
@@ -1208,7 +1208,7 @@ describe('Shop tabs and Category filter from the category list (ATS-249)', () =>
       shopTabsFrom(categories, counts).map((tab) => [tab.id, tab.label, tab.path]),
       [
         ['all', 'All', '/shop'],
-        ['rackets', 'Padel', '/category/rackets'],
+        ['rackets', 'Rackets', '/category/rackets'],
         ['apparel', 'Apparel', '/category/apparel'],
         ['accessories', 'Accessories', '/category/accessories'],
         ['caps', 'Hats & Caps', '/category/caps'],
@@ -1227,7 +1227,7 @@ describe('Shop tabs and Category filter from the category list (ATS-249)', () =>
     assert.deepEqual(
       shopCategoryOptionsFrom(categories, counts).map((option) => [option.id, option.label]),
       [
-        ['rackets', 'Padel'],
+        ['rackets', 'Rackets'],
         ['apparel', 'Apparel'],
         ['accessories', 'Accessories'],
         ['bags', 'Bags'],

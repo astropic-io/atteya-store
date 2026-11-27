@@ -46,12 +46,12 @@ export const SHOP_ALL_TAB: ShopTab = { id: 'all', label: 'All', path: '/shop' };
 
 /**
  * Names the store used before staff could name tabs. A category with no saved `shopLabel`
- * keeps these (Rackets shows "Padel").
+ * keeps these.
  */
 export const BUILT_IN_SHOP_LABELS: Readonly<Record<string, string>> = {
   apparel: 'Apparel',
   accessories: 'Accessories',
-  rackets: 'Padel',
+  rackets: 'Rackets',
   bags: 'Bags',
 };
 

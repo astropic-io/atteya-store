@@ -35,7 +35,7 @@ export type NavShopCategoryId = (typeof NAV_SHOP_CATEGORY_IDS)[number];
 export const NAV_SHOP_CATEGORY_LABELS: Readonly<Record<NavShopCategoryId, string>> = {
   apparel: 'Apparel',
   accessories: 'Accessories',
-  rackets: 'Padel',
+  rackets: 'Rackets',
   bags: 'Bags',
 };
 
