@@ -119,8 +119,8 @@ function listedMemberFromMirror(
  * mirror is stale, and heals mirrors so the next open stays fast.
  *
  * Console-only claim grants that never wrote `roles/{uid}` stay invisible while
- * at least one mirrored member still verifies — run set-admin (or Grant again)
- * so the mirror exists. setUserRole already reconciles mirrors on every change.
+ * at least one mirrored member still verifies — run set-admin (or Add to Team again,
+ * which writes the missing mirror) so the mirror exists.
  */
 export async function listTeamViaMirrors(): Promise<readonly ListedMember[]> {
   const db = getFirestore();
@@ -158,6 +158,10 @@ export async function listTeamViaMirrors(): Promise<readonly ListedMember[]> {
     }
 
     if (members.some((member) => member.role === 'admin')) {
+      // The Team page lists the mirrors live (ATS-372) and calls this once in the background,
+      // so fix any mirror that no longer matches its claim: a removed claim, a deleted account,
+      // a failed rollback, or extras and Super Admin out of step.
+      await reconcileTeamMirrors(members);
       return members;
     }
   }
@@ -188,25 +192,44 @@ export async function listTeamViaMirrors(): Promise<readonly ListedMember[]> {
  * Mirror docs that still say admin or staff after the claim was removed are marked
  * as regular accounts.
  */
-export async function reconcileTeamMirrors(claimMembers: readonly ClaimMember[]): Promise<void> {
+/** The Team list shows the mirror (ATS-372), so its role, extras and Super Admin must match the claim. */
+function mirrorMatchesClaim(
+  data: DocumentData | undefined,
+  role: TeamRole,
+  extras: readonly StaffExtra[],
+  owner: boolean,
+): boolean {
+  if (!data || data['role'] !== role) return false;
+  const mirrorExtras = readExtras(data['extras']);
+  const sameExtras =
+    mirrorExtras.length === extras.length && mirrorExtras.every((extra) => extras.includes(extra));
+  return sameExtras && (data['owner'] === true) === owner;
+}
+
+export async function reconcileTeamMirrors(
+  claimMembers: readonly Pick<ClaimMember, 'uid' | 'email' | 'role' | 'extras' | 'owner'>[],
+): Promise<void> {
   const db = getFirestore();
   const claimRoles = new Map(claimMembers.map((member) => [member.uid, member.role] as const));
   const existing = await db
     .collection('roles')
     .where('role', 'in', [...TEAM_ROLES])
     .get();
-  const mirrorRoles = new Map(existing.docs.map((doc) => [doc.id, doc.data()['role']] as const));
+  const mirrors = new Map(existing.docs.map((doc) => [doc.id, doc.data()] as const));
   const batch = db.batch();
   let writes = 0;
 
   for (const member of claimMembers) {
-    if (mirrorRoles.get(member.uid) === member.role) continue;
+    const extras = member.role === 'staff' ? member.extras : [];
+    const owner = member.role === 'admin' && member.owner;
+    if (mirrorMatchesClaim(mirrors.get(member.uid), member.role, extras, owner)) continue;
     batch.set(
       db.doc(`roles/${member.uid}`),
       {
         role: member.role,
         email: member.email,
-        owner: member.owner,
+        extras,
+        owner,
         updatedAt: FieldValue.serverTimestamp(),
         updatedBy: 'claim',
       },
@@ -232,6 +255,24 @@ export async function reconcileTeamMirrors(claimMembers: readonly ClaimMember[])
   if (writes > 0) {
     await batch.commit();
   }
+}
+
+/** Writes one team member's mirror when it is missing or out of step with their claim. */
+export async function reconcileOneMirror(
+  uid: string,
+  email: string,
+  role: TeamRole,
+  claims: UserRecord['customClaims'],
+): Promise<void> {
+  const ref = getFirestore().doc(`roles/${uid}`);
+  const extras = role === 'staff' ? readClaimExtras(claims) : [];
+  const owner = role === 'admin' && readClaimOwner(claims);
+  const snap = await ref.get();
+  if (mirrorMatchesClaim(snap.data(), role, extras, owner)) return;
+  await ref.set(
+    { role, email, extras, owner, updatedAt: FieldValue.serverTimestamp(), updatedBy: 'claim' },
+    { merge: true },
+  );
 }
 
 export function timestampToIso(value: unknown): string | null {

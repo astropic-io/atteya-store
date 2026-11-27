@@ -114,16 +114,17 @@ export class AdminsTabComponent implements OnInit {
     const team = this.#team();
     return team === undefined ? undefined : team.flatMap((member) => (member ? [member] : []));
   });
-  /**
-   * No admin mirror found (access given outside the website, or the read failed): ask the server,
-   * which reads the Auth claims and writes the missing mirrors, so the next open is fast again.
-   */
+  /** No admin mirror found (access given outside the website, or the read failed): show the server's list. */
   readonly #needsServerList = computed(() => {
     const team = this.#mirrorTeam();
     return team !== undefined && !team.some((member) => member.role === 'admin');
   });
+  /**
+   * Asked once when Team opens, in the background. The server checks every mirror against the Auth
+   * claims and fixes the ones out of step, and the live list above picks the fixes up. Its answer is
+   * shown only when there is no admin mirror at all.
+   */
   readonly #serverTeam = resource({
-    params: () => (this.#needsServerList() ? true : undefined),
     loader: async () => {
       if (!isPlatformBrowser(this.#platformId)) return [];
       return this.#roles.listAdmins();

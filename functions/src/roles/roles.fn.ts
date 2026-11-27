@@ -11,12 +11,13 @@ import {
   readClaimExtras,
   readClaimOwner,
   readRole,
+  reconcileOneMirror,
   reconcileTeamMirrors,
   recordSessionRevocation,
   revertRoleMirror,
 } from './claim-admins.js';
 import { parseSetStaffExtrasInput, parseSetUserRoleInput } from './roles.validation.js';
-import { endsSession, isLastAdminRemoval, type TeamRole } from './team-roles.js';
+import { endsSession, isLastAdminRemoval, isTeamRole, type TeamRole } from './team-roles.js';
 
 const LAST_ADMIN_MESSAGE = "You're the only admin. Add another admin before changing your access.";
 const OWNER_MESSAGE = "This person is a Super Admin. Their access can't be changed from the website.";
@@ -87,6 +88,11 @@ export const setUserRole = onCall(adminCallableOptions(), async (request): Promi
 
   const before = readRole(user.customClaims);
   if (before === input.role) {
+    // Access given outside the website may have no mirror, and the Team list shows the mirrors
+    // (ATS-372): write it so they show up.
+    if (isTeamRole(before)) {
+      await reconcileOneMirror(user.uid, input.email, before, user.customClaims);
+    }
     return { changed: false };
   }
 
