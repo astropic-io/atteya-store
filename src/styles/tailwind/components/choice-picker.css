@@ -86,8 +86,8 @@
     }
   }
 
-  /* The panel: a sheet from the bottom (92% of the screen) on phone and tablet, 28rem on the right
-     from 1024px, 40rem when the list is long (three cards a row). */
+  /* The panel: a sheet from the bottom (92% of the screen) on phone and tablet, 40rem on the right
+     from 1024px with three cards a row (ATS-359). */
   .choice-picker {
     @apply h-[92dvh] border-t border-outline-variant;
   }
@@ -146,15 +146,12 @@
   }
 
   @media (min-width: 1024px) {
+    /* Every offer's panel is 40rem wide with 3 cards a row on desktop (ATS-359; was 28rem / 2 a row under 9 choices). */
     .choice-picker {
-      @apply h-dvh border-t-0;
+      @apply h-dvh w-[40rem] border-t-0;
     }
 
-    .choice-picker--wide {
-      @apply w-[40rem];
-    }
-
-    .choice-picker--wide .choice-picker__grid {
+    .choice-picker__grid {
       @apply grid-cols-3;
     }
   }

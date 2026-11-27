@@ -26,14 +26,15 @@ interface BrandFilter {
 /**
  * The choice panel (ATS-349, ATS-355), opened by `ChoicePickerService` from a row of the Gift Box,
  * the Bundle price picker or Bundle & Save: a side panel on
- * desktop, a sheet from the bottom on phone. Photo cards of the row's choices, colour and brand
- * filters from 9 choices and a search field from 20, 12 cards at a time. The picked product's
+ * desktop (40rem, 3 cards a row), a sheet from the bottom on phone. Photo cards of the row's choices,
+ * colour and brand filters whenever there are 2 or more of either (ATS-359), a search
+ * field from 20, 12 cards at a time. The picked product's
  * sizes sit in the pinned footer, with "Next: Your Free Socks" or "Done". Esc, the backdrop and the
  * close button keep what was picked.
  */
 @Component({
   selector: 'app-choice-picker',
-  host: { class: 'side-panel choice-picker', '[class.choice-picker--wide]': 'long' },
+  host: { class: 'side-panel choice-picker' },
   imports: [
     NgOptimizedImage,
     AppImageFallbackDirective,
@@ -67,17 +68,25 @@ export class ChoicePickerComponent {
   );
   readonly sizes = computed(() => this.selected()?.sizes ?? null);
 
-  /** Colour dots, only when the list is long and has 2 or more colours. */
+  /**
+   * Colour dots at any list length (ATS-359): only colours that leave fewer choices than the whole list,
+   * and only when 2 or more do, so every dot actually narrows the list.
+   */
   readonly colours = computed<readonly GiftCardColour[]>(() => {
-    if (!this.long) return [];
-    const seen = new Map<string, GiftCardColour>();
-    for (const choice of this.choices) for (const colour of choice.cardColours) seen.set(colour.id, colour);
-    return seen.size >= 2 ? [...seen.values()] : [];
+    const seen = new Map<string, { colour: GiftCardColour; count: number }>();
+    for (const choice of this.choices) {
+      for (const colour of choice.cardColours) {
+        const entry = seen.get(colour.id);
+        if (entry) entry.count += 1;
+        else seen.set(colour.id, { colour, count: 1 });
+      }
+    }
+    const narrowing = [...seen.values()].filter((entry) => entry.count < this.choices.length);
+    return narrowing.length >= 2 ? narrowing.map((entry) => entry.colour) : [];
   });
 
-  /** Brand buttons with counts, only when the list is long and has 2 or more brands. */
+  /** Brand buttons with counts whenever the list has 2 or more brands (ATS-359). */
   readonly brands = computed<readonly BrandFilter[]>(() => {
-    if (!this.long) return [];
     const counts = new Map<string, number>();
     for (const choice of this.choices) {
       if (choice.brandId) counts.set(choice.brandId, (counts.get(choice.brandId) ?? 0) + 1);
@@ -87,6 +96,9 @@ export class ChoicePickerComponent {
       .map(([id, count]) => ({ id, count, name: this.#catalog.brandBySlug(id)?.name ?? id }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   });
+
+  /** The count line and Clear: on a long list, or whenever there is a filter to clear. */
+  readonly showCount = computed(() => this.long || this.colours().length > 0 || this.brands().length > 0);
 
   readonly filtered = computed(() => {
     const colour = this.colour();

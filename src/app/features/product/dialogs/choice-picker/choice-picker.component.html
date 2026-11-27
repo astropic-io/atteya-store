@@ -57,7 +57,7 @@
     </div>
   }
 
-  @if (long) {
+  @if (showCount()) {
     <div class="elements-between gap-3" aria-live="polite">
       <p class="font-body-sm text-on-surface-variant">
         {{ filtered().length }} {{ filtered().length === 1 ? 'choice' : 'choices' }}
@@ -92,7 +92,7 @@
                 [appImageFallback]="choice.imagePath"
                 alt=""
                 fill
-                sizes="(max-width: 1023px) 45vw, 10rem"
+                sizes="(max-width: 1023px) 45vw, 12.5rem"
                 class="object-cover"
               />
             }
