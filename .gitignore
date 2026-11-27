@@ -24,7 +24,7 @@ yarn-error.log
 *.launch
 .settings/
 *.sublime-workspace
-
+.design-assets
 # Visual Studio Code
 .vscode/*
 !.vscode/settings.json
