@@ -14,14 +14,12 @@
           <!-- Stretches the label over the whole row, so a click anywhere on it picks this row. -->
           <span class="pdp-bundle-row__hit" aria-hidden="true"></span>
           <span>{{ view.title }}</span>
-          @if (view.saving) {
-            <span class="sr-only">, save {{ view.saving }}</span>
+          <span class="sr-only">, {{ view.perPiece }} each</span>
+          @if (view.fullPrice) {
+            <span class="sr-only"> instead of {{ view.fullPrice }}</span>
           }
         </mat-radio-button>
         <span class="pdp-bundle-row__price" aria-hidden="true">
-          @if (view.saving) {
-            <span class="deal-tag">Save {{ view.saving }}</span>
-          }
           <span class="elements-end-col items-end!">
             <span class="font-label-lg font-bold!">{{ view.perPiece }} each</span>
             @if (view.fullPrice) {
