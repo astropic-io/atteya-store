@@ -68,11 +68,21 @@ export class ChoicePickerComponent {
   );
   readonly sizes = computed(() => this.selected()?.sizes ?? null);
 
-  /** Colour dots whenever the list has 2 or more colours (ATS-359), so a short list can be narrowed too. */
+  /**
+   * Colour dots at any list length (ATS-359): only colours that leave fewer choices than the whole list,
+   * and only when 2 or more do, so every dot actually narrows the list.
+   */
   readonly colours = computed<readonly GiftCardColour[]>(() => {
-    const seen = new Map<string, GiftCardColour>();
-    for (const choice of this.choices) for (const colour of choice.cardColours) seen.set(colour.id, colour);
-    return seen.size >= 2 ? [...seen.values()] : [];
+    const seen = new Map<string, { colour: GiftCardColour; count: number }>();
+    for (const choice of this.choices) {
+      for (const colour of choice.cardColours) {
+        const entry = seen.get(colour.id);
+        if (entry) entry.count += 1;
+        else seen.set(colour.id, { colour, count: 1 });
+      }
+    }
+    const narrowing = [...seen.values()].filter((entry) => entry.count < this.choices.length);
+    return narrowing.length >= 2 ? narrowing.map((entry) => entry.colour) : [];
   });
 
   /** Brand buttons with counts whenever the list has 2 or more brands (ATS-359). */

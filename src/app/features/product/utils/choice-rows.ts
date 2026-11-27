@@ -1,6 +1,6 @@
 import type { GiftChoiceView } from '@core/services/cart/cart-gifts';
 
-/** From this many choices a row shows a peek of photos and the panel gets filters. */
+/** From this many choices a row shows a peek of photos and the panel shows its count line (filters show at any length, ATS-359). */
 export const CHOICE_LONG_LIST = 9;
 
 /** What a row that opens the choice panel shows (`app-choice-row`). */
