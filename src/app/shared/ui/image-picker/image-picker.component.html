@@ -58,6 +58,7 @@
                   [appImageFallback]="previewImg"
                   (imageFailed)="onImageFailed()"
                   [alt]="asset()?.alt || 'Computer preview'"
+                  loading="eager"
                   fill
                   sizes="(max-width: 1280px) 80vw, 25vw"
                   class="object-center"
@@ -102,7 +103,7 @@
                   alt=""
                   loading="eager"
                   fill
-                  sizes="120px"
+                  sizes="(max-width: 1280px) 80vw, 25vw"
                   class="object-cover object-center"
                 />
               }
