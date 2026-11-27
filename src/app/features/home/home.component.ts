@@ -1,7 +1,6 @@
 import { Component, inject, OnInit } from '@angular/core';
 import { HomeService } from './services/home.service';
 import { HeroSectionComponent } from './components/hero-section/hero-section.component';
-import { ShopCategoriesSectionComponent } from './components/shop-categories-section/shop-categories-section.component';
 import { PadelCarouselSectionComponent } from './components/padel-carousel-section/padel-carousel-section.component';
 import { NewArrivalsSectionComponent } from './components/new-arrivals-section/new-arrivals-section.component';
 import { NavigationListSectionComponent } from './components/navigation-list-section/navigation-list-section.component';
@@ -17,7 +16,6 @@ import { SeoService } from '@core/services/seo';
   },
   imports: [
     HeroSectionComponent,
-    ShopCategoriesSectionComponent,
     PadelCarouselSectionComponent,
     NewArrivalsSectionComponent,
     NavigationListSectionComponent,
@@ -32,7 +30,6 @@ export class HomeComponent implements OnInit {
   readonly #seoService = inject(SeoService);
 
   readonly hero = this.#homeService.storefrontHero;
-  readonly shopCategories = this.#homeService.storefrontShopCategories;
   readonly navList = this.#homeService.storefrontNavList;
   readonly offerBanner = this.#homeService.storefrontOfferBanner;
   readonly helpBox = this.#homeService.storefrontHelpBox;
