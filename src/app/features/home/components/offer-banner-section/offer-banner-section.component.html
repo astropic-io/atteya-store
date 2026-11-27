@@ -2,18 +2,17 @@
 @let wide = widePhoto();
 @let phone = phonePhoto();
 
-<section class="container-content">
-  <div class="mx-auto w-full max-w-7xl">
-    @if (previewMode()) {
-      <div class="offer-banner">
-        <ng-container [ngTemplateOutlet]="content" />
-      </div>
-    } @else {
-      <a class="offer-banner" [routerLink]="item.link | linkTarget">
-        <ng-container [ngTemplateOutlet]="content" />
-      </a>
-    }
-  </div>
+<!-- Full width, edge to edge, so it reads as a banner and not as another section (ATS-352). -->
+<section [class.offer-banner-section]="!previewMode()">
+  @if (previewMode()) {
+    <div class="offer-banner">
+      <ng-container [ngTemplateOutlet]="content" />
+    </div>
+  } @else {
+    <a class="offer-banner" [routerLink]="item.link | linkTarget">
+      <ng-container [ngTemplateOutlet]="content" />
+    </a>
+  }
 </section>
 
 <ng-template #content>
@@ -24,7 +23,7 @@
       [appImageFallback]="wide"
       [alt]="item.imageAlt"
       fill
-      sizes="(min-width: 1280px) 80rem, 100vw"
+      [sizes]="previewMode() ? '(min-width: 1024px) 60vw, 100vw' : '100vw'"
       class="offer-banner-photo"
       [class.hidden]="!!phone"
       [class.md:block]="!!phone"

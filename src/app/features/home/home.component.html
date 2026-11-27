@@ -13,8 +13,8 @@
     @defer (hydrate on viewport) {
       <app-offer-banner-section [banner]="banner" />
     } @placeholder {
-      <section class="container-content" aria-hidden="true">
-        <app-skeleton class="w-full aspect-4/5 md:aspect-21/9" />
+      <section class="offer-banner-section" aria-hidden="true">
+        <app-skeleton class="block w-full aspect-4/5 max-h-[85dvh] md:aspect-21/9" />
       </section>
     }
   }
