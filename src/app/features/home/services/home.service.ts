@@ -311,7 +311,9 @@ export class HomeService {
       updatedAt: serverTimestamp(),
       updatedBy,
     };
-    await setDoc(this.#homeDocRef, payload, { merge: true });
+    // Overwrite the whole doc (it carries every field): a merge would keep old keys inside nested
+    // objects, e.g. a banner's earlier `target.filters` or a `target` the banner no longer has.
+    await setDoc(this.#homeDocRef, payload);
   }
 
   /**
