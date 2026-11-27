@@ -25,10 +25,18 @@ const DRAG_START_PX = 4;
 /** Share of a photo's width a drag must cover to move to the next photo. */
 const DRAG_FLIP_RATIO = 0.15;
 const DRAGGING_CLASS = 'pdp-gallery-track--dragging';
+/** Pixels a swipe must cover, at the first or last photo, to wrap around to the other end. */
+const SWIPE_WRAP_PX = 40;
+/** Scroll positions this close to an end count as being at that end (sub-pixel rounding). */
+const EDGE_PX = 2;
+/** Quiet time with no scroll events before a swipe wrap starts, so the edge bounce is over. */
+const SETTLE_MS = 120;
 
 /**
  * Product photos in a native scroll-snap row: swipe on touch, drag with a mouse, arrows and a
  * "1/6" counter centred under the photos. Vertical wheel scrolling is left to the page.
+ * The photos loop: next on the last photo goes back to the first, previous on the first goes to
+ * the last (arrows, mouse drag and touch swipe alike).
  */
 @Component({
   selector: 'app-product-gallery',
@@ -48,6 +56,10 @@ export class ProductGalleryComponent {
   #frame = 0;
   /** Mouse drag in progress; null when the mouse is up (touch uses native swiping). */
   #drag: { pointerId: number; startX: number; startLeft: number; moved: boolean } | null = null;
+  /** Touch in progress, to wrap around when a swipe pushes past the first or last photo. */
+  #touch: { x: number; y: number; atStart: boolean; atEnd: boolean } | null = null;
+  /** Stops a pending swipe wrap (waiting for the edge bounce to finish). */
+  #cancelSettle: (() => void) | null = null;
 
   readonly displayImages = computed<readonly ProductImage[]>(() => {
     const colourImg = this.activeColourImage();
@@ -84,10 +96,10 @@ export class ProductGalleryComponent {
     return last > first ? `Photos ${first} and ${last} of ${total}` : `Photo ${first} of ${total}`;
   });
 
-  /** True once the last photo is in view (two fit at once on wide screens). */
-  readonly atEnd = linkedSignal({
+  /** False when every photo already fits (nothing to move to); the arrows are then disabled. */
+  readonly scrollable = linkedSignal({
     source: this.displayImages,
-    computation: (images) => images.length <= 1,
+    computation: (images) => images.length > 1,
   });
 
   constructor() {
@@ -96,7 +108,23 @@ export class ProductGalleryComponent {
     afterNextRender(() => {
       this.#sync();
       const el = this.track()?.nativeElement;
-      if (!el || typeof ResizeObserver === 'undefined') return;
+      if (!el) return;
+      // Passive listeners so native swiping is never held up.
+      const onTouchStart = (event: TouchEvent): void => this.#onTouchStart(event);
+      const onTouchEnd = (event: TouchEvent): void => this.#onTouchEnd(event);
+      const onTouchCancel = (): void => {
+        this.#touch = null;
+      };
+      el.addEventListener('touchstart', onTouchStart, { passive: true });
+      el.addEventListener('touchend', onTouchEnd, { passive: true });
+      el.addEventListener('touchcancel', onTouchCancel, { passive: true });
+      destroyRef.onDestroy(() => {
+        el.removeEventListener('touchstart', onTouchStart);
+        el.removeEventListener('touchend', onTouchEnd);
+        el.removeEventListener('touchcancel', onTouchCancel);
+        this.#cancelSettle?.();
+      });
+      if (typeof ResizeObserver === 'undefined') return;
       const observer = new ResizeObserver(() => this.#sync());
       observer.observe(el);
       destroyRef.onDestroy(() => observer.disconnect());
@@ -112,6 +140,11 @@ export class ProductGalleryComponent {
         const el = this.track()?.nativeElement;
         if (el && typeof el.scrollTo === 'function') {
           el.scrollTo({ left: 0, behavior: 'instant' });
+          // Already at 0 sends no scroll event: refresh the counter and arrows for the new photos.
+          if (typeof requestAnimationFrame === 'function') {
+            cancelAnimationFrame(this.#frame);
+            this.#frame = requestAnimationFrame(() => this.#sync());
+          }
         }
       });
     });
@@ -120,6 +153,15 @@ export class ProductGalleryComponent {
   step(direction: 1 | -1): void {
     const el = this.track()?.nativeElement;
     if (!el) return;
+    // Loop: past the last photo back to the first, before the first round to the last.
+    if (direction === 1 && this.#atEnd(el)) {
+      el.scrollTo({ left: 0 });
+      return;
+    }
+    if (direction === -1 && this.#atStart(el)) {
+      el.scrollTo({ left: this.#lastLeft(el) });
+      return;
+    }
     const last = this.displayImages().length - 1;
     const target = Math.min(Math.max(this.active() + direction, 0), last);
     el.scrollTo({ left: target * this.#stride(el) });
@@ -173,14 +215,27 @@ export class ProductGalleryComponent {
     const stride = this.#stride(el);
     const startIndex = Math.round(drag.startLeft / stride);
     const dragged = drag.startLeft - el.scrollLeft;
+    // At an end the row cannot scroll further, so the wrap reads how far the mouse moved.
+    const pulled = event.clientX - drag.startX;
     // A short flick is enough to move one photo; a long drag lands on the nearest photo.
     let target = startIndex;
+    const lastLeft = this.#lastLeft(el);
+    el.classList.remove(DRAGGING_CLASS);
+    if (Math.abs(pulled) >= stride * DRAG_FLIP_RATIO) {
+      // Dragged on past the last photo, or back past the first: loop to the other end.
+      if (pulled < 0 && drag.startLeft >= lastLeft - EDGE_PX) {
+        el.scrollTo({ left: 0 });
+        return;
+      }
+      if (pulled > 0 && drag.startLeft <= EDGE_PX) {
+        el.scrollTo({ left: lastLeft });
+        return;
+      }
+    }
     if (Math.abs(dragged) >= stride * DRAG_FLIP_RATIO) {
       const photos = Math.max(1, Math.round(Math.abs(dragged) / stride));
       target = startIndex + (dragged < 0 ? photos : -photos);
     }
-    const lastLeft = el.scrollWidth - el.clientWidth;
-    el.classList.remove(DRAGGING_CLASS);
     el.scrollTo({ left: Math.min(Math.max(target * stride, 0), lastLeft) });
   }
 
@@ -197,7 +252,77 @@ export class ProductGalleryComponent {
     this.perView.set(Math.max(1, Math.round(el.clientWidth / stride)));
     const index = Math.round(el.scrollLeft / stride);
     this.active.set(Math.min(Math.max(index, 0), Math.max(last, 0)));
-    this.atEnd.set(el.scrollLeft + el.clientWidth >= el.scrollWidth - 2);
+    this.scrollable.set(this.#lastLeft(el) > EDGE_PX);
+  }
+
+  #onTouchStart(event: TouchEvent): void {
+    // A new touch takes over from a wrap still waiting to start.
+    this.#cancelSettle?.();
+    const el = this.track()?.nativeElement;
+    const touch = event.touches[0];
+    if (!el || !touch || event.touches.length > 1 || this.#lastLeft(el) <= EDGE_PX) {
+      this.#touch = null;
+      return;
+    }
+    this.#touch = {
+      x: touch.clientX,
+      y: touch.clientY,
+      atStart: this.#atStart(el),
+      atEnd: this.#atEnd(el),
+    };
+  }
+
+  /**
+   * Native swiping stops at the ends. A clear sideways swipe that starts at the last photo and
+   * pushes on (or at the first photo and pulls back) wraps around to the other end.
+   */
+  #onTouchEnd(event: TouchEvent): void {
+    const start = this.#touch;
+    this.#touch = null;
+    const el = this.track()?.nativeElement;
+    const touch = event.changedTouches[0];
+    if (!start || !el || !touch) return;
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    if (Math.abs(dx) < SWIPE_WRAP_PX || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const toStart = dx < 0 && start.atEnd && this.#atEnd(el);
+    const toEnd = dx > 0 && start.atStart && this.#atStart(el);
+    if (!toStart && !toEnd) return;
+    // Wait for the edge bounce (iOS) to finish: a scroll started during it is dropped.
+    this.#afterScrollSettles(el, () => el.scrollTo({ left: toStart ? 0 : this.#lastLeft(el) }));
+  }
+
+  /** Runs `done` once the row has had no scroll events for SETTLE_MS. */
+  #afterScrollSettles(el: HTMLElement, done: () => void): void {
+    this.#cancelSettle?.();
+    let timer = 0;
+    const stop = (): void => {
+      clearTimeout(timer);
+      el.removeEventListener('scroll', restart);
+      this.#cancelSettle = null;
+    };
+    const restart = (): void => {
+      clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        stop();
+        done();
+      }, SETTLE_MS);
+    };
+    el.addEventListener('scroll', restart, { passive: true });
+    this.#cancelSettle = stop;
+    restart();
+  }
+
+  #lastLeft(el: HTMLElement): number {
+    return Math.max(0, el.scrollWidth - el.clientWidth);
+  }
+
+  #atStart(el: HTMLElement): boolean {
+    return el.scrollLeft <= EDGE_PX;
+  }
+
+  #atEnd(el: HTMLElement): boolean {
+    return el.scrollLeft >= this.#lastLeft(el) - EDGE_PX;
   }
 
   /** Width of one photo plus the gap after it. */
