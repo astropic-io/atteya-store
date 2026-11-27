@@ -41,7 +41,7 @@
       >
         @for (copy of lock.loops() ? loopCopies : oneCopy; track copy) {
           @for (card of cards(); track card.id) {
-            <div class="scroll-row-item" [attr.inert]="copy === 1 ? null : ''">
+            <div class="scroll-row-item">
               <app-product-card
                 [product]="card"
                 sizes="(max-width: 639px) 70vw, (max-width: 1023px) 45vw, 28vw"

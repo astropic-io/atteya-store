@@ -13,7 +13,16 @@ import {
 } from '@angular/core';
 import type { gsap as GsapNamespace } from 'gsap';
 import type { ScrollTrigger as ScrollTriggerClass } from 'gsap/ScrollTrigger';
-import { attachEndlessRow, endlessProgress, endlessRowFits } from '@shared/utils/endless-row.utils';
+import {
+  attachEndlessRow,
+  endlessCollapseTo,
+  endlessIndex,
+  endlessProgress,
+  endlessRecentre,
+  endlessRowFits,
+  endlessSpan,
+  endlessStep,
+} from '@shared/utils/endless-row.utils';
 import { rowItemTarget, rowScrollProgress, scrollRowByItem } from '@shared/utils/row-scroll.utils';
 
 type GsapApi = typeof GsapNamespace;
@@ -86,7 +95,7 @@ export class RowScrollLockDirective {
 
   /**
    * The row is endless: the desktop lock is off and the cards don't all fit. While true, the
-   * section renders its cards three times (`[0, 1, 2]`, copies 0 and 2 `inert`).
+   * section renders its cards three times (`[0, 1, 2]`, copies 0 and 2 stay clickable: they can be in view next to copy 1).
    */
   readonly loops = computed(() => this.#decided() && !this.#enabled() && this.#overflows());
 
@@ -128,6 +137,10 @@ export class RowScrollLockDirective {
       window.scrollTo({ top: trigger.start + target, behavior: 'smooth' });
       return;
     }
+    if (this.loops()) {
+      endlessStep(this.#row, this.rowLoopCount(), direction);
+      return;
+    }
     scrollRowByItem(this.#row, direction);
   }
 
@@ -142,16 +155,33 @@ export class RowScrollLockDirective {
   /** Keeps `#overflows` up to date as the row or its cards change size. */
   #watchOverflow(): void {
     const row = this.#row;
+    const copied = (): boolean => {
+      const count = this.rowLoopCount();
+      return count > 0 && row.children.length >= count * 3;
+    };
+    let wasCopied = copied();
+    /** Card at the row's start while it loops, to land on when the copies go away. */
+    let index = 0;
     const measure = (): void => {
+      const isCopied = copied();
+      // Runs before the browser paints: copy 0 never shows, and leaving the loop keeps the card.
+      if (isCopied && !wasCopied) endlessRecentre(row, this.rowLoopCount());
+      if (!isCopied && wasCopied) endlessCollapseTo(row, index);
+      wasCopied = isCopied;
       this.#children.set(row.children.length);
       this.#overflows.set(endlessRowFits(row, this.rowLoopCount()));
     };
+    const track = (): void => {
+      if (wasCopied) index = endlessIndex(row, this.rowLoopCount());
+    };
     measure();
+    row.addEventListener('scroll', track, { passive: true });
     const resize = new ResizeObserver(measure);
     resize.observe(row);
     const children = new MutationObserver(measure);
     children.observe(row, { childList: true });
     this.#destroyRef.onDestroy(() => {
+      row.removeEventListener('scroll', track);
       resize.disconnect();
       children.disconnect();
     });
@@ -212,7 +242,10 @@ export class RowScrollLockDirective {
     };
 
     const measure = (): void => {
-      const max = row.scrollWidth - row.clientWidth;
+      // While the row still holds its three copies, measure one copy (they go once it locks).
+      const count = this.rowLoopCount();
+      const copied = count > 0 && row.children.length >= count * 3;
+      const max = (copied ? endlessSpan(row, count) : row.scrollWidth) - row.clientWidth;
       fitMedia(max > MIN_TRAVEL_PX);
       const height = section.offsetHeight;
       const fits = height <= available();

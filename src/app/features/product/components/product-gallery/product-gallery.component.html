@@ -15,7 +15,7 @@
   >
     @for (copy of loops() ? loopCopies : oneCopy; track copy) {
       @for (img of photos; track img.path; let i = $index) {
-        <div class="pdp-gallery-slide" [attr.inert]="copy === 1 ? null : ''">
+        <div class="pdp-gallery-slide" [attr.aria-hidden]="copy === 1 ? null : 'true'">
           @if (i === 0 && copy === 1) {
             <img
               [ngSrc]="path(img.path)"

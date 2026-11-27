@@ -38,7 +38,6 @@
             @let path = imagePath(product.images[0]?.path);
             <a
               class="scroll-row-item padel-tile"
-              [attr.inert]="copy === 1 ? null : ''"
               [routerLink]="['/product', product.slug]"
               [appPrefetchProduct]="product.slug"
               [attr.aria-label]="product.name"

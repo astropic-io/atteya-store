@@ -19,7 +19,14 @@ import { PDP_GALLERY_SIZES } from '@core/image/image-kit.loader';
 import type { ProductImage } from '@core/services/products';
 import { AppImageFallbackDirective } from '@shared/directives/image-fallback';
 import { SharedIconModule } from '@shared/ui/mat-icon';
-import { attachEndlessRow, endlessIndex, endlessRowFits } from '@shared/utils/endless-row.utils';
+import {
+  attachEndlessRow,
+  endlessCollapseTo,
+  endlessIndex,
+  endlessRecentre,
+  endlessRowFits,
+  endlessStep,
+} from '@shared/utils/endless-row.utils';
 import { normalizeImageKitPath } from '@shared/utils/image';
 
 /** Pixels the mouse must move before a press becomes a drag. */
@@ -61,7 +68,7 @@ export class ProductGalleryComponent {
     return [colourImg, ...base.filter((img) => img.path !== colourImg.path)];
   });
 
-  /** Photos don't all fit: render them three times so the row never ends (copies 0 and 2 `inert`). */
+  /** Photos don't all fit: render them three times so the row never ends (copies 0 and 2 `aria-hidden`). */
   readonly loops = linkedSignal({ source: this.displayImages, computation: () => false });
   readonly loopCopies = [0, 1, 2] as const;
   /** Slides rendered right now (three copies once the template has caught up with `loops`). */
@@ -115,7 +122,19 @@ export class ProductGalleryComponent {
       const el = this.track()?.nativeElement;
       if (!el) return;
       this.#slides.set(el.children.length);
-      const slides = new MutationObserver(() => this.#slides.set(el.children.length));
+      const copied = (): boolean => {
+        const count = this.displayImages().length;
+        return count > 1 && el.children.length >= count * 3;
+      };
+      let wasCopied = copied();
+      // Runs before the browser paints: copy 0 never shows, and leaving the loop keeps the photo.
+      const slides = new MutationObserver(() => {
+        const isCopied = copied();
+        if (isCopied && !wasCopied) endlessRecentre(el, this.displayImages().length);
+        if (!isCopied && wasCopied) endlessCollapseTo(el, this.active());
+        wasCopied = isCopied;
+        this.#slides.set(el.children.length);
+      });
       slides.observe(el, { childList: true });
       destroyRef.onDestroy(() => slides.disconnect());
       if (typeof ResizeObserver === 'undefined') return;
@@ -157,13 +176,13 @@ export class ProductGalleryComponent {
   step(direction: 1 | -1): void {
     const el = this.track()?.nativeElement;
     if (!el) return;
-    const stride = this.#stride(el);
-    const index = Math.round(el.scrollLeft / stride);
     if (this.loops()) {
       // Endless: the next copy carries on, so there is always a photo either way.
-      el.scrollTo({ left: (index + direction) * stride });
+      endlessStep(el, this.displayImages().length, direction);
       return;
     }
+    const stride = this.#stride(el);
+    const index = Math.round(el.scrollLeft / stride);
     const last = this.displayImages().length - 1;
     const target = Math.min(Math.max(index + direction, 0), last);
     el.scrollTo({ left: target * stride });

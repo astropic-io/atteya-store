@@ -31,9 +31,16 @@ export function endlessCopyWidth(el: HTMLElement, count: number): number {
   return endlessStride(el) * count;
 }
 
+/** Width the `count` items take up side by side (no gap after the last one). */
+export function endlessSpan(el: HTMLElement, count: number): number {
+  const first = el.children[0] as HTMLElement | undefined;
+  if (!first || count <= 0) return 0;
+  return (count - 1) * endlessStride(el) + first.offsetWidth;
+}
+
 /** True when `count` items are wider than the row, so looping makes sense. */
 export function endlessRowFits(el: HTMLElement, count: number): boolean {
-  return count > 1 && endlessCopyWidth(el, count) > el.clientWidth + 2;
+  return count > 1 && endlessSpan(el, count) > el.clientWidth + 2;
 }
 
 /** Index (0 to count - 1) of the item at the row's start, whatever copy it is in. */
@@ -61,6 +68,19 @@ function jumpTo(el: HTMLElement, left: number): void {
   el.style.scrollBehavior = behavior;
 }
 
+/** Scroll the row by one item (endless: there is always one more either way). */
+export function endlessStep(el: HTMLElement, count: number, direction: 1 | -1): void {
+  // Back to copy 1 first, so quick presses during a smooth scroll never walk to a real end.
+  endlessRecentre(el, count);
+  const stride = endlessStride(el);
+  el.scrollTo({ left: (Math.round(el.scrollLeft / stride) + direction) * stride });
+}
+
+/** Leaving the loop: once copies 0 and 2 are gone, show the item that was at the start. */
+export function endlessCollapseTo(el: HTMLElement, index: number): void {
+  jumpTo(el, index * endlessStride(el));
+}
+
 /** Put the row on the same item in copy 1 (no animation). */
 export function endlessRecentre(el: HTMLElement, count: number): void {
   const width = endlessCopyWidth(el, count);
@@ -71,46 +91,56 @@ export function endlessRecentre(el: HTMLElement, count: number): void {
 }
 
 /**
- * Start a three-copy row on copy 1 and keep it there: whenever the row comes to rest (no
- * scroll events for 120 ms and no finger or mouse button down) in copy 0 or copy 2, it jumps
- * to the same item in copy 1. Returns the clean-up function.
+ * Keep a three-copy row on copy 1: whenever the row comes to rest (no scroll events for
+ * 120 ms, no finger on it and no mouse button down) in copy 0 or copy 2, it jumps to the same
+ * item in copy 1. Call `endlessRecentre` as soon as the copies are inserted (a
+ * MutationObserver callback runs before the browser paints) so copy 0 never shows. Returns the
+ * clean-up function.
  */
 export function attachEndlessRow(el: HTMLElement, count: () => number): () => void {
   endlessRecentre(el, count());
 
   let timer: ReturnType<typeof setTimeout> | null = null;
-  let pressed = false;
+  // Touch is tracked with touch events only: a touch's pointercancel fires as soon as the
+  // browser starts panning, while the finger is still down.
+  let touches = 0;
+  let mouseDown = false;
   const settle = (): void => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = null;
-      if (!pressed) endlessRecentre(el, count());
+      if (touches === 0 && !mouseDown) endlessRecentre(el, count());
     }, REST_MS);
   };
-  const press = (): void => {
-    pressed = true;
+  const onTouch = (event: TouchEvent): void => {
+    touches = event.touches.length;
+    if (touches === 0) settle();
   };
-  const release = (): void => {
-    pressed = false;
+  const onPointerDown = (event: PointerEvent): void => {
+    if (event.pointerType === 'mouse') mouseDown = true;
+  };
+  const onPointerUp = (event: PointerEvent): void => {
+    if (event.pointerType !== 'mouse' || !mouseDown) return;
+    mouseDown = false;
     settle();
   };
 
   el.addEventListener('scroll', settle, { passive: true });
-  el.addEventListener('touchstart', press, { passive: true });
-  el.addEventListener('touchend', release, { passive: true });
-  el.addEventListener('touchcancel', release, { passive: true });
-  el.addEventListener('pointerdown', press, { passive: true });
-  window.addEventListener('pointerup', release, { passive: true });
-  window.addEventListener('pointercancel', release, { passive: true });
+  el.addEventListener('touchstart', onTouch, { passive: true });
+  el.addEventListener('touchend', onTouch, { passive: true });
+  el.addEventListener('touchcancel', onTouch, { passive: true });
+  el.addEventListener('pointerdown', onPointerDown, { passive: true });
+  window.addEventListener('pointerup', onPointerUp, { passive: true });
+  window.addEventListener('pointercancel', onPointerUp, { passive: true });
 
   return () => {
     if (timer) clearTimeout(timer);
     el.removeEventListener('scroll', settle);
-    el.removeEventListener('touchstart', press);
-    el.removeEventListener('touchend', release);
-    el.removeEventListener('touchcancel', release);
-    el.removeEventListener('pointerdown', press);
-    window.removeEventListener('pointerup', release);
-    window.removeEventListener('pointercancel', release);
+    el.removeEventListener('touchstart', onTouch);
+    el.removeEventListener('touchend', onTouch);
+    el.removeEventListener('touchcancel', onTouch);
+    el.removeEventListener('pointerdown', onPointerDown);
+    window.removeEventListener('pointerup', onPointerUp);
+    window.removeEventListener('pointercancel', onPointerUp);
   };
 }
