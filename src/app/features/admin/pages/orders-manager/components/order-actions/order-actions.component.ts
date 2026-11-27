@@ -196,7 +196,7 @@ export class OrderActionsComponent {
 
   readonly busy = signal<OrderAction | null>(null);
 
-  /** Same rule as the server's `deleteOrder`: admins only, and only a finished-for-good order. */
+  /** Same rule as the server's `deleteOrder`: admins and staff with Delete Orders on, and only a finished-for-good order. */
   readonly canDelete = computed(
     () =>
       this.#auth.hasExtra('deleteOrders') &&

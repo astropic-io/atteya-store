@@ -1,7 +1,7 @@
 /**
  * Extra access an admin can switch on for one staff member (ATS-368), stored in the Auth custom
  * claim `extras` next to `role`. Admins always have all of them; normal accounts never do.
- * Keep in step with `src/app/core/services/auth/staff-extras.ts` and `staffHas()` in firestore.rules.
+ * Keep in step with `src/app/core/services/auth/staff-extras.ts` and `hasExtra()` in firestore.rules.
  */
 export const STAFF_EXTRAS = ['refunds', 'deleteOrders', 'money'] as const;
 

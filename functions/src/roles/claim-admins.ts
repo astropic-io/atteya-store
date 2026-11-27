@@ -241,6 +241,7 @@ export async function revertRoleMirror(
   email: string,
   actor: string,
   auditPath: string,
+  extras: readonly StaffExtra[] = [],
 ): Promise<WriteResult[]> {
   const db = getFirestore();
   const batch = db.batch();
@@ -249,6 +250,7 @@ export async function revertRoleMirror(
     {
       role,
       email,
+      extras: [...extras],
       updatedAt: FieldValue.serverTimestamp(),
       updatedBy: actor,
     },

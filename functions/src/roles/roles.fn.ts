@@ -131,7 +131,8 @@ export const setUserRole = onCall(adminCallableOptions(), async (request): Promi
       ...claimsWithoutExtras(user.customClaims),
       role: input.role,
     });
-    if (endsSession(before, input.role) || removesExtra(readClaimExtras(user.customClaims), [])) {
+    // staff → user is covered by endsSession; staff → admin keeps every extra, so no sign-out.
+    if (endsSession(before, input.role)) {
       await recordSessionRevocation(user.uid);
     }
   } catch {
@@ -144,7 +145,14 @@ export const setUserRole = onCall(adminCallableOptions(), async (request): Promi
       // The claim write did not stick. The mirror rollback still runs.
     }
     try {
-      await revertRoleMirror(user.uid, before, input.email, actorLabel, auditRef.path);
+      await revertRoleMirror(
+        user.uid,
+        before,
+        input.email,
+        actorLabel,
+        auditRef.path,
+        readClaimExtras(user.customClaims),
+      );
     } catch {
       // The next role change reconciles the mirror.
     }
@@ -191,59 +199,69 @@ export const setStaffExtras = onCall(
       return { changed: false };
     }
 
+    // Read the claims again right before writing, so a role change made meanwhile (Remove Access,
+    // Make Admin) is never undone by this save.
+    const fresh = await getAuth().getUser(user.uid);
+    if (readRole(fresh.customClaims) !== 'staff') {
+      throw new HttpsError(
+        'failed-precondition',
+        'This person is no longer Staff. Refresh the page and try again.',
+      );
+    }
+    const freshBefore = readClaimExtras(fresh.customClaims);
+
     const db = getFirestore();
     const auditRef = db.collection('auditLogs').doc();
     const actorLabel = actor.email ?? actor.uid;
-    const mirrorRef = db.doc(`roles/${user.uid}`);
 
-    const batch = db.batch();
-    batch.set(
-      mirrorRef,
-      {
-        role: 'staff',
-        email: input.email,
-        extras: input.extras,
-        updatedAt: FieldValue.serverTimestamp(),
-        updatedBy: actorLabel,
-      },
-      { merge: true },
-    );
-    batch.set(auditRef, {
-      action: 'extras.set',
-      targetUid: user.uid,
-      targetEmail: input.email,
-      from: before,
-      to: input.extras,
-      actorUid: actor.uid,
-      actorEmail: actorLabel,
-      at: FieldValue.serverTimestamp(),
-    });
-    await batch.commit();
-
+    // Claim first, then the mirror: the mirror write wakes the person's browser to refresh its token,
+    // and that refresh must already see the new extras.
     try {
       await getAuth().setCustomUserClaims(user.uid, {
-        ...claimsWithoutExtras(user.customClaims),
-        role: 'staff',
+        ...claimsWithoutExtras(fresh.customClaims),
         ...(input.extras.length > 0 ? { extras: input.extras } : {}),
       });
-      if (removesExtra(before, input.extras)) {
-        await recordSessionRevocation(user.uid);
-      }
+    } catch {
+      throw new HttpsError('internal', 'Could not update extra access. Please try again.');
+    }
+
+    try {
+      const batch = db.batch();
+      batch.set(
+        db.doc(`roles/${user.uid}`),
+        { extras: input.extras, updatedAt: FieldValue.serverTimestamp(), updatedBy: actorLabel },
+        { merge: true },
+      );
+      batch.set(auditRef, {
+        action: 'extras.set',
+        targetUid: user.uid,
+        targetEmail: input.email,
+        from: freshBefore,
+        to: input.extras,
+        actorUid: actor.uid,
+        actorEmail: actorLabel,
+        at: FieldValue.serverTimestamp(),
+      });
+      await batch.commit();
     } catch {
       try {
-        await getAuth().setCustomUserClaims(user.uid, user.customClaims ?? {});
+        await getAuth().setCustomUserClaims(user.uid, fresh.customClaims ?? {});
       } catch {
-        // The claim write did not stick. The mirror rollback still runs.
-      }
-      try {
-        const rollback = db.batch();
-        rollback.set(mirrorRef, { extras: before }, { merge: true });
-        rollback.delete(auditRef);
-        await rollback.commit();
-      } catch {
-        // The next change reconciles the mirror.
+        // The claim did not roll back. The next save sets it again.
       }
       throw new HttpsError('internal', 'Could not update extra access. Please try again.');
+    }
+
+    if (removesExtra(freshBefore, input.extras)) {
+      try {
+        await recordSessionRevocation(user.uid);
+      } catch {
+        // The claim is already narrower; the old token still expires within the hour.
+        throw new HttpsError(
+          'internal',
+          'Extra access was saved, but they may keep the old access for up to an hour. Ask them to sign out and sign in again.',
+        );
+      }
     }
 
     return { changed: true };

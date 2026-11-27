@@ -3,7 +3,8 @@ rules_version = '2';
 // Four roles:
 //  - Visitor (signed out): public storefront reads only.
 //  - Normal user (signed in, no admin or staff claim): same as a visitor, plus read of their own roles/{uid} mirror.
-//  - Staff (token.role == 'staff' AND session not revoked): manage store content (canManageStore()).
+//  - Staff (token.role == 'staff' AND session not revoked): manage store content (canManageStore()),
+//    plus any extra access an admin switched on for them (token.extras, hasExtra(); ATS-368).
 //  - Admin (token.role == 'admin' AND session not revoked): same as staff, plus the Team list,
 //    its audit trail, and (through callables) deleting orders and changing roles.
 // roles/ and auditLogs/ are written only by the Admin SDK (Cloud Functions / scripts).

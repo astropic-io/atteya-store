@@ -207,7 +207,8 @@ export class ReturnDetailsPageComponent implements OnInit {
     return request ? feeBackNeedsCheck(request) : false;
   });
   /**
-   * Admin only; staff see the line but not the button (the server refuses staff too). Also on a
+   * Admins and staff with Refunds on; other staff see the line but not the button (the server
+   * refuses them too). Also on a
    * request that cancelled itself, in case the fee arrived just before the cancel.
    */
   readonly canSendFeeBack = computed(() => this.#feeBackLimit() > 0 && this.canSendRefunds());
