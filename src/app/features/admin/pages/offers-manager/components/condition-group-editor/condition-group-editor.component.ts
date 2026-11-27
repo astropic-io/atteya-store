@@ -1,4 +1,4 @@
-import { Component, computed, input, model } from '@angular/core';
+import { Component, computed, inject, input, model } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -12,7 +12,8 @@ import type {
   OfferSetAtom,
 } from '@core/services/offers/engine';
 import { COLOR_PALETTE } from '@core/services/products/catalog-taxonomy';
-import { PRODUCT_TYPES, SIZE_ORDER } from '@core/services/products/product.constants';
+import { SIZE_ORDER } from '@core/services/products/product.constants';
+import { ProductTypesService } from '@core/services/products/product-types.service';
 import type { Brand, Category, Product } from '@core/services/products/product.model';
 import { ColorSwatchComponent } from '@shared/ui/color-swatch/color-swatch.component';
 import { SharedIconModule } from '@shared/ui/mat-icon';
@@ -39,6 +40,7 @@ export interface ValueChoice {
   templateUrl: './condition-group-editor.component.html',
 })
 export class ConditionGroupEditorComponent {
+  readonly #types = inject(ProductTypesService);
   readonly heading = input.required<string>();
   readonly hint = input('');
   readonly conditions = model.required<OfferConditions>();
@@ -96,7 +98,7 @@ export class ConditionGroupEditorComponent {
           label: c.depth === 1 ? `\u2014 ${c.name}` : c.name,
         }));
       case 'type':
-        return PRODUCT_TYPES.map((t) => ({ id: t.id, label: t.label }));
+        return this.#types.options();
       case 'colors':
         return COLOR_PALETTE.map((c) => ({ id: c.id, label: c.label, swatch: c.swatch }));
       case 'sizes':

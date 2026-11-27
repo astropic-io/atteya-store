@@ -21,7 +21,9 @@ export const PRODUCT_TYPES = [
   { id: 'supports', label: 'Supports & sleeves', category: 'accessories' },
 ] as const;
 
-export type ProductTypeId = (typeof PRODUCT_TYPES)[number]['id'];
+/** A type id from Categories & Brands → Types (ATS-388); the built-in ones are `BuiltInProductTypeId`. */
+export type ProductTypeId = string;
+export type BuiltInProductTypeId = (typeof PRODUCT_TYPES)[number]['id'];
 
 export const PRODUCT_BRANDS = [
   { id: 'adidas', label: 'adidas' },
@@ -70,7 +72,7 @@ export const SIZE_ORDER: readonly string[] = [
   'T4',
 ];
 
-const TYPE_CATEGORY: Readonly<Record<ProductTypeId, ProductCategoryId>> = {
+const TYPE_CATEGORY: Readonly<Record<BuiltInProductTypeId, ProductCategoryId>> = {
   rackets: 'rackets',
   bags: 'bags',
   't-shirts': 'apparel',
@@ -83,7 +85,7 @@ const TYPE_CATEGORY: Readonly<Record<ProductTypeId, ProductCategoryId>> = {
   supports: 'accessories',
 };
 
-export function categoryForType(type: ProductTypeId): ProductCategoryId {
+export function categoryForType(type: BuiltInProductTypeId): ProductCategoryId {
   return TYPE_CATEGORY[type];
 }
 

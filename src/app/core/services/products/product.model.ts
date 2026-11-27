@@ -28,7 +28,9 @@ export interface CategoryTreeNode extends Category {
 }
 
 export type ProductCategoryId = (typeof PRODUCT_CATEGORY_IDS)[number];
-export type ProductTypeId = (typeof PRODUCT_TYPE_IDS)[number];
+/** A type id from Categories & Brands → Types (ATS-388); the built-in ones are `BuiltInProductTypeId`. */
+export type ProductTypeId = string;
+export type BuiltInProductTypeId = (typeof PRODUCT_TYPE_IDS)[number];
 export type BrandId = (typeof PRODUCT_BRAND_IDS)[number];
 export type ProductGenderId = (typeof PRODUCT_GENDER_IDS)[number];
 export type LockableProductField = (typeof LOCKABLE_PRODUCT_FIELDS)[number];
