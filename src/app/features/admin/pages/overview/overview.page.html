@@ -296,9 +296,9 @@
                 [attr.aria-label]="sellers()[0].name + ' is ' + sellers()[0].percent + '% of pieces sold'"
               >
                 <circle class="overview-ring__track" cx="50" cy="50" [attr.r]="ringRadius" />
-                @for (slice of ring(); track slice.key; let i = $index) {
+                @for (slice of ring(); track slice.key) {
                   <circle
-                    [class]="'overview-ring__slice overview-tone-' + (slice.key === '__rest' ? 'rest' : i)"
+                    [class]="'overview-ring__slice overview-tone-' + slice.tone"
                     cx="50"
                     cy="50"
                     [attr.r]="ringRadius"

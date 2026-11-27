@@ -42,6 +42,7 @@ import {
   lostRate,
   PAYMENT_LABELS,
   percentOf,
+  pointsDeltaOf,
   shareRows,
   STATUS_ROWS,
   totalsFor,
@@ -216,9 +217,9 @@ export class OverviewPageComponent implements OnInit {
       ),
       tile(
         'new',
-        'New orders',
+        'Waiting for Payment',
         whole(now.byStatus.pending),
-        'Still Waiting for Payment',
+        'Placed in this range, not paid or confirmed yet',
         deltaOf(now.byStatus.pending, before.byStatus.pending),
       ),
       tile(
@@ -269,7 +270,7 @@ export class OverviewPageComponent implements OnInit {
         'Lost rate',
         rate === null ? '—' : `${rate}%`,
         `Of ${whole(placed)} ${placed === 1 ? 'order' : 'orders'} placed`,
-        deltaOf(rate, rateBefore, true),
+        pointsDeltaOf(rate, rateBefore, true),
       ),
     ];
   });

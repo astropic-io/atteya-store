@@ -70,9 +70,10 @@ export class ProductsManagerComponent implements OnInit {
   readonly categoryId = linkedSignal(() => this.category()?.trim() || 'all');
   /** `?tab=low` (the Overview's Running low View All) opens the list on that tab. */
   readonly tab = input<string | undefined>(undefined);
-  readonly view = linkedSignal<ProductListView>(() => {
-    const asked = this.tab();
-    return LIST_VIEWS.find((view) => view === asked) ?? 'all';
+  readonly view = linkedSignal<string | undefined, ProductListView>({
+    source: this.tab,
+    // The address's tab when it names one; otherwise keep what the person picked.
+    computation: (asked, previous) => LIST_VIEWS.find((view) => view === asked) ?? previous?.value ?? 'all',
   });
   readonly searchSyncErrors = signal(0);
   /** Product whose Live / Hidden change is saving. */
@@ -196,6 +197,17 @@ export class ProductsManagerComponent implements OnInit {
   readonly tableLoading = computed(() => this.catalogResource.isLoading());
 
   constructor() {
+    // Once the person picks another tab, drop `?tab=` so a reload or a shared link opens their pick.
+    effect(() => {
+      const asked = this.tab();
+      if (asked && this.view() !== asked) {
+        void this.#router.navigate([], {
+          queryParams: { tab: null },
+          queryParamsHandling: 'merge',
+          replaceUrl: true,
+        });
+      }
+    });
     effect((onCleanup) => {
       const term = this.search();
       const handle = setTimeout(() => this.debouncedSearch.set(term), 300);

@@ -167,7 +167,8 @@ export function sparkline(values: readonly number[] | null): Sparkline | null {
   const points = values.map((value, index) => `${+(index * step).toFixed(2)},${y(value)}`);
   return {
     line: points.join(' '),
-    area: `M0,${SPARK_HEIGHT} L${points.join(' L')} L${SPARK_WIDTH},${SPARK_HEIGHT} Z`,
+    // Filled down to the zero line, so a day below zero (refunds over sales) reads as a dip.
+    area: `M0,${y(0)} L${points.join(' L')} L${SPARK_WIDTH},${y(0)} Z`,
   };
 }
 
@@ -178,6 +179,8 @@ export interface RingSlice {
   readonly key: string;
   readonly label: string;
   readonly percent: number;
+  /** Shade class suffix, matching the product's swatch in the table (`rest` for everything else). */
+  readonly tone: string;
   /** `stroke-dasharray` value. */
   readonly dash: string;
   /** `stroke-dashoffset` value (slices follow each other clockwise from the top). */
@@ -197,9 +200,14 @@ export function ringSlices(
   totalPieces: number,
 ): RingSlice[] {
   if (totalPieces <= 0) return [];
-  const rows = products.map((product) => ({ key: product.id, label: product.name, pieces: product.pieces }));
+  const rows = products.map((product, index) => ({
+    key: product.id,
+    label: product.name,
+    pieces: product.pieces,
+    tone: String(index),
+  }));
   const rest = totalPieces - rows.reduce((sum, row) => sum + row.pieces, 0);
-  if (rest > 0) rows.push({ key: '__rest', label: 'Everything else', pieces: rest });
+  if (rest > 0) rows.push({ key: '__rest', label: 'Everything else', pieces: rest, tone: 'rest' });
   let start = 0;
   return rows
     .filter((row) => row.pieces > 0)
@@ -209,6 +217,7 @@ export function ringSlices(
         key: row.key,
         label: row.label,
         percent: Math.round((row.pieces / totalPieces) * 100),
+        tone: row.tone,
         dash: `${+length.toFixed(3)} ${+(RING_LENGTH - length).toFixed(3)}`,
         offset: +(-start).toFixed(3),
       };

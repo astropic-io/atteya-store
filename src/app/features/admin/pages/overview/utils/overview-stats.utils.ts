@@ -278,6 +278,25 @@ export function deltaOf(now: number | null, before: number | null, lowerIsBetter
   };
 }
 
+/** Change of a rate (a percent) from the period before, in percentage points. */
+export function pointsDeltaOf(
+  now: number | null,
+  before: number | null,
+  lowerIsBetter = false,
+): Delta | null {
+  if (now === null || before === null) return null;
+  const change = Math.round((now - before) * 10) / 10;
+  if (Math.abs(change) < 0.1)
+    return { label: 'Same', tone: 'flat', description: 'Same as the period before' };
+  const up = change > 0;
+  const points = Math.abs(change);
+  return {
+    label: `${up ? '▲' : '▼'} ${points} pts`,
+    tone: up !== lowerIsBetter ? 'good' : 'bad',
+    description: `${up ? 'Up' : 'Down'} ${points} percentage points from the period before`,
+  };
+}
+
 /** A share as a whole percent of `total` (0 when total is 0). */
 export function percentOf(part: number, total: number): number {
   return total > 0 ? Math.round((part / total) * 100) : 0;
