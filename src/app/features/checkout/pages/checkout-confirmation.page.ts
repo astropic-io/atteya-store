@@ -510,7 +510,7 @@ export class CheckoutConfirmationPageComponent implements OnInit {
         imageSrc: imagePath ? normalizeImageKitPath(imagePath) : '',
         // An older order shipped abroad saved only its total: its items show no price.
         price: formatShopperAmount(money, money.lines[index] ?? null) ?? '',
-        // Buy X Get Y: "Free" / "−50%" and the price before it.
+        // Buy X Get Y: "Free" / "Offer price" and the price before it.
         deal: line.deals?.length ? dealTag(line.deals, line.quantity) : '',
         was: formatShopperAmount(money, money.was[index] ?? null) ?? '',
         gifts: [],

@@ -28,8 +28,8 @@ export interface BundleRowView {
   readonly perPiece: string;
   /** The full price of one piece, struck through; empty when the row saves nothing. */
   readonly fullPrice: string;
-  /** Whole percent saved; 0 hides the tag. */
-  readonly savePercent: number;
+  /** "Save EGP 50" for the whole row; empty hides the tag. */
+  readonly saving: string;
 }
 
 /** One piece of the picked row, as a row that opens the choice panel. */

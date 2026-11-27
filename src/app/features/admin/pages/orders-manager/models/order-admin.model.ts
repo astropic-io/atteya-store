@@ -74,7 +74,7 @@ export interface OrderLineAdminRow {
   readonly productName: string;
   /** Free gift line (price 0, listed after its item): the gift's name, e.g. "Free shirt". */
   readonly giftName: string | null;
-  /** Buy X Get Y discount on the line, e.g. "Free", "1 free" or "−50%"; null when none. */
+  /** Buy X Get Y discount on the line, e.g. "Free", "1 free" or "Offer price"; null when none. */
   readonly dealLabel: string | null;
   readonly selectionLabel: string;
   readonly quantity: number;
@@ -184,7 +184,7 @@ export interface OrderDetailItem {
   readonly quantity: number;
   /** Free gift line: the gift's name. */
   readonly gift: string | null;
-  /** Buy X Get Y tag ("1 free", "−50%"). */
+  /** Buy X Get Y tag ("1 free", "Offer price"). */
   readonly deal: string | null;
   /** Order from abroad: the line in three columns (the struck-out `was` is then in the customer's currency). */
   readonly abroad: AbroadPriceCells | null;

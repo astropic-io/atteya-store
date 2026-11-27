@@ -171,6 +171,9 @@
                   <dd class="font-title-md font-bold!">{{ summary.total }}</dd>
                 </div>
               </dl>
+              @if (savedText(); as saved) {
+                <p class="font-body-md font-bold!">You saved {{ saved }}</p>
+              }
               @if (sendToEgypt()) {
                 @if (!summary.feeToBeAgreed) {
                   <p class="font-label-sm opacity-70">

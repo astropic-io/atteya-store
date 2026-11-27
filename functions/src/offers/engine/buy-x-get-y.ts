@@ -704,8 +704,8 @@ function offerPriceOf(unit: Unit): number {
 }
 
 /**
- * The small tag under a discounted item: "Free" or "−50%" when every piece has it, "1 free" or
- * "1 at −50%" when only some do. Several offers on one line are joined with " · ".
+ * The small tag under a discounted item: "Free" or "Offer price" when every piece has it, "1 free"
+ * or "1 at offer price" when only some do. Several offers on one line are joined with " · ".
  */
 export function dealTag(
   deals: readonly {
@@ -722,7 +722,8 @@ export function dealTag(
       if (deal.bundle) return deal.set ? 'Bundle & Save' : 'Bundle price';
       const all = deal.units >= quantity;
       if (deal.percent >= 100) return all ? 'Free' : `${deal.units} free`;
-      return all ? `\u2212${deal.percent}%` : `${deal.units} at \u2212${deal.percent}%`;
+      // Savings are shown as money (the struck-through price and "You save"), never as a percent.
+      return all ? 'Offer price' : `${deal.units} at offer price`;
     })
     .join(' · ');
 }

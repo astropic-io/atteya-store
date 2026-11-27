@@ -94,7 +94,7 @@ interface CartLinePrice {
   readonly total: string;
   /** The line before offers and sale prices, struck through; empty when nothing came off. */
   readonly was: string;
-  /** Buy X Get Y tag ("Free", "1 free", "−50%"); empty when none. */
+  /** Buy X Get Y tag ("Free", "1 free", "Offer price"); empty when none. */
   readonly deal: string;
   /** Pieces that still come with the line's free gifts. */
   readonly giftUnits: number;
@@ -111,9 +111,9 @@ interface CartGiftRow {
 /** The grey strip along the bottom of an item card: which offer applies and what it saves. */
 interface CartLineStrip {
   readonly key: string;
-  /** Offer title, with its percent off when it has one ("Autumn Sale · 21% off"). */
+  /** Offer title ("Autumn Sale"). */
   readonly title: string;
-  /** Buy X Get Y tag ("1 free", "−50%"); empty when none. */
+  /** Buy X Get Y tag ("1 free", "Offer price"); empty when none. */
   readonly tag: string;
   /** Right-hand text: "You save EGP 250" or "2 free gifts". */
   readonly end: string;
@@ -596,13 +596,10 @@ export class CartDrawerComponent {
       if (priced.appliedOfferId && offerUnits > 0) {
         const base = lineDisplayAmount(toDisplayAmount(info.price, entry), offerUnits);
         const now = lineDisplayAmount(toDisplayAmount(priced.unitEgp, entry), offerUnits);
-        const title = titleOf(priced.appliedOfferId);
-        // Measured against the product's own price, like "You save", not the compare-at price the
-        // engine's `discountPercent` uses for an item that is already on sale.
-        const percent = info.price > 0 ? Math.round(((info.price - priced.unitEgp) / info.price) * 100) : 0;
+        // The saving is the money on the right ("You save EGP 250"), never a percent.
         strips.push({
           key: `item-${priced.appliedOfferId}`,
-          title: percent > 0 ? `${title} · ${percent}% off` : title,
+          title: titleOf(priced.appliedOfferId),
           tag: '',
           end: base > now ? `You save ${money(base - now)}` : '',
         });
