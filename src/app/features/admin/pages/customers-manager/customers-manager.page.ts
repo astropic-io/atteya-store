@@ -77,7 +77,10 @@ function toRow(customer: Customer, now: Date): CustomerRow {
 
 /**
  * Admin → Customers (ATS-277): everyone who placed an order or made an account, from the
- * `customers` collection (ATS-276). Summary boxes, search, one filter chip, a sort and 50 at a time.
+ * `customers` collection (ATS-276). Summary boxes, search, one filter chip, a sort and 20 at a time
+ * (Show More Customers reads the next page from the server). Search and filters query every
+ * customer in Firestore; extra search words are checked on the pages already loaded, so a search
+ * reads 50 at a time to find matches sooner.
  */
 @Component({
   selector: 'app-customers-manager-page',
@@ -219,7 +222,7 @@ export class CustomersManagerPageComponent implements OnInit {
     }
   }
 
-  /** "Showing 50 of 312 customers"; with a search the total isn't known. */
+  /** "Showing 20 of 312 customers"; with a search the total isn't known. */
   readonly showing = computed(() => showingLabel(this.rows().length, this.chipCount(this.filter())));
 
   ngOnInit(): void {

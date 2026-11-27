@@ -1,5 +1,5 @@
 @let titleText = title();
-@let current = activeIndex();
+@let shown = shownIndex();
 @let highlight = highlightIndex();
 
 <section class="container-content" (pointerenter)="mountRemaining()" (focusin)="mountRemaining()">
@@ -52,7 +52,8 @@
               class="nav-list-photo"
               data-nav-photo
               [attr.data-nav-index]="idx"
-              [class.is-active]="current === idx"
+              [attr.data-depth]="depthOf(idx)"
+              [class.is-loaded]="isLoaded(idx)"
             >
               @if (imagePath(item); as src) {
                 <img
@@ -63,6 +64,7 @@
                   fill
                   sizes="(min-width: 1280px) 40rem, (min-width: 1024px) 50vw, 100vw"
                   class="object-cover object-center"
+                  (load)="markLoaded(idx)"
                 />
               } @else {
                 <div class="absolute inset-0 skeleton"></div>
@@ -73,9 +75,9 @@
       }
 
       @if (showPhotos() && items().length > 0) {
-        @let activeItem = items()[current];
+        @let shownItem = items()[shown];
         <div class="nav-list-caption">
-          <span class="min-w-0 truncate">{{ activeItem?.caption }}</span>
+          <span class="min-w-0 truncate">{{ shownItem?.caption }}</span>
           <span class="shrink-0 tabular-nums">{{ position() }}</span>
         </div>
       }

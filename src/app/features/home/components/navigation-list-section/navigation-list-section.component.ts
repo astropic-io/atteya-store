@@ -28,9 +28,7 @@ import { HomeNavList, HomeNavListItem } from '../../models/home.model';
 import {
   pendingNavListImage,
   playNavListArrows,
-  playNavListSwap,
   settleNavListArrows,
-  settleNavListPhotos,
 } from '../../utils/navigation-list-motion';
 
 type GsapApi = typeof GsapNamespace;
@@ -116,14 +114,28 @@ export class NavigationListSectionComponent {
   /** The row that shows the active line and arrow, or -1 before the shopper touches the list. */
   readonly highlightIndex = computed(() => (this.previewMode() || this.#touched() ? this.activeIndex() : -1));
 
-  /** "01 / 07" under the desktop photo. */
+  /**
+   * The photo on top of the desktop stack (ATS-361). It follows `activeIndex()` once the
+   * incoming photo has downloaded (1.2 s at most), so the stack never brings an empty frame up.
+   */
+  readonly #shownIndex = signal(0);
+  readonly shownIndex = computed(() => this.#clamp(this.#shownIndex()));
+
+  /** "01 / 07" on the top photo. */
   readonly position = computed(() => {
     const pad = (value: number): string => String(value).padStart(2, '0');
-    return `${pad(this.activeIndex() + 1)} / ${pad(this.items().length)}`;
+    return `${pad(this.shownIndex() + 1)} / ${pad(this.items().length)}`;
   });
 
-  /** Item 0 mounts with the desktop panel. The rest mount on the first pointer or focus. */
-  readonly #mounted = signal<ReadonlySet<number>>(new Set([0]));
+  /**
+   * The top photo and the two behind it mount with the desktop panel (ATS-361), and the two
+   * behind any photo coming to the top mount before it moves. The rest mount on the first
+   * pointer or focus. Mounted photos stay, so they slide away instead of vanishing.
+   */
+  readonly #mounted = signal<ReadonlySet<number>>(new Set([0, 1, 2]));
+  readonly #loaded = signal<ReadonlySet<number>>(new Set());
+  /** False until the stack shows its first photo; that first one goes up with no wait. */
+  #photosSettled = false;
   /**
    * Stays false until the browser confirms the lg layout. Starting false keeps
    * the photo out of the server HTML and the first client render, so a phone
@@ -140,8 +152,6 @@ export class NavigationListSectionComponent {
   #reduceQuery: MediaQueryList | null = null;
   #reduceMotion = false;
   #destroyed = false;
-  #lastAnimated = -1;
-  #animatedPhotoCount = 0;
   #lastArrow = -1;
   #arrowsSettled = false;
   #cancelPhotoWait: (() => void) | null = null;
@@ -152,12 +162,20 @@ export class NavigationListSectionComponent {
       this.#bootBrowser();
     });
 
+    // CSS moves the photos (no GSAP), so this runs before GSAP has loaded too.
     afterRenderEffect(() => {
       const index = this.activeIndex();
-      const ready = this.#motionReady();
       const photosEnabled = this.#desktopPhotos();
       const mounted = this.#mounted();
-      if (!ready || !photosEnabled || !mounted.has(index)) return;
+      if (!photosEnabled) return;
+      // The admin preview can pick a row whose photo is not in the page yet: add it and
+      // the two that will sit behind it, then come back.
+      const count = this.items().length;
+      const around = [index, (index + 1) % count, (index + 2) % count].filter((i) => i < count);
+      if (around.some((i) => !mounted.has(i))) {
+        untracked(() => around.forEach((i) => this.#mount(i)));
+        return;
+      }
       untracked(() => this.#syncPhotos(index));
     });
 
@@ -183,6 +201,27 @@ export class NavigationListSectionComponent {
 
   isMounted(index: number): boolean {
     return this.#mounted().has(index);
+  }
+
+  /** True once photo `index` has downloaded; the photos behind the top one wait for it. */
+  isLoaded(index: number): boolean {
+    return this.#loaded().has(index);
+  }
+
+  markLoaded(index: number): void {
+    this.#loaded.update((current) => {
+      if (current.has(index)) return current;
+      const next = new Set(current);
+      next.add(index);
+      return next;
+    });
+  }
+
+  /** Place in the desktop stack: 0 is the top photo, 1 and 2 peek out behind it, the rest are hidden. */
+  depthOf(index: number): number {
+    const count = this.items().length;
+    if (count <= 0) return 0;
+    return (index - this.shownIndex() + count) % count;
   }
 
   isEdited(index: number): boolean {
@@ -259,8 +298,7 @@ export class NavigationListSectionComponent {
     this.#desktopPhotos.set(event.matches);
     if (event.matches) return;
     this.#stopPhotoWait();
-    this.#lastAnimated = -1;
-    this.#animatedPhotoCount = 0;
+    this.#photosSettled = false;
     this.#arrowsSettled = false;
     this.#ctx?.revert();
     if (this.#gsap) {
@@ -271,10 +309,7 @@ export class NavigationListSectionComponent {
   readonly #onReduceChange = (event: MediaQueryListEvent): void => {
     this.#reduceMotion = event.matches;
     if (!event.matches) return;
-    this.#lastAnimated = -1;
-    this.#animatedPhotoCount = 0;
     this.#arrowsSettled = false;
-    this.#syncPhotos(this.activeIndex());
     this.#syncArrows(this.highlightIndex());
   };
 
@@ -303,42 +338,28 @@ export class NavigationListSectionComponent {
     });
   }
 
+  /**
+   * Brings photo `index` to the top of the stack. A photo that is still downloading
+   * waits (1.2 s at most), so the stack never slides an empty frame to the top.
+   */
   #syncPhotos(index: number, skipWait = false): void {
-    const gsap = this.#gsap;
-    const ctx = this.#ctx;
-    if (!gsap || !ctx || !this.#desktopPhotos()) return;
-
-    const photos = [...this.#host.nativeElement.querySelectorAll<HTMLElement>('[data-nav-photo]')];
-    if (photos.length === 0) return;
-    if (this.#lastAnimated === index && this.#animatedPhotoCount === photos.length) return;
-
+    if (!this.#desktopPhotos()) return;
+    const first = !this.#photosSettled;
+    this.#photosSettled = true;
+    if (this.shownIndex() === index) {
+      this.#stopPhotoWait();
+      return;
+    }
     this.#stopPhotoWait();
-    const first = this.#lastAnimated < 0;
-    const indexChanged = this.#lastAnimated !== index;
-
-    // Keep the current photo on screen until the next one has downloaded,
-    // so the change never fades through an empty frame.
-    if (!first && indexChanged && !skipWait) {
+    if (!skipWait && !first) {
+      const photos = [...this.#host.nativeElement.querySelectorAll<HTMLElement>('[data-nav-photo]')];
       const pending = pendingNavListImage(photos, index);
       if (pending) {
-        // The `is-active` class would show its loading shimmer on top meanwhile.
-        const incoming = pending.closest<HTMLElement>('[data-nav-photo]');
-        if (incoming) ctx.add(() => gsap.set(incoming, { opacity: 0, overwrite: 'auto' }));
         this.#waitForPhoto(pending, index);
         return;
       }
     }
-
-    this.#lastAnimated = index;
-    this.#animatedPhotoCount = photos.length;
-
-    ctx.add(() => {
-      if (first || !indexChanged) {
-        settleNavListPhotos(gsap, photos, index);
-        return;
-      }
-      playNavListSwap(gsap, photos, index, this.#reduceMotion);
-    });
+    this.#shownIndex.set(index);
   }
 
   #waitForPhoto(img: HTMLImageElement, index: number): void {
