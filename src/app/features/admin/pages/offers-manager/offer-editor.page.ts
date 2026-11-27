@@ -37,6 +37,7 @@ import {
   type OfferScope,
 } from '@core/services/offers/engine';
 import { toPricedProduct } from '@core/services/offers/offer.model';
+import { photoBadgeText } from '@core/services/offers/offer-shop';
 import { SeoService } from '@core/services/seo';
 import { SnackbarService } from '@core/services/snack-bar/snack-bar.service';
 import { SharedIconModule } from '@shared/ui/mat-icon';
@@ -308,7 +309,7 @@ export class OfferEditorPageComponent implements OnInit {
       const sample: SampleProduct = {
         name: product.name,
         imagePath: rawImage ? normalizeImageKitPath(rawImage) : null,
-        badge: res.badges[0]?.text ?? null,
+        badge: photoBadgeText(res.badges, [offer]),
         listPrice: Math.max(product.price, product.compareAtPrice ?? 0),
         offerPrice: res.fromPrice,
         partial: res.partial,
