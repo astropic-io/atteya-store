@@ -24,7 +24,7 @@ import {
   endlessCollapseTo,
   endlessIndex,
   endlessRecentre,
-  endlessRowFits,
+  endlessRowOverflows,
   endlessStep,
 } from '@shared/utils/endless-row.utils';
 import { normalizeImageKitPath } from '@shared/utils/image';
@@ -258,7 +258,7 @@ export class ProductGalleryComponent {
     const count = this.displayImages().length;
     const stride = this.#stride(el);
     this.perView.set(Math.max(1, Math.round(el.clientWidth / stride)));
-    const loops = endlessRowFits(el, count);
+    const loops = endlessRowOverflows(el, count);
     this.loops.set(loops);
     if (loops) {
       this.active.set(endlessIndex(el, count));

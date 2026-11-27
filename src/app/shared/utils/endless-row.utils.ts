@@ -7,7 +7,7 @@
  * last. Once the row comes to rest inside copy 0 or copy 2 it jumps by one copy's width with
  * no animation, landing on the same item in copy 1, so the shopper never reaches an end.
  *
- * Only loop a row whose items don't all fit (`endlessRowFits`); otherwise the copies would
+ * Only loop a row whose items don't all fit (`endlessRowOverflows`); otherwise the copies would
  * show side by side.
  */
 
@@ -39,7 +39,7 @@ export function endlessSpan(el: HTMLElement, count: number): number {
 }
 
 /** True when `count` items are wider than the row, so looping makes sense. */
-export function endlessRowFits(el: HTMLElement, count: number): boolean {
+export function endlessRowOverflows(el: HTMLElement, count: number): boolean {
   return count > 1 && endlessSpan(el, count) > el.clientWidth + 2;
 }
 
@@ -68,12 +68,46 @@ function jumpTo(el: HTMLElement, left: number): void {
   el.style.scrollBehavior = behavior;
 }
 
-/** Scroll the row by one item (endless: there is always one more either way). */
+/** Item each row is scrolling to after an arrow press, until it comes to rest. */
+const pendingTarget = new WeakMap<HTMLElement, number>();
+
+/**
+ * Scroll the row by one item (endless: there is always one more either way). Quick presses
+ * during a smooth scroll add up from the item the row is already heading to.
+ */
 export function endlessStep(el: HTMLElement, count: number, direction: 1 | -1): void {
-  // Back to copy 1 first, so quick presses during a smooth scroll never walk to a real end.
-  endlessRecentre(el, count);
   const stride = endlessStride(el);
-  el.scrollTo({ left: (Math.round(el.scrollLeft / stride) + direction) * stride });
+  let from = pendingTarget.get(el);
+  if (from === undefined) {
+    endlessRecentre(el, count);
+    from = Math.round(el.scrollLeft / stride);
+  }
+  // Heading out of copy 1: move back by one copy first, so the row never reaches a real end.
+  if (count > 0 && (from + direction < count || from + direction >= 2 * count)) {
+    const shift = from + direction < count ? count : -count;
+    jumpTo(el, el.scrollLeft + shift * stride);
+    from += shift;
+  }
+  const to = from + direction;
+  pendingTarget.set(el, to);
+  el.scrollTo({ left: to * stride });
+}
+
+/** Marks containing a link or button inside the copies, so only copy 1 is reached by keyboard. */
+export function endlessHideCopies(el: HTMLElement, count: number): void {
+  const items = Array.from(el.children) as HTMLElement[];
+  items.forEach((item, i) => {
+    const copy = count > 0 ? Math.floor(i / count) : 1;
+    const hidden = items.length >= count * 3 && copy !== 1;
+    if (hidden) item.setAttribute('aria-hidden', 'true');
+    else item.removeAttribute('aria-hidden');
+    const focusables = item.matches('a, button') ? [item] : [];
+    focusables.push(...Array.from(item.querySelectorAll<HTMLElement>('a, button')));
+    for (const focusable of focusables) {
+      if (hidden) focusable.setAttribute('tabindex', '-1');
+      else if (focusable.getAttribute('tabindex') === '-1') focusable.removeAttribute('tabindex');
+    }
+  });
 }
 
 /** Leaving the loop: once copies 0 and 2 are gone, show the item that was at the start. */
@@ -93,13 +127,11 @@ export function endlessRecentre(el: HTMLElement, count: number): void {
 /**
  * Keep a three-copy row on copy 1: whenever the row comes to rest (no scroll events for
  * 120 ms, no finger on it and no mouse button down) in copy 0 or copy 2, it jumps to the same
- * item in copy 1. Call `endlessRecentre` as soon as the copies are inserted (a
- * MutationObserver callback runs before the browser paints) so copy 0 never shows. Returns the
- * clean-up function.
+ * item in copy 1. It does not move the row itself when attached: call `endlessRecentre` from a
+ * MutationObserver as soon as the copies are inserted (it runs before the browser paints, and
+ * after Angular's render hooks), so copy 0 never shows. Returns the clean-up function.
  */
 export function attachEndlessRow(el: HTMLElement, count: () => number): () => void {
-  endlessRecentre(el, count());
-
   let timer: ReturnType<typeof setTimeout> | null = null;
   // Touch is tracked with touch events only: a touch's pointercancel fires as soon as the
   // browser starts panning, while the finger is still down.
@@ -109,11 +141,15 @@ export function attachEndlessRow(el: HTMLElement, count: () => number): () => vo
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = null;
-      if (touches === 0 && !mouseDown) endlessRecentre(el, count());
+      if (touches !== 0 || mouseDown) return;
+      pendingTarget.delete(el);
+      endlessRecentre(el, count());
     }, REST_MS);
   };
   const onTouch = (event: TouchEvent): void => {
     touches = event.touches.length;
+    // The finger takes over from any arrow press still on its way.
+    pendingTarget.delete(el);
     if (touches === 0) settle();
   };
   const onPointerDown = (event: PointerEvent): void => {

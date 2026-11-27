@@ -16,10 +16,11 @@ import type { ScrollTrigger as ScrollTriggerClass } from 'gsap/ScrollTrigger';
 import {
   attachEndlessRow,
   endlessCollapseTo,
+  endlessHideCopies,
   endlessIndex,
   endlessProgress,
   endlessRecentre,
-  endlessRowFits,
+  endlessRowOverflows,
   endlessSpan,
   endlessStep,
 } from '@shared/utils/endless-row.utils';
@@ -160,16 +161,22 @@ export class RowScrollLockDirective {
       return count > 0 && row.children.length >= count * 3;
     };
     let wasCopied = copied();
+    let lastCount = this.rowLoopCount();
     /** Card at the row's start while it loops, to land on when the copies go away. */
     let index = 0;
     const measure = (): void => {
       const isCopied = copied();
+      const count = this.rowLoopCount();
       // Runs before the browser paints: copy 0 never shows, and leaving the loop keeps the card.
-      if (isCopied && !wasCopied) endlessRecentre(row, this.rowLoopCount());
+      if (isCopied && !wasCopied) endlessRecentre(row, count);
       if (!isCopied && wasCopied) endlessCollapseTo(row, index);
+      // The cards changed while looping (prices loaded, the live list arrived): same card, copy 1.
+      if (isCopied && wasCopied && count !== lastCount) endlessCollapseTo(row, (index % count) + count);
+      if (isCopied || wasCopied) endlessHideCopies(row, count);
       wasCopied = isCopied;
+      lastCount = count;
       this.#children.set(row.children.length);
-      this.#overflows.set(endlessRowFits(row, this.rowLoopCount()));
+      this.#overflows.set(endlessRowOverflows(row, this.rowLoopCount()));
     };
     const track = (): void => {
       if (wasCopied) index = endlessIndex(row, this.rowLoopCount());
