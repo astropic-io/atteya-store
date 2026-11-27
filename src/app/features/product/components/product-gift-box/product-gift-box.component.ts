@@ -124,7 +124,7 @@ export class ProductGiftBoxComponent {
     if (!result.next || !next) return;
     if (next.kind === 'pick') {
       const nextRow = this.#host.nativeElement.querySelector<HTMLElement>(
-        `[data-gift-row="${next.gift.id}"]`,
+        `[data-gift-row="${CSS.escape(next.gift.id)}"]`,
       );
       await this.open(next.gift.id, nextRow);
     } else {
