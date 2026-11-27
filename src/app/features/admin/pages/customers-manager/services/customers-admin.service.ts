@@ -120,8 +120,9 @@ export class CustomersAdminService {
   }
 
   /**
-   * One page of up to `CUSTOMERS_PAGE_SIZE` customers (`CUSTOMERS_SEARCH_PAGE_SIZE` with a search). "Account, No Order Yet" is always newest
-   * customers first: every other sort is the same (no orders, nothing spent) for all of them.
+   * One page of up to `CUSTOMERS_PAGE_SIZE` customers (`CUSTOMERS_SEARCH_PAGE_SIZE` with a search).
+   * "Account, No Order Yet" is always newest customers first: every other sort is the same (no
+   * orders, nothing spent) for all of them.
    */
   async listPage(page: CustomerPageQuery): Promise<CustomerPage> {
     const searching = page.term !== null;
