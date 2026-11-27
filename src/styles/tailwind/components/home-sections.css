@@ -3,9 +3,14 @@
  */
 @layer components {
   /* One photo banner; the whole banner is the link. 4:5 on phones, 21:9 from md up. */
+  /* No side padding: the banner runs edge to edge. Only space below it, so it sits close to the list above. */
+  .offer-banner-section {
+    @apply pb-[5cqw];
+  }
+
   .offer-banner {
-    @apply relative block aspect-4/5 w-full overflow-hidden border-shape bg-inverse-surface text-on-primary no-underline md:aspect-21/9;
-    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-4;
+    @apply relative block aspect-4/5 max-h-[85dvh] w-full overflow-hidden bg-inverse-surface text-on-primary no-underline md:aspect-21/9;
+    @apply focus-visible:outline-4 focus-visible:-outline-offset-4 focus-visible:outline-on-primary;
   }
 
   .offer-banner-photo {
@@ -19,11 +24,11 @@
   }
 
   .offer-banner-text {
-    @apply absolute inset-x-0 bottom-0 elements-start-col gap-2.5 p-6 md:max-w-[60%] md:gap-4 md:p-[4cqw];
+    @apply absolute inset-x-0 bottom-0 elements-start-col gap-2.5 px-[5cqw] py-6 md:max-w-[65%] md:gap-4 md:py-[4cqw];
   }
 
   .offer-banner-headline {
-    @apply m-0 line-clamp-2 font-headline-lg font-bold! md:font-display-sm lg:font-display-md;
+    @apply m-0 line-clamp-2 font-headline-lg font-bold! md:font-display-sm lg:font-display-md xl:font-display-lg;
   }
 
   /* "Shop the Offer": a label, not a separate button. The line under it fills on hover. */
@@ -36,7 +41,7 @@
   }
 
   .offer-banner-go {
-    @apply absolute top-5 right-5 elements-center transition-transform duration-500 ease-out motion-reduce:transition-none md:top-[3cqw] md:right-[3cqw];
+    @apply absolute top-5 right-[5cqw] elements-center transition-transform duration-500 ease-out motion-reduce:transition-none md:top-[4cqw];
   }
 
   @media (hover: hover) {
