@@ -2,12 +2,7 @@ import { inject, Service } from '@angular/core';
 import { toGiftChoice } from '@core/services/cart/cart-gifts';
 import type { Offer, OfferBundleSlot, OfferConditions } from '@core/services/offers/engine';
 import { canShopOffer } from '@core/services/offers/offer-shop';
-import {
-  isTypeId,
-  type Product,
-  type ProductTypeId,
-  ProductService,
-} from '@core/services/products';
+import { isTypeId, type Product, type ProductTypeId, ProductService } from '@core/services/products';
 import { SearchService } from '@core/services/search';
 import { toProductView } from '../../product/models/product-page.model';
 import type { BundleChoice } from '../../product/utils/product-bundle';
