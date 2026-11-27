@@ -4,7 +4,7 @@
     <p class="font-body-md pt-1 pb-4">
       They need an account already. Ask them to sign in with Google once, or create their account first.
     </p>
-    <form class="elements-end flex-wrap gap-3" novalidate (submit)="onGrant($event)">
+    <form class="elements-end items-start! flex-wrap gap-3" novalidate (submit)="onGrant($event)">
       <div class="w-full sm:max-w-md sm:flex-1">
         <app-text-input
           [formField]="grantForm.email"
@@ -26,6 +26,7 @@
       <div class="elements-start w-full sm:w-auto *:flex-1">
         <button
           matButton="filled"
+          class="btn-field-height"
           type="submit"
           [disabled]="isGranting()"
           [attr.aria-label]="isGranting() ? 'Adding to the team' : null"

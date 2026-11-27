@@ -40,6 +40,17 @@
   );
 }
 
+//- Same height as an outlined text field beside it (Team page Add to Team). Give the row `items-start!`, so the
+//- button lines up with the field and not with the space kept for its error line.
+.btn-field-height {
+  @include mat.button-overrides(
+    (
+      filled-container-height: var(--mat-form-field-container-height, 56px),
+      outlined-container-height: var(--mat-form-field-container-height, 56px),
+    )
+  );
+}
+
 //- Full width on phone only, content width from `sm` (footer Subscribe)
 .btn-block-phone {
   width: 100%;
