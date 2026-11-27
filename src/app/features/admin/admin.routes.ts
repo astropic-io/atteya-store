@@ -2,7 +2,7 @@ import { Routes } from '@angular/router';
 import { adminGuard, adminOnlyGuard } from '@core/guards/admin/admin.guard';
 import { environment } from '@env/environment';
 
-/** Admin Overview (ATS-340): dev only until the client agrees to it. */
+/** Admin Overview (ATS-340): on where `environment.adminOverview` is true (dev and live). */
 const OVERVIEW_ON = environment.adminOverview === true;
 
 export const ADMIN_ROUTES: Routes = [
