@@ -110,7 +110,10 @@ export type BundleRowMoney = (row: Pick<OfferBundleRow, 'quantity' | 'price'>) =
  * pieces (as the bag splits equal pieces), each share converted on its own, then added up. The
  * bag and checkout convert each piece's line, not the row total, so converting the total once
  * ("2 for AED 19") promised less than the shopper pays (AED 10 + AED 10). In EGP, `toDisplay`
- * returns the amount unchanged and this is the row price.
+ * returns the amount unchanged and this is the row price. It is the price for pieces on separate
+ * bag lines (the picker adds one line per piece): pieces that join one line (the same item twice)
+ * convert their total once and can round a step apart, and so can pieces at very different
+ * prices, since this splits evenly. The bag's own strip shows what its lines are charged.
  */
 export function bundleRowDisplayAmount(
   row: Pick<OfferBundleRow, 'quantity' | 'price'>,

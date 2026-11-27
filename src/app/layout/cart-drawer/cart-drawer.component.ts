@@ -44,7 +44,13 @@ import { cartLineKey, type CartLineDraft } from '@core/services/cart/cart.model'
 import { CartService } from '@core/services/cart/cart.service';
 import { CurrencyService } from '@core/services/currency/currency.service';
 import { injectFirestore } from '@core/firebase';
-import { dealTag, displayDecimals, toDisplayAmount, type BagDealHint } from '@core/services/offers/engine';
+import {
+  dealTag,
+  displayDecimals,
+  toDisplayAmount,
+  type BagBundle,
+  type BagDealHint,
+} from '@core/services/offers/engine';
 import { toPricedProduct } from '@core/services/offers/offer.model';
 import { OffersService } from '@core/services/offers/offers.service';
 import { PRODUCT_GENDERS } from '@core/services/products/product.constants';
@@ -363,12 +369,15 @@ export class CartDrawerComponent {
    * The bag priced like checkout and the order: per-item offers on each piece, then Buy X Get Y
    * over the whole bag (catalog prices until live offers load). Display only.
    */
-  readonly #pricedBag = computed(() => {
+  readonly #pricedBag = computed(() => this.#priceLines(this.lines()));
+
+  /** Prices any bag lines the way `#pricedBag` prices the bag. */
+  #priceLines(lines: readonly CartLineDraft[]): ReturnType<typeof priceBag> {
     const liveMode = this.#offers.ready() && !this.#offers.failed();
     const offers = liveMode ? this.#offers.all() : [];
     const ctx = { now: this.#offers.now(), signedIn: this.#auth.offerSignedIn(), codes: [] };
-    return priceBag(this.lines(), this.#products(), offers, ctx);
-  });
+    return priceBag(lines, this.#products(), offers, ctx);
+  }
 
   /**
    * What the bag gets from offers right now, for the notes that say when an offer stops applying
@@ -530,7 +539,13 @@ export class CartDrawerComponent {
         money,
         rowMoney,
       );
-      const nudge = bundleNudgeText(bundle, money, rowMoney);
+      const nudge = bundleNudgeText(bundle, money, (row) =>
+        formatMoney(
+          this.#nudgeTotal(bundle, lines) ?? bundleRowDisplayAmount(row, toDisplay, decimals),
+          entry.code,
+          decimals,
+        ),
+      );
       if (!strip && !nudge) continue;
       const offer = offers.get(bundle.offerId);
       const saving = shown ? shown.saving : toDisplayAmount(bundle.saving, entry);
@@ -605,6 +620,25 @@ export class CartDrawerComponent {
       total: Number(total.toFixed(decimals)),
       saving: Number(Math.max(0, base - total).toFixed(decimals)),
     };
+  }
+
+  /**
+   * What the bundle's next row would really be charged once **Add 1** adds the missing pieces to
+   * the last line (they join that line, whose total converts once); null when that bag would not
+   * be priced as exactly that one row.
+   */
+  #nudgeTotal(bundle: BagBundle, lines: readonly CartLineDraft[]): number | null {
+    const next = bundle.next;
+    const last = lines[bundle.lineIndex];
+    if (!next || !last) return null;
+    const after = lines.map((line, index) =>
+      index === bundle.lineIndex ? { ...line, quantity: line.quantity + next.missing } : line,
+    );
+    const priced = this.#priceLines(after);
+    const reached = priced.bundles.find((entry) => entry.offerId === bundle.offerId);
+    const row = reached?.rows.length === 1 ? reached.rows[0] : undefined;
+    if (!row || row.count !== 1 || row.quantity !== next.quantity) return null;
+    return this.#bundleShown(bundle.offerId, priced.lines, after)?.total ?? null;
   }
 
   setBoxes(index: number): readonly CartSetBox[] {

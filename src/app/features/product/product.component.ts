@@ -19,7 +19,7 @@ import { AuthService } from '@core/services/auth/auth.service';
 import { giftProductLabel } from '@core/services/cart/cart-gifts';
 import { bagLineVariant, type BagPricingProduct, priceBag } from '@core/services/cart/cart-deals';
 import { giftCardColours, giftCardName } from '@core/services/cart/gift-card-label';
-import type { CartLineDraft } from '@core/services/cart/cart.model';
+import { cartLineKey, type CartLineDraft } from '@core/services/cart/cart.model';
 import { CurrencyService } from '@core/services/currency/currency.service';
 import { MetaPixelService } from '@core/services/analytics/meta-pixel.service';
 import {
@@ -768,9 +768,9 @@ export class ProductComponent {
   });
 
   /**
-   * The Bundle price picker's total in the visitor's currency: each piece's share of the row (or its
-   * own price when the row would cost more) converted on its own and added up, the way the bag and
-   * checkout charge one line per piece (ATS-385). Null when no bundle is being picked.
+   * The Bundle price picker's total in the visitor's currency, as the bag will charge it (ATS-385):
+   * each piece's share of the row (or its own price when the row would cost more), added up per bag
+   * line the pieces will make, each line converted once. Null when no bundle is being picked.
    */
   readonly #bundleTotalDisplay = computed<number | null>(() => {
     const totalEgp = this.#bundleTotalEgp();
@@ -783,7 +783,13 @@ export class ProductComponent {
     });
     const own = prices.reduce((sum, price) => sum + price, 0);
     const shares = totalEgp < own ? splitBundleTotal(totalEgp, prices) : prices;
-    const sum = shares.reduce((acc, share) => acc + this.#toDisplay(share), 0);
+    // Pieces with the same choices join one bag line, whose total converts once.
+    const lines = this.bagLines();
+    const keys = lines?.length === pieces ? lines.map(cartLineKey) : shares.map((_, piece) => `${piece}`);
+    const byLine = new Map<string, number>();
+    shares.forEach((share, piece) => byLine.set(keys[piece]!, (byLine.get(keys[piece]!) ?? 0) + share));
+    let sum = 0;
+    for (const lineEgp of byLine.values()) sum += this.#toDisplay(lineEgp);
     return Number(sum.toFixed(this.#decimals()));
   });
 
