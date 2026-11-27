@@ -34,25 +34,28 @@
         appHorizontalScroll
         appRowScrollLock
         rowLockFit=".product-card__media"
+        [rowLoopCount]="cards().length"
         #lock="rowScrollLock"
         [enableWheel]="false"
         [snapToItems]="!lock.enabled()"
       >
-        @for (card of cards(); track card.id) {
-          <div class="scroll-row-item">
-            <app-product-card
-              [product]="card"
-              sizes="(max-width: 639px) 70vw, (max-width: 1023px) 45vw, 28vw"
-            />
-          </div>
+        @for (copy of lock.loops() ? loopCopies : oneCopy; track copy) {
+          @for (card of cards(); track card.id) {
+            <div class="scroll-row-item">
+              <app-product-card
+                [product]="card"
+                sizes="(max-width: 639px) 70vw, (max-width: 1023px) 45vw, 28vw"
+              />
+            </div>
+          }
         }
       </div>
 
       @if (isBrowser && (canPrev() || canNext())) {
         <app-row-scroll-nav
           [progress]="progress()"
-          [canPrev]="canPrev() || lock.loops()"
-          [canNext]="canNext() || lock.loops()"
+          [canPrev]="canPrev()"
+          [canNext]="canNext()"
           (prev)="lock.step(-1)"
           (next)="lock.step(1)"
         />
