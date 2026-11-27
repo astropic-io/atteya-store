@@ -106,7 +106,7 @@
   }
 
   .gift-picker__dot {
-    @apply size-9 elements-center border border-outline-variant rounded-full cursor-pointer;
+    @apply size-9 elements-center border border-outline-variant border-shape cursor-pointer;
   }
 
   .gift-picker__dot[aria-pressed='true'] {

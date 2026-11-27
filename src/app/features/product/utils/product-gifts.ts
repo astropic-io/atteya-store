@@ -198,12 +198,18 @@ function giftRowDetail(
   return sizeLabel ? `Size ${sizeLabel} · ${choice.label}` : `Pick a size · ${choice.label}`;
 }
 
-/** What the gifts are worth in EGP: each gift's highest-priced choice, added up (0 when unknown). */
+/**
+ * What the gifts are worth in EGP: each gift's lowest-priced choice, added up, so it is true
+ * whichever choice the shopper picks (0 when a gift's prices are unknown).
+ */
 export function giftBoxWorth(box: GiftBoxView): number {
-  return box.gifts.reduce(
-    (sum, gift) => sum + Math.max(0, ...gift.choices.map((choice) => (choice.price > 0 ? choice.price : 0))),
-    0,
-  );
+  let sum = 0;
+  for (const gift of box.gifts) {
+    const prices = gift.choices.map((choice) => choice.price).filter((price) => price > 0);
+    if (prices.length !== gift.choices.length || prices.length === 0) return 0;
+    sum += Math.min(...prices);
+  }
+  return sum;
 }
 
 /** The first gift step still open, as the prompt Add to Bag shows; null when every gift is chosen. */

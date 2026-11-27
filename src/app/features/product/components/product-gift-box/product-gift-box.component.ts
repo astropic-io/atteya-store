@@ -68,6 +68,8 @@ export class ProductGiftBoxComponent {
 
   /** "EGP 824" (or the shopper's own currency), or null when too small or unknown. */
   readonly worth = computed(() => {
+    // Wait for the shopper's currency, so a shopper abroad never sees EGP first.
+    if (!this.#currency.ready()) return null;
     const egp = giftBoxWorth(this.box());
     if (egp < MIN_WORTH_EGP) return null;
     const entry = this.#currency.entry();
@@ -100,16 +102,22 @@ export class ProductGiftBoxComponent {
     if (index < 0) return;
     const row = rows[index];
     const next = rows.slice(index + 1).find((entry) => entry.kind !== 'included' && !entry.done) ?? null;
-    const result = await this.#picker.open(
-      {
-        gift: row.gift,
-        title: row.title,
-        step: rows.length > 1 ? `Free gift · ${index + 1} of ${rows.length}` : 'Free gift',
-        pick: this.picks()[giftId] ?? null,
-        next: next?.title ?? null,
-      },
-      trigger instanceof HTMLElement ? trigger : null,
-    );
+    let result: Awaited<ReturnType<GiftPickerService['open']>>;
+    try {
+      result = await this.#picker.open(
+        {
+          gift: row.gift,
+          title: row.title,
+          step: rows.length > 1 ? `Free gift · ${index + 1} of ${rows.length}` : 'Free gift',
+          pick: this.picks()[giftId] ?? null,
+          next: next?.title ?? null,
+        },
+        trigger instanceof HTMLElement ? trigger : null,
+      );
+    } catch {
+      // The panel couldn't open: the row stays as it was and the shopper can tap it again.
+      return;
+    }
     if (!result) return;
     this.productPicked.emit({ giftId, productId: result.productId });
     if (result.sizeId) this.sizePicked.emit({ giftId, sizeId: result.sizeId });

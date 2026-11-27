@@ -125,7 +125,8 @@ export class GiftPickerComponent {
   pick(productId: string): void {
     if (this.selectedId() === productId) return;
     this.selectedId.set(productId);
-    this.sizeId.set(null);
+    // Back on the product that was already picked: its size comes back too.
+    this.sizeId.set(productId === this.data.pick?.productId ? (this.data.pick.sizeId ?? null) : null);
     this.needSize.set(false);
   }
 
@@ -171,11 +172,17 @@ export class GiftPickerComponent {
     this.#ref.close({ productId: selected.productId, sizeId: this.sizeId(), next: !!this.data.next });
   }
 
-  /** Close button, Esc or the backdrop: keep what was picked, without moving on. */
+  /**
+   * Close button, Esc or the backdrop: keep a finished pick (a product, and its size when it has
+   * sizes), without moving on. A product tapped only to look at it leaves the earlier pick as it was.
+   */
   close(): void {
     const selected = this.selected();
+    const finished = !!selected && (!this.sizes()?.length || !!this.sizeId());
     this.#ref.close(
-      selected ? { productId: selected.productId, sizeId: this.sizeId(), next: false } : undefined,
+      finished && selected
+        ? { productId: selected.productId, sizeId: this.sizeId(), next: false }
+        : undefined,
     );
   }
 
