@@ -8,6 +8,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { SharedIconModule } from '@shared/ui/mat-icon';
 import { ImagePickerComponent } from '@shared/ui/image-picker';
 import { ImageAsset } from '@shared/schemas';
+import { isMachineFileName } from '@shared/utils/image';
 import { HOME_TEXT_LIMITS, NAV_LIST_MAX_ITEMS } from '@features/home/data/home.data';
 import { textLimitState } from '../../utils/home-text-limits';
 import { ActionMoveEvent, HomeNavListItem } from '../../models/home-manager.model';
@@ -68,7 +69,8 @@ export class HomeNavListEditorComponent {
 
   readonly itemAsset = computed<ImageAsset>(() => ({
     path: this.activeItem().imageUrl,
-    alt: this.activeItem().imageAlt ?? '',
+    // An id or hash saved by an older import is not a description, so the field shows empty.
+    alt: isMachineFileName(this.activeItem().imageAlt ?? '') ? '' : (this.activeItem().imageAlt ?? ''),
   }));
 
   onAssetChange(asset: ImageAsset | null): void {
