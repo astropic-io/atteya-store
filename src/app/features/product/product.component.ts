@@ -25,7 +25,9 @@ import { MetaPixelService } from '@core/services/analytics/meta-pixel.service';
 import {
   bundleOfferLink,
   canShopOffer,
+  OFFER_LINE_KINDS,
   type OfferLink,
+  priceOfferBadgeText,
   offerTitleVisible,
   offerTextFor,
 } from '@core/services/offers/offer-shop';
@@ -433,13 +435,7 @@ export class ProductComponent {
         ? offers.find((offer) => offer.id === badge.offerId)?.reward.kind
         : undefined;
       if (kind === 'freeGift') continue;
-      if (
-        kind === 'buyXGetY' ||
-        kind === 'bundlePrice' ||
-        kind === 'bundleSet' ||
-        kind === 'tiered' ||
-        kind === 'freeShipping'
-      ) {
+      if (kind && OFFER_LINE_KINDS.has(kind)) {
         const offer = offers.find((candidate) => candidate.id === badge.offerId);
         // Free shipping applies to Egypt orders only, so it is never promised abroad.
         if (offer && !offerTitleVisible(offer, country)) continue;
@@ -460,24 +456,18 @@ export class ProductComponent {
         lines.push({ text: title, link });
         continue;
       }
-      // A price offer's saving is the struck-through price, never a "20% off" tag. Only words the
-      // admin wrote as the offer's badge stay ("Black Friday", or "30% off everything").
       if (!badge.labelOnly) {
         const offer = offers.find((candidate) => candidate.id === badge.offerId);
-        if (!offer?.badge?.trim()) {
-          if (offer?.reward.kind === 'tiered') {
-            // The struck-through price shows only the first tier: the title says the rest.
-            const title = offer.title.trim();
-            if (title && !lines.some((line) => line.text === title) && offerTextFor(title, currency) !== '') {
-              lines.push({ text: title, link: null });
-            }
-          } else if (badge.partial) {
-            // Only some colours or sizes: say so, without the percent ("Offer price · Black only").
-            const only = / · ([^·]+ only)$/.exec(badge.text)?.[1];
-            shown.push(only ? `Offer price · ${only}` : 'Offer price on some options');
+        if (offer?.reward.kind === 'tiered' && !offer.badge?.trim()) {
+          // The struck-through price shows only the first tier: the title says the rest.
+          const title = offer.title.trim();
+          if (title && !lines.some((line) => line.text === title) && offerTextFor(title, currency) !== '') {
+            lines.push({ text: title, link: null });
           }
-          continue;
         }
+        const text = priceOfferBadgeText(badge, offer);
+        if (text) shown.push(text);
+        continue;
       }
       shown.push(badge.text);
     }
