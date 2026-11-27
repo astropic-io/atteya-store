@@ -147,6 +147,7 @@ export class TypesTabComponent {
     await this.#save(
       this.items().filter((item) => item.id !== type.id),
       `${type.label} deleted.`,
+      [type.id],
     );
   }
 
@@ -159,13 +160,17 @@ export class TypesTabComponent {
     await this.#save(next, 'New order saved.');
   }
 
-  async #save(next: readonly ProductTypeEntry[], done: string): Promise<void> {
+  async #save(
+    next: readonly ProductTypeEntry[],
+    done: string,
+    deleted: readonly string[] = [],
+  ): Promise<void> {
     // Until the saved list loads, the built-ins are showing; saving them would overwrite it.
     if (this.isSaving() || !this.loaded()) return;
     this.isSaving.set(true);
     this.items.set(next);
     try {
-      await this.#types.save(next, this.#catalog.currentUid());
+      await this.#types.save(next, [...this.#types.deletedIds(), ...deleted], this.#catalog.currentUid());
       this.#snackbar.success(done);
     } catch {
       this.items.set(this.#types.types());
@@ -192,7 +197,12 @@ export class TypesTabComponent {
       TypeDialogComponent,
       {
         ...CATALOG_DIALOG_CONFIG,
-        data: { type, types: this.items(), categories: this.categoryOptions() },
+        data: {
+          type,
+          types: this.items(),
+          takenIds: [...this.items().map((item) => item.id), ...this.#types.deletedIds()],
+          categories: this.categoryOptions(),
+        },
       },
     );
     ref.afterClosed().subscribe((result) => {

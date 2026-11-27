@@ -75,25 +75,39 @@ const ProductTypeEntrySchema = v.object({
   id: v.custom<string>(isTypeId),
   label: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(MAX_TYPE_LABEL)),
   phrase: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(MAX_TYPE_PHRASE)),
-  categoryId: v.pipe(v.string(), v.maxLength(MAX_TYPE_ID)),
+  /** Any category id (they can be longer than a type id); empty = none. */
+  categoryId: v.fallback(v.pipe(v.string(), v.maxLength(200)), ''),
 });
 
-export const ProductTypesDocSchema = v.object({
-  types: v.pipe(v.array(ProductTypeEntrySchema), v.maxLength(MAX_PRODUCT_TYPES)),
-});
+function rowsOf(raw: unknown, field: string): readonly unknown[] {
+  if (!raw || typeof raw !== 'object') return [];
+  const rows = (raw as Record<string, unknown>)[field];
+  return Array.isArray(rows) ? rows.slice(0, MAX_PRODUCT_TYPES * 4) : [];
+}
 
-export type ProductTypesDoc = v.InferOutput<typeof ProductTypesDocSchema>;
-
-/** The list to show: the saved one (duplicates dropped), or the built-ins when none is saved. */
+/**
+ * The list to show: the saved one, or the built-ins when none is saved. Each row is read on its
+ * own, so one bad row is skipped instead of hiding the whole list (and duplicates are dropped).
+ */
 export function resolveProductTypes(raw: unknown): readonly ProductTypeEntry[] {
-  const parsed = v.safeParse(ProductTypesDocSchema, raw);
-  if (!parsed.success || parsed.output.types.length === 0) return BUILT_IN_PRODUCT_TYPES;
   const seen = new Set<string>();
-  return parsed.output.types.filter((type) => {
-    if (seen.has(type.id)) return false;
-    seen.add(type.id);
-    return true;
-  });
+  const types: ProductTypeEntry[] = [];
+  for (const row of rowsOf(raw, 'types')) {
+    const parsed = v.safeParse(ProductTypeEntrySchema, row);
+    if (!parsed.success || seen.has(parsed.output.id)) continue;
+    seen.add(parsed.output.id);
+    types.push(parsed.output);
+    if (types.length >= MAX_PRODUCT_TYPES) break;
+  }
+  return types.length > 0 ? types : BUILT_IN_PRODUCT_TYPES;
+}
+
+/**
+ * Ids of types staff deleted. A new type never takes one, so an old offer aimed at a deleted
+ * type never starts covering a new one.
+ */
+export function deletedTypeIds(raw: unknown): readonly string[] {
+  return [...new Set(rowsOf(raw, 'deletedIds').filter(isTypeId))];
 }
 
 /** "this hoodie" for a type, or "this item" for one that is no longer in the list. */

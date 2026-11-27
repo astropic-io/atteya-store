@@ -24,7 +24,7 @@
 
   <ul class="catalog-list" aria-label="Types" cdkDropList (cdkDropListDropped)="drop($event)">
     @for (type of items(); track type.id) {
-      <li cdkDrag cdkDragLockAxis="y" [cdkDragDisabled]="isSaving()">
+      <li cdkDrag cdkDragLockAxis="y" [cdkDragDisabled]="isSaving() || !loaded()">
         <div class="catalog-row">
           <span
             cdkDragHandle
@@ -53,13 +53,23 @@
               <span>Edit</span>
             </button>
             @if (!$first) {
-              <button mat-menu-item type="button" [disabled]="isSaving()" (click)="move(type, -1)">
+              <button
+                mat-menu-item
+                type="button"
+                [disabled]="isSaving() || !loaded()"
+                (click)="move(type, -1)"
+              >
                 <mat-icon name="arrow_upward" />
                 <span>Move Up</span>
               </button>
             }
             @if (!$last) {
-              <button mat-menu-item type="button" [disabled]="isSaving()" (click)="move(type, 1)">
+              <button
+                mat-menu-item
+                type="button"
+                [disabled]="isSaving() || !loaded()"
+                (click)="move(type, 1)"
+              >
                 <mat-icon name="arrow_downward" />
                 <span>Move Down</span>
               </button>

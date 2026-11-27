@@ -25,6 +25,8 @@ export interface TypeDialogData {
   readonly type: ProductTypeEntry | null;
   /** Every type, so a new name gets an unused id and no two types share a name. */
   readonly types: readonly ProductTypeEntry[];
+  /** Ids a new type can't take: every listed type's and every deleted one's. */
+  readonly takenIds: readonly string[];
   readonly categories: readonly TypeCategoryOption[];
 }
 
@@ -109,12 +111,7 @@ export class TypeDialogComponent {
       return;
     }
     this.#ref.close({
-      id:
-        this.#data.type?.id ??
-        newTypeId(
-          label,
-          this.#data.types.map((type) => type.id),
-        ),
+      id: this.#data.type?.id ?? newTypeId(label, this.#data.takenIds),
       label,
       phrase,
       categoryId: this.categoryId(),

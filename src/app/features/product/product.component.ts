@@ -513,14 +513,17 @@ export class ProductComponent {
 
   /** Space for the Gift Box while its gift products load (server render included). */
   readonly giftBoxLoading = computed(
-    () => this.#giftChoiceIds().length > 0 && !this.#giftChoices.hasValue() && !this.#giftChoices.error(),
+    () =>
+      this.#giftChoiceIds().length > 0 &&
+      ((!this.#giftChoices.hasValue() && !this.#giftChoices.error()) || !this.#productTypes.loaded()),
   );
 
   /** The Gift Box for this product (and its chosen colour and size), or null. */
   readonly giftBox = computed<GiftBoxView | null>(() => {
     const p = this.product();
     if (!p || !this.inStock() || this.#giftChoiceIds().length === 0) return null;
-    if (!this.#giftChoices.hasValue()) return null;
+    // The heading names the product's type ("with this hoodie", ATS-388); wait for the list.
+    if (!this.#giftChoices.hasValue() || !this.#productTypes.loaded()) return null;
     const choices = this.#giftChoices.value();
     const offer = giftOfferForProduct(
       toPricedProduct(p),
@@ -901,7 +904,10 @@ export class ProductComponent {
 
   /** Space for the section while its products load (server render included). */
   readonly bundleSaveLoading = computed(
-    () => !!this.bundleSave() && !this.#bundleSaveOthers.hasValue() && !this.#bundleSaveOthers.error(),
+    () =>
+      !!this.bundleSave() &&
+      ((!this.#bundleSaveOthers.hasValue() && !this.#bundleSaveOthers.error()) ||
+        !this.#productTypes.loaded()),
   );
 
   /** What the shopper picked for each piece (index in `bundleSavePieces`). Cleared for every new product or offer. */
@@ -918,7 +924,8 @@ export class ProductComponent {
     const p = this.product();
     const bundle = this.bundleSave();
     const choices = this.#bundleSaveChoices();
-    if (!p || !bundle || !choices || this.#bundleSaveOthers.error()) return [];
+    if (!p || !bundle || !choices || this.#bundleSaveOthers.error() || !this.#productTypes.loaded())
+      return [];
     // Every piece but this product's own needs something to pick.
     const empty = bundle.slots.some((slot, index) => {
       const others = index === bundle.ownSlot ? slot.quantity - 1 : slot.quantity;

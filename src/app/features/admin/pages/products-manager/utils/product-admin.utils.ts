@@ -26,12 +26,12 @@ const SEED_CATEGORY_LABELS = new Map<string, string>(
   SEED_CATEGORIES.map((category) => [category.id, category.name]),
 );
 
-/** The category a type fills in: the type's own from Types (ATS-388), else the built-in one. */
+/** The category a type fills in (its Usual category in Types, ATS-388); '' when it has none. */
 export function defaultCategoryForType(
   type: ProductTypeId,
   types: readonly ProductTypeEntry[] = BUILT_IN_PRODUCT_TYPES,
 ): string {
-  return types.find((entry) => entry.id === type)?.categoryId || 'accessories';
+  return types.find((entry) => entry.id === type)?.categoryId ?? '';
 }
 
 export function typeLabel(id: string, types: readonly ProductTypeEntry[] = BUILT_IN_PRODUCT_TYPES): string {

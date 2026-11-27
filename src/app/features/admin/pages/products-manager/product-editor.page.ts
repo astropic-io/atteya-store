@@ -229,6 +229,9 @@ export class ProductEditorPageComponent implements OnInit {
   #lastType: ProductTypeId = this.model().type;
   #lastSuggestedCategory = this.model().categoryId;
   #categoryPicked = false;
+  /** The saved Types list has been checked once for the starting type. */
+  #typeSeeded = false;
+
   /** Last weight the page filled in from the category ('' = none), so a typed weight is kept. */
   #suggestedWeight = '';
   #descriptionBaseline = '';
@@ -390,11 +393,27 @@ export class ProductEditorPageComponent implements OnInit {
       if (current.type !== this.#lastType) {
         this.#lastType = current.type;
         if (!this.#categoryPicked) {
+          // A type with no Usual category (ATS-388) leaves the category as it is.
           const suggested = defaultCategoryForType(current.type, untracked(this.#productTypes.types));
-          this.#lastSuggestedCategory = suggested;
-          untracked(() => this.model.update((prev) => ({ ...prev, categoryId: suggested })));
+          if (suggested) {
+            this.#lastSuggestedCategory = suggested;
+            untracked(() => this.model.update((prev) => ({ ...prev, categoryId: suggested })));
+          }
         }
       }
+    });
+
+    // A new product starts on the first built-in type; once the saved Types list arrives and that
+    // type isn't in it (staff deleted it), start on the list's first type instead (ATS-388).
+    effect(() => {
+      if (!this.#productTypes.loaded() || this.#typeSeeded) return;
+      this.#typeSeeded = true;
+      const first = this.#productTypes.types()[0]?.id;
+      untracked(() => {
+        if (!this.isCreate() || !first) return;
+        if (this.#productTypes.types().some((type) => type.id === this.model().type)) return;
+        this.model.update((prev) => ({ ...prev, type: first }));
+      });
     });
 
     // New products: fill the shipping weight from the category (and "jacket" in the name) while

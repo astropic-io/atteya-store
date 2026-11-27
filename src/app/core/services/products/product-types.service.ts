@@ -3,6 +3,7 @@ import { computed, DestroyRef, inject, PLATFORM_ID, Service, signal } from '@ang
 import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 import { injectFirestore } from '@core/firebase';
 import {
+  deletedTypeIds,
   PRODUCT_TYPES_DOC,
   resolveProductTypes,
   typeName,
@@ -40,6 +41,9 @@ export class ProductTypesService {
   /** Every type in the order staff set. */
   readonly types = computed(() => resolveProductTypes(this.#raw()));
 
+  /** Ids of deleted types; a new type never reuses one. */
+  readonly deletedIds = computed(() => deletedTypeIds(this.#raw()));
+
   /** `{ id, label }` rows for dropdowns. */
   readonly options = computed(() => this.types().map((type) => ({ id: type.id, label: type.label })));
 
@@ -52,13 +56,15 @@ export class ProductTypesService {
     return typePhrase(this.types(), id);
   }
 
-  /** The category the product editor fills in for this type, or null when it has none. */
-  defaultCategory(id: string): string | null {
-    return this.types().find((type) => type.id === id)?.categoryId || null;
-  }
-
-  /** Saves the whole list in its new order (staff only; the `settings/{docId}` rule checks). */
-  async save(types: readonly ProductTypeEntry[], uid: string | null): Promise<void> {
+  /**
+   * Saves the whole list in its new order (staff only; the `settings/{docId}` rule checks).
+   * `deletedIds` is every id ever deleted, kept so a new type never reuses one.
+   */
+  async save(
+    types: readonly ProductTypeEntry[],
+    deletedIds: readonly string[],
+    uid: string | null,
+  ): Promise<void> {
     await setDoc(doc(this.#firestore, ...PRODUCT_TYPES_DOC), {
       types: types.map((type) => ({
         id: type.id,
@@ -66,6 +72,7 @@ export class ProductTypesService {
         phrase: type.phrase,
         categoryId: type.categoryId,
       })),
+      deletedIds: [...new Set(deletedIds)].filter((id) => !types.some((type) => type.id === id)),
       updatedAt: serverTimestamp(),
       updatedBy: uid,
     });
