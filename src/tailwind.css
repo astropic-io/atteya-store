@@ -22,6 +22,7 @@
 @import './styles/tailwind/components/side-panel';
 @import './styles/tailwind/components/search-panel';
 @import './styles/tailwind/components/account-panel';
+@import './styles/tailwind/components/gift-picker';
 @import './styles/tailwind/components/cart-drawer';
 @import './styles/tailwind/components/payment-methods';
 @import './styles/tailwind/components/deals';

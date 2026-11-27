@@ -1,48 +1,153 @@
 @let current = box();
-<section class="pdp-gift-box" [attr.aria-labelledby]="'pdp-gift-heading-' + current.offerId">
-  <header class="pdp-gift-box__header">
-    <h2 [id]="'pdp-gift-heading-' + current.offerId" class="font-title-sm font-bold!">
-      {{ current.heading }}
-    </h2>
+@let headingId = 'pdp-gift-heading-' + current.offerId;
+<section class="pdp-gift-box" [attr.aria-labelledby]="headingId">
+  <header class="pdp-gift-box__head">
+    <div class="elements-between w-full gap-3">
+      <span class="pdp-gift-tag"> Free gift </span>
+      @if (worth(); as value) {
+        <span class="font-body-sm">
+          <span class="text-on-surface-variant">Worth&nbsp;</span>
+          <strong class="font-bold!">{{ value }}</strong>
+        </span>
+      }
+    </div>
+    <h2 [id]="headingId" class="font-title-md font-bold!" dir="auto">{{ current.heading }}</h2>
   </header>
 
-  <div class="elements-start-col min-w-0 gap-5 p-4">
-    <p class="font-body-md">Pick them below. They ship in the same parcel.</p>
-
-    @for (step of steps(); track step.key; let lastStep = $last) {
-      @let promptHere = prompt()?.key === step.key;
-      @let messageId = 'pdp-gift-msg-' + step.key;
-      <fieldset
-        class="pdp-gift-step"
-        [class.pdp-gift-step--prompt]="promptHere"
-        [attr.data-gift-step]="step.key"
-        [attr.aria-describedby]="promptHere ? messageId : null"
-      >
-        <legend class="sr-only">{{ step.number }}. {{ step.title }}</legend>
-        @if (step.kind === 'gift') {
-          <app-choice-card-row
-            [title]="step.number + '. ' + step.title"
-            [choices]="step.gift.choices"
-            [pickedId]="picks()[step.gift.id]?.productId ?? null"
+  @for (row of rows(); track row.gift.id) {
+    @let message = promptFor(row);
+    @let messageId = 'pdp-gift-msg-' + row.gift.id;
+    <div class="pdp-gift-line" [class.pdp-gift-line--prompt]="!!message" [attr.data-gift]="row.gift.id">
+      @switch (row.kind) {
+        @case ('pick') {
+          <button
+            type="button"
+            data-choice
+            class="pdp-gift-item"
+            [attr.data-gift-row]="row.gift.id"
             [disabled]="disabled()"
-            [divider]="!lastStep"
-            (picked)="productPicked.emit({ giftId: step.gift.id, productId: $event })"
-          />
-        } @else {
-          <app-choice-size-row
-            [title]="step.number + '. ' + step.title"
-            [sizes]="step.sizes"
-            [pickedId]="picks()[step.gift.id]?.sizeId ?? null"
-            [chosen]="step.chosen"
-            [disabled]="disabled()"
-            (picked)="sizePicked.emit({ giftId: step.gift.id, sizeId: $event })"
-          />
+            [attr.aria-describedby]="message ? messageId : null"
+            aria-haspopup="dialog"
+            (click)="open(row.gift.id, $event.currentTarget)"
+          >
+            @if (row.choice; as choice) {
+              <span class="pdp-gift-thumb">
+                @if (choice.imagePath) {
+                  <img
+                    [ngSrc]="path(choice.imagePath)"
+                    [appImageFallback]="choice.imagePath"
+                    alt=""
+                    width="56"
+                    height="56"
+                    class="size-full object-cover"
+                  />
+                }
+              </span>
+            } @else if (row.peek.length > 0) {
+              <span class="pdp-gift-peek" aria-hidden="true">
+                @for (choice of row.peek; track choice.productId) {
+                  <span class="pdp-gift-thumb pdp-gift-thumb--peek">
+                    @if (choice.imagePath) {
+                      <img
+                        [ngSrc]="path(choice.imagePath)"
+                        [appImageFallback]="choice.imagePath"
+                        alt=""
+                        width="44"
+                        height="44"
+                        class="size-full object-cover"
+                      />
+                    }
+                  </span>
+                }
+                <span class="pdp-gift-thumb pdp-gift-thumb--peek pdp-gift-thumb--more">+{{ row.more }}</span>
+              </span>
+            } @else {
+              <span class="pdp-gift-thumb pdp-gift-thumb--empty" aria-hidden="true">
+                <mat-icon name="add" />
+              </span>
+            }
+            <span class="pdp-gift-item__text">
+              <span class="font-label-lg font-bold!">{{ row.title }}</span>
+              <span class="pdp-gift-item__detail" [class.text-on-surface-variant]="!row.done">{{
+                row.detail
+              }}</span>
+            </span>
+            <span class="pdp-gift-item__action">
+              {{ row.choice ? 'Change' : 'Choose' }}
+              <mat-icon name="chevron_right" aria-hidden="true" />
+            </span>
+          </button>
         }
-
-        @if (promptHere) {
-          <p [id]="messageId" class="font-body-sm text-error pt-2" role="alert">{{ prompt()!.message }}</p>
+        @case ('sizes') {
+          <div class="pdp-gift-item pdp-gift-item--static">
+            <span class="pdp-gift-thumb">
+              @if (row.gift.choices[0].imagePath) {
+                <img
+                  [ngSrc]="path(row.gift.choices[0].imagePath)"
+                  [appImageFallback]="row.gift.choices[0].imagePath"
+                  alt=""
+                  width="56"
+                  height="56"
+                  class="size-full object-cover"
+                />
+              }
+            </span>
+            <span class="pdp-gift-item__text">
+              <span class="font-label-lg font-bold!">{{ row.title }}</span>
+              <span class="pdp-gift-item__detail text-on-surface-variant">{{ row.detail }}</span>
+            </span>
+            @if (row.done) {
+              <mat-icon name="check" size="lg" weight="700" aria-hidden="true" />
+            }
+          </div>
+          <div
+            class="pdp-gift-sizes"
+            role="group"
+            [attr.aria-label]="row.title + ', size'"
+            [attr.aria-describedby]="message ? messageId : null"
+          >
+            @for (size of row.gift.choices[0].sizes ?? []; track size.id) {
+              <button
+                type="button"
+                data-choice
+                class="pdp-choice"
+                [disabled]="disabled()"
+                [attr.aria-pressed]="row.sizeId === size.id"
+                (click)="sizePicked.emit({ giftId: row.gift.id, sizeId: size.id })"
+              >
+                {{ size.label }}
+              </button>
+            }
+          </div>
         }
-      </fieldset>
-    }
-  </div>
+        @case ('included') {
+          <div class="pdp-gift-item pdp-gift-item--static">
+            <span class="pdp-gift-thumb">
+              @if (row.gift.choices[0].imagePath) {
+                <img
+                  [ngSrc]="path(row.gift.choices[0].imagePath)"
+                  [appImageFallback]="row.gift.choices[0].imagePath"
+                  alt=""
+                  width="56"
+                  height="56"
+                  class="size-full object-cover"
+                />
+              }
+            </span>
+            <span class="pdp-gift-item__text">
+              <span class="font-label-lg font-bold!">{{ row.detail }}</span>
+              <span class="pdp-gift-item__detail text-on-surface-variant">Goes in your bag with it</span>
+            </span>
+            <span class="pdp-gift-item__action pdp-gift-item__action--plain">
+              <mat-icon name="check" size="lg" weight="700" aria-hidden="true" />
+              Included
+            </span>
+          </div>
+        }
+      }
+      @if (message) {
+        <p [id]="messageId" class="font-body-sm text-error px-4 pb-3" role="alert">{{ message }}</p>
+      }
+    </div>
+  }
 </section>

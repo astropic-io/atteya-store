@@ -57,6 +57,10 @@ export interface GiftChoiceView {
   /** Main photo path (empty when the product has none yet). Shown on the choice's tile. */
   readonly imagePath: string;
   readonly sizes: readonly GiftSizeView[] | null;
+  /** Brand slug ('' when the product has none): the product page's gift panel filters by it. */
+  readonly brandId: string;
+  /** The product's own price in EGP: the Gift Box adds the gifts up for "Worth …". */
+  readonly price: number;
 }
 
 /**
@@ -67,7 +71,17 @@ export interface GiftChoiceView {
 export function toGiftChoice(
   product: Pick<
     Product,
-    'id' | 'published' | 'stock' | 'stockBySize' | 'inStock' | 'options' | 'name' | 'colors' | 'images'
+    | 'id'
+    | 'published'
+    | 'stock'
+    | 'stockBySize'
+    | 'inStock'
+    | 'options'
+    | 'name'
+    | 'colors'
+    | 'images'
+    | 'brandId'
+    | 'price'
   >,
 ): GiftChoiceView | null {
   if (!product.published) return null;
@@ -93,5 +107,7 @@ export function toGiftChoice(
     cardColours: giftCardColours(product.colors),
     imagePath: product.images[0]?.path ?? '',
     sizes,
+    brandId: product.brandId ?? '',
+    price: Number.isFinite(product.price) ? product.price : 0,
   };
 }
