@@ -47,7 +47,7 @@ jobs:
     if: >-
       vars.CONFLICT_FIX == 'enabled' && (
         github.event_name != 'pull_request_target' || (
-          github.event.pull_request.user.login == github.repository_owner &&
+          github.event.pull_request.user.login == 'youssefathalla' &&
           github.event.pull_request.draft == false &&
           github.event.pull_request.head.repo.full_name == github.repository
         )
@@ -65,6 +65,9 @@ jobs:
         with:
           script: |
             const owner = context.repo.owner;
+            // The person whose PRs the loop handles. Not the repo owner: the repo belongs to the
+            // astropic-io organisation since 27 Nov 2026, and PRs are opened by this account.
+            const AUTHOR = 'youssefathalla';
             const repo = context.repo.repo;
             const BASE = 'develop';
             const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -76,7 +79,7 @@ jobs:
             const found = [];
             for (const listed of prs) {
               if (listed.draft) continue;
-              if (listed.user?.login !== owner) continue;
+              if (listed.user?.login !== AUTHOR) continue;
               if (listed.head?.repo?.full_name !== `${owner}/${repo}`) continue;
               if ((listed.labels || []).some((l) => l.name === 'no-auto-merge')) continue;
               let pr = listed;
@@ -90,7 +93,7 @@ jobs:
               const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: pr.number, per_page: 100 });
               const asked = `<!-- conflict-fix-requested ${head} ${baseSha} -->`;
               // Only markers from this workflow or the owner's account (the routine posts as the owner) count.
-              const trusted = comments.filter((c) => c.user?.login === 'github-actions[bot]' || c.user?.login === owner);
+              const trusted = comments.filter((c) => c.user?.login === 'github-actions[bot]' || c.user?.login === AUTHOR);
               if (trusted.some((c) => (c.body || '').includes(asked))) continue;
               if (trusted.some((c) => (c.body || '').includes('Conflict Fix · needs a person') && (c.body || '').includes(head))) continue;
               found.push({ number: pr.number, head });
