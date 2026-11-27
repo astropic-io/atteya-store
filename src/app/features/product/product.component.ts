@@ -740,8 +740,6 @@ export class ProductComponent {
         title: `Get ${row.quantity} for ${this.#money(row.price)}`,
         perPiece: this.#money(Math.round(row.price / row.quantity)),
         fullPrice: saveEgp > 0 ? this.#money(full) : '',
-        // Savings are written as money, never as a percent.
-        saving: saveEgp > 0 ? this.#money(saveEgp) : '',
       };
     });
   });
