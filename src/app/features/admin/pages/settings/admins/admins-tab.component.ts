@@ -79,6 +79,7 @@ export class AdminsTabComponent implements OnInit {
     [
       { task: 'Manage orders, products, offers and customers', staff: true, admin: true },
       { task: 'Change store settings, Home Page and menus', staff: true, admin: true },
+      { task: 'Mark refunds as sent, and send back return fees', staff: false, admin: true },
       { task: 'Delete orders', staff: false, admin: true },
       { task: 'Add, change or remove team members (this page)', staff: false, admin: true },
     ];

@@ -47,7 +47,7 @@
         <button
           matButton="text"
           type="button"
-          aria-controls="team-role-guide"
+          [attr.aria-controls]="showRoleGuide() ? 'team-role-guide' : null"
           [attr.aria-expanded]="showRoleGuide()"
           (click)="toggleRoleGuide()"
         >
