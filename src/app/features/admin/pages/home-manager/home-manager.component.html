@@ -12,7 +12,7 @@
     <p class="surface-card p-4 font-body-md font-bold!" role="status">{{ note }}</p>
   }
 
-  <!-- Section Switcher Tabs (Sections 1 to 5) -->
+  <!-- Section Switcher Tabs. Shop Categories cards are off the home page (27 Nov 2026), so they have no tab. -->
   <div
     class="surface-card p-3 sm:elements-start sm:flex-wrap elements-start-col gap-2 max-sm:[&>button]:w-full"
     role="tablist"
@@ -30,17 +30,6 @@
     </button>
 
     <button
-      [matButton]="draft.activeSection() === 'categories' ? 'filled' : 'tonal'"
-      type="button"
-      role="tab"
-      [attr.aria-selected]="draft.activeSection() === 'categories'"
-      (click)="draft.setActiveSection('categories')"
-    >
-      <mat-icon name="grid_view" />
-      <span>Section 2: Shop Categories</span>
-    </button>
-
-    <button
       [matButton]="draft.activeSection() === 'navList' ? 'filled' : 'tonal'"
       type="button"
       role="tab"
@@ -48,7 +37,7 @@
       (click)="draft.setActiveSection('navList')"
     >
       <mat-icon name="format_list_bulleted" />
-      <span>Section 3: Category List</span>
+      <span>Section 2: Category List</span>
     </button>
 
     <button
@@ -59,7 +48,7 @@
       (click)="draft.setActiveSection('offerBanner')"
     >
       <mat-icon name="local_offer" />
-      <span>Section 4: Offer Banner</span>
+      <span>Section 3: Offer Banner</span>
     </button>
 
     <button
@@ -70,7 +59,7 @@
       (click)="draft.setActiveSection('helpBox')"
     >
       <mat-icon name="chat_bubble" />
-      <span>Section 5: WhatsApp Help</span>
+      <span>Section 4: WhatsApp Help</span>
     </button>
   </div>
 
@@ -99,29 +88,6 @@
         (actionEdit)="openEditActionDialog($event.index, $event.action)"
         (actionDelete)="confirmDeleteAction($event)"
         (actionMove)="draft.moveAction($event.index, $event.direction)"
-      />
-    }
-    @case ('categories') {
-      <!-- Section 2: Shop Categories Preview & Editor -->
-      <app-home-categories-preview
-        [shopCategories]="draft.draftShopCategories()"
-        [isLoading]="isLoading()"
-        [activeCardIndex]="draft.activeShopCardIndex()"
-        (activeCardChange)="draft.setActiveShopCard($event)"
-      />
-
-      <app-home-categories-editor
-        [sectionTitle]="draft.shopTitle()"
-        [cards]="draft.shopCards()"
-        [activeCardIndex]="draft.activeShopCardIndex()"
-        [activeCard]="draft.activeShopCard()"
-        (activeCardChange)="draft.setActiveShopCard($event)"
-        (titleChange)="draft.updateShopTitle($event)"
-        (imageUrlChange)="draft.updateShopCardImageUrl($event)"
-        (imageAltChange)="draft.updateShopCardImageAlt($event)"
-        (buttonLabelChange)="draft.updateShopCardButtonLabel($event)"
-        (buttonTargetChange)="draft.updateShopCardTarget($event)"
-        (sessionUpload)="draft.registerSessionUpload($event)"
       />
     }
     @case ('navList') {

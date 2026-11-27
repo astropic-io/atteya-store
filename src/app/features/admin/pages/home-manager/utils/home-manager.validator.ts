@@ -164,7 +164,7 @@ export function validateNavListItem(
   checkLink: HomeLinkCheck = NO_LINK_CHECK,
 ): string | null {
   const name = item.label.trim();
-  const prefix = `Section 3, link ${itemIndex + 1}: `;
+  const prefix = `Section 2, link ${itemIndex + 1}: `;
 
   if (!name) {
     return `${prefix}Add a name.`;
@@ -220,7 +220,7 @@ export function validateHomeOfferBanner(
   checkLink: HomeLinkCheck = NO_LINK_CHECK,
 ): string | null {
   if (!banner.enabled) return null;
-  const prefix = 'Section 4: ';
+  const prefix = 'Section 3: ';
   if (!banner.target && !banner.link.trim()) return `${prefix}Pick where the banner goes.`;
   const linkProblem = checkLink(banner.target, banner.link, false);
   if (linkProblem) return `${prefix}The banner link: ${linkProblem}.`;
@@ -239,7 +239,7 @@ export function validateHomeOfferBanner(
 /** Validates Section 5 (WhatsApp Help, ATS-348) before publishing. */
 export function validateHomeHelpBox(box: HomeHelpBox): string | null {
   if (!box.enabled) return null;
-  const prefix = 'Section 5: ';
+  const prefix = 'Section 4: ';
   if (!box.headline.trim()) return `${prefix}Add a headline.`;
   if (!fitsHomeTextLimit(box.headline, HOME_TEXT_LIMITS.helpHeadline)) {
     return `${prefix}Headline: ${textLimitRule(HOME_TEXT_LIMITS.helpHeadline)}`;

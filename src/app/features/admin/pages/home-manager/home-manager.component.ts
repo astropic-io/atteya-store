@@ -26,8 +26,6 @@ import {
 import { HomeManagerHeaderComponent } from './components/home-manager-header/home-manager-header.component';
 import { HomeHeroEditorComponent } from './components/home-hero-editor/home-hero-editor.component';
 import { HomeHeroPreviewComponent } from './components/home-hero-preview/home-hero-preview.component';
-import { HomeCategoriesPreviewComponent } from './components/home-categories-preview/home-categories-preview.component';
-import { HomeCategoriesEditorComponent } from './components/home-categories-editor/home-categories-editor.component';
 import { HomeNavListPreviewComponent } from './components/home-nav-list-preview/home-nav-list-preview.component';
 import { HomeNavListEditorComponent } from './components/home-nav-list-editor/home-nav-list-editor.component';
 import { HomeOfferBannerEditorComponent } from './components/home-offer-banner-editor/home-offer-banner-editor.component';
@@ -54,7 +52,6 @@ import {
   validateHomeHeroDraft,
   validateHomeNavListDraft,
   validateHomeOfferBanner,
-  validateHomeShopCategoriesDraft,
 } from './utils/home-manager.validator';
 import { HeroAction } from './models/home-manager.model';
 
@@ -67,8 +64,6 @@ import { HeroAction } from './models/home-manager.model';
     HomeManagerHeaderComponent,
     HomeHeroEditorComponent,
     HomeHeroPreviewComponent,
-    HomeCategoriesPreviewComponent,
-    HomeCategoriesEditorComponent,
     HomeNavListPreviewComponent,
     HomeNavListEditorComponent,
     HomeOfferBannerEditorComponent,
@@ -211,13 +206,6 @@ export class HomeManagerComponent {
       return;
     }
 
-    const shopError = validateHomeShopCategoriesDraft(shopCategories, checkLink);
-    if (shopError) {
-      this.draft.setActiveSection('categories');
-      this.#snackbar.error(shopError);
-      return;
-    }
-
     const navError = validateHomeNavListDraft(navList, checkLink);
     if (navError) {
       this.draft.setActiveSection('navList');
@@ -251,7 +239,11 @@ export class HomeManagerComponent {
 
       this.draft.markSaved();
       this.restoredNote.set(null);
-      const hidden = homeHiddenLinks({ hero, shopCategories, navList }, fullCatalog);
+      // Shop Categories cards aren't on the home page any more, so their links aren't checked.
+      const hidden = homeHiddenLinks(
+        { hero, shopCategories: { ...shopCategories, cards: [] }, navList },
+        fullCatalog,
+      );
       if (offerBanner.enabled && offerBanner.target && bannerHiddenReason(offerBanner, fullCatalog)) {
         hidden.push('offer banner');
       }
@@ -268,8 +260,7 @@ export class HomeManagerComponent {
   async openPreviousVersions(): Promise<void> {
     const choice = await this.#dialogs.openPreviousVersions({
       docId: 'home',
-      builtInHint:
-        'The hero, shop cards, category list and help box the store started with. It goes live straight away.',
+      builtInHint: 'The hero, category list and help box the store started with. It goes live straight away.',
       canRestore: (data) => homeSettingsFromVersion(data) !== null,
     });
     if (!choice) return;
