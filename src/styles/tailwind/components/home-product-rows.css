@@ -37,6 +37,7 @@
 
   .padel-tile {
     @apply relative block w-full no-underline overflow-hidden aspect-4/5;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary;
     background: linear-gradient(180deg, #f3f3f3 0%, #e6e6e6 100%);
   }
 
@@ -49,13 +50,53 @@
     filter: drop-shadow(0 12px 22px rgb(0 0 0 / 0.14));
   }
 
+  /*
+   * Name and ↗ at the bottom of a Padel card (ATS-353). On hover or keyboard focus the short line under
+   * the name draws out under the whole name and the arrow slides in, like the Offer Banner link.
+   * Touch screens show the arrow all the time and no line.
+   */
+  .padel-tile__label {
+    @apply absolute bottom-4 left-4 right-4 z-10 elements-start items-end! gap-2;
+  }
+
   .padel-tile__name {
-    @apply absolute bottom-4 left-4 right-4 font-title-md font-bold! z-10;
+    @apply relative min-w-0 pb-1 font-title-md font-bold!;
   }
 
   .padel-tile__name::after {
     content: '';
-    @apply block mt-1 h-0.5 w-5 bg-primary;
+    @apply absolute bottom-0 left-0 h-0.5 w-0 bg-primary transition-[width] duration-500 ease-out;
+    @apply motion-reduce:transition-none;
+  }
+
+  .padel-tile__arrow {
+    @apply shrink-0 elements-center pb-1.5 opacity-0 -translate-x-1 transition-[opacity,translate] duration-300 ease-out;
+    @apply motion-reduce:translate-x-0 motion-reduce:transition-opacity;
+  }
+
+  .padel-tile:focus-visible .padel-tile__name::after {
+    @apply w-full;
+  }
+
+  @media (hover: hover) {
+    .padel-tile__name::after {
+      @apply w-5;
+    }
+
+    .padel-tile:hover .padel-tile__name::after {
+      @apply w-full;
+    }
+
+    .padel-tile:hover .padel-tile__arrow,
+    .padel-tile:focus-visible .padel-tile__arrow {
+      @apply opacity-100 translate-x-0;
+    }
+  }
+
+  @media (hover: none) {
+    .padel-tile__arrow {
+      @apply opacity-100 translate-x-0;
+    }
   }
 
   /**
