@@ -1,4 +1,4 @@
-import { isPlatformBrowser, NgOptimizedImage, NgTemplateOutlet } from '@angular/common';
+import { isPlatformBrowser, NgOptimizedImage } from '@angular/common';
 import {
   afterNextRender,
   Component,
@@ -20,14 +20,12 @@ import { RouterLink } from '@angular/router';
 import { STORE_INFO, whatsappChatUrl } from '@core/config/store-info';
 import { AuthService } from '@core/services/auth/auth.service';
 import { type BagPricingProduct, priceBag } from '@core/services/cart/cart-deals';
-import type { GiftCardColour } from '@core/services/cart/gift-card-label';
 import type { CartLineDraft } from '@core/services/cart/cart.model';
 import { CartService } from '@core/services/cart/cart.service';
 import { CurrencyService } from '@core/services/currency/currency.service';
 import { DrawerService } from '@core/services/drawer/drawer.service';
 import {
   displayDecimals,
-  displayPrice,
   type Offer,
   type OfferBundleSlot,
   bundleSetSlots,
@@ -41,14 +39,14 @@ import { SeoService } from '@core/services/seo';
 import { SnackbarService } from '@core/services/snack-bar/snack-bar.service';
 import { MetaPixelService } from '@core/services/analytics/meta-pixel.service';
 import { AppImageFallbackDirective } from '@shared/directives/image-fallback';
-import { HorizontalScrollDirective } from '@shared/directives/horizontal-scroll/horizontal-scroll.directive';
-import { ColorSwatchComponent } from '@shared/ui/color-swatch/color-swatch.component';
 import { ErrorPageComponent } from '@shared/ui/error-page';
 import { SharedIconModule } from '@shared/ui/mat-icon';
 import { SkeletonComponent } from '@shared/ui/skeleton';
 import { normalizeImageKitPath } from '@shared/utils/image';
 import { formatMoney } from '@shared/utils/money';
-import type { ProductView } from '../product/models/product-page.model';
+import { ChoiceRowComponent } from '../product/components/choice-row/choice-row.component';
+import { ChoicePickerService } from '../product/dialogs/choice-picker/choice-picker.service';
+import { type ChoiceRowView, choiceRowView } from '../product/utils/choice-rows';
 import { type BundleChoice, bundlePieceLine } from '../product/utils/product-bundle';
 import type { BundlePageResult } from './models/bundle-page.model';
 import { BundleProductsService } from './services/bundle-products.service';
@@ -60,81 +58,34 @@ import {
   bundleGroupFacts,
   bundlePageState,
   bundleStartsOn,
-  chosenCountText,
   firstOpenGroup,
   groupComplete,
   groupFixed,
   nextBundleAction,
-  pickProduct,
-  pickSize,
-  piecesChosen,
-  removeProductPiece,
+  setPiecePick,
   soldOutText,
   startingPicks,
 } from './utils/bundle-page';
 
-/** One size button: sold-out sizes stay listed, struck through and off. */
-interface SizeButton {
-  readonly id: string;
-  readonly label: string;
-  readonly soldOut: boolean;
-}
-
-/** The size row of one picked piece that has sizes. */
-interface SizeRowView {
+/** One piece of the bundle as a row: a row that opens the choice panel, an included product, or sold out. */
+interface PieceRow {
+  readonly group: number;
   readonly piece: number;
+  /** "Racket", "Balls 2". */
   readonly title: string;
-  readonly sizes: readonly SizeButton[];
-  readonly pickedId: string | null;
-}
-
-/** One product card of a group. */
-interface CardView {
-  readonly productId: string;
-  readonly label: string;
-  readonly name: string;
-  readonly colours: readonly GiftCardColour[];
-  readonly imagePath: string;
-  readonly price: string;
-  /** Pieces of the group that are this product. */
-  readonly count: number;
-}
-
-/** One group of the bundle as the page shows it. */
-interface GroupView {
-  readonly index: number;
-  readonly number: number;
-  readonly name: string;
-  readonly quantity: number;
-  /** One product only: in the bundle from the start ("✓ Racket · Included"). */
-  readonly fixed: boolean;
-  readonly complete: boolean;
-  /** Every piece of the group has its product (a group of 2+ takes no more). */
-  readonly full: boolean;
-  /**
-   * `open`: its cards show; `folded`: finished, one line with Change; `waiting`: a later step,
-   * greyed until reached; `fixed`: the included product's small row; `soldOut`: nothing in stock.
-   */
-  readonly mode: 'open' | 'folded' | 'waiting' | 'fixed' | 'soldOut';
-  readonly cards: readonly CardView[];
-  readonly sizeRows: readonly SizeRowView[];
-  /** "Nox AT10 Genius", "Head Pro Balls × 2, Bullpadel Balls". */
-  readonly pickedNames: string;
-  /** "3 of 3 chosen" for a group of 2+ pieces. */
-  readonly chosenText: string;
+  readonly mode: 'choose' | 'included' | 'soldOut';
+  readonly view: ChoiceRowView | null;
+  /** The included product (its group has only this one, with no size to pick). */
+  readonly included: { readonly label: string; readonly imagePath: string } | null;
   readonly soldOutText: string;
 }
 
-/** One product of a bundle whose groups each have one product (shown side by side). */
-interface SideItemView {
+/** One photo of the set: the picked product, or the group's first product greyed until one is picked. */
+interface SetPhoto {
   readonly group: number;
-  readonly card: CardView;
-  readonly quantity: number;
-  /** Its normal price, struck through when the bundle lowers it; empty otherwise. */
-  readonly normal: string;
-  /** Its share of the bundle price. */
-  readonly share: string;
-  readonly sizeRows: readonly SizeRowView[];
+  readonly name: string;
+  readonly imagePath: string;
+  readonly picked: boolean;
 }
 
 /** Picks and the products they name, priced the way the bag prices them. */
@@ -142,7 +93,6 @@ interface BundleTotals {
   readonly normal: number;
   readonly total: number;
   /** Per group: normal and bundle share of its picked pieces. */
-  readonly byGroup: readonly { readonly normal: number; readonly share: number }[];
 }
 
 /**
@@ -154,12 +104,10 @@ interface BundleTotals {
   selector: 'app-bundle-page',
   imports: [
     NgOptimizedImage,
-    NgTemplateOutlet,
     RouterLink,
     MatButtonModule,
     AppImageFallbackDirective,
-    HorizontalScrollDirective,
-    ColorSwatchComponent,
+    ChoiceRowComponent,
     ErrorPageComponent,
     SharedIconModule,
     SkeletonComponent,
@@ -189,6 +137,7 @@ export class BundlePage {
   readonly #seo = inject(SeoService);
   readonly #snackbar = inject(SnackbarService);
   readonly #pixel = inject(MetaPixelService);
+  readonly #picker = inject(ChoicePickerService);
   readonly #host = inject<ElementRef<HTMLElement>>(ElementRef);
   readonly #injector = inject(Injector);
   readonly #platformId = inject(PLATFORM_ID);
@@ -202,11 +151,6 @@ export class BundlePage {
   readonly #nowMs = linkedSignal(() => {
     const p = this.page();
     return p.status === 'found' ? p.renderedAtMs : Date.now();
-  });
-  /** The group the shopper opened with Change or the button; null = the first one not finished. */
-  readonly #openGroup = linkedSignal<string, number | null>({
-    source: () => this.#offerId(),
-    computation: () => null,
   });
   /** The offer whose page already scrolled to its first missing group (`?from=bag`). */
   #scrolledFor: string | null = null;
@@ -406,101 +350,53 @@ export class BundlePage {
     return group ? soldOutText(group.name) : '';
   });
 
-  /** Every group has one product: shown side by side with a "+", only sizes are asked. */
-  readonly sideBySide = computed(() => {
-    const groups = this.#groups();
-    return groups.length > 0 && groups.every(groupFixed);
-  });
-
   readonly action = computed(() => nextBundleAction(this.#groups(), this.#picks()));
-
-  /** The group the shopper is on. */
-  readonly #activeGroup = computed(() => this.#openGroup() ?? firstOpenGroup(this.#groups(), this.#picks()));
 
   /** The product a choice names, for prices and bag lines. */
   #choice(group: number, productId: string): BundleChoice | undefined {
     return this.#choiceLists()?.[group]?.find((entry) => entry.view.productId === productId);
   }
 
-  /** One piece's own price after its item offers (what the card shows). */
-  #ownPrice(product: ProductView): number {
-    return displayPrice(toPricedProduct(product), this.#offers(), this.#pricingCtx(), { bundleFrom: false })
-      .fromPrice;
-  }
-
-  #sizeRows(group: BundleGroupFacts, index: number, picks: readonly BundlePiecePick[]): SizeRowView[] {
-    const rows: SizeRowView[] = [];
-    picks.forEach((pick, piece) => {
-      const choice = this.#choice(index, pick.productId);
-      if (!choice?.view.sizes) return;
-      const offered = new Set(choice.view.sizes.map((size) => size.id));
-      const stock = choice.product.stockBySize;
-      const option = choice.product.options.find((entry) => entry.key === 'size');
-      const sizes: SizeButton[] = (option?.values ?? [])
-        .filter((value) => offered.has(value.id) || (!!stock && (stock[value.id] ?? 0) <= 0))
-        .map((value) => ({ id: value.id, label: value.label, soldOut: !offered.has(value.id) }));
-      const name = group.name;
-      const title = group.quantity > 1 ? `${name} ${piece + 1} size` : `${name} size`;
-      rows.push({ piece, title, sizes, pickedId: offered.has(pick.sizeId ?? '') ? pick.sizeId : null });
-    });
-    return rows;
-  }
-
-  #cards(index: number, picks: readonly BundlePiecePick[]): CardView[] {
-    return (this.#choiceLists()?.[index] ?? []).map((choice) => ({
-      productId: choice.view.productId,
-      label: choice.view.label,
-      name: choice.view.cardName,
-      colours: choice.view.colors.length > 1 ? choice.view.cardColours : [],
-      imagePath: choice.view.imagePath,
-      price: this.#money(this.#ownPrice(choice.product)),
-      count: picks.filter((pick) => pick.productId === choice.view.productId).length,
-    }));
-  }
-
-  readonly groupViews = computed<readonly GroupView[]>(() => {
-    const groups = this.#groups();
+  /** One row per piece: "Racket", or "Balls 1", "Balls 2" for a group of 2+. A sold-out group has one row. */
+  readonly rows = computed<readonly PieceRow[]>(() => {
     const picks = this.#picks();
-    const active = this.#activeGroup();
-    const steps = groups.length >= 3;
-    const prefilled = this.product();
-    return groups.map((group, index): GroupView => {
-      const groupPicks = picks[index] ?? [];
-      const complete = groupComplete(group, groupPicks);
-      const fixed = groupFixed(group);
-      const cameFrom = !!prefilled && groupPicks.some((pick) => pick.productId === prefilled);
-      let mode: GroupView['mode'];
-      if (group.choices.length === 0) mode = 'soldOut';
-      else if (fixed) mode = 'fixed';
-      else if (index === active) mode = 'open';
-      else if (complete && (steps || cameFrom)) mode = 'folded';
-      else if (steps && index > active) mode = 'waiting';
-      else mode = 'open';
-      const names = new Map<string, number>();
-      for (const pick of groupPicks) names.set(pick.productId, (names.get(pick.productId) ?? 0) + 1);
-      const pickedNames = [...names.entries()]
-        .map(([id, count]) => {
-          const name = group.choices.find((choice) => choice.productId === id)?.label ?? '';
-          return count > 1 ? `${name} × ${count}` : name;
-        })
-        .filter((name) => name.length > 0)
-        .join(', ');
-      return {
-        index,
-        number: index + 1,
-        name: group.name,
-        quantity: group.quantity,
-        fixed,
-        complete,
-        full: piecesChosen(group, groupPicks) >= group.quantity,
-        mode,
-        cards: this.#cards(index, groupPicks),
-        sizeRows: mode === 'open' || mode === 'fixed' ? this.#sizeRows(group, index, groupPicks) : [],
-        pickedNames,
-        chosenText: chosenCountText(group, groupPicks),
-        soldOutText: soldOutText(group.name),
-      };
+    return this.#groups().flatMap((group, index): PieceRow[] => {
+      const base = { group: index, view: null, included: null, soldOutText: '' };
+      if (group.choices.length === 0) {
+        return [
+          { ...base, piece: 0, title: group.name, mode: 'soldOut', soldOutText: soldOutText(group.name) },
+        ];
+      }
+      const only = groupFixed(group) ? group.choices[0]! : null;
+      return Array.from({ length: group.quantity }, (_, piece): PieceRow => {
+        const title = group.quantity > 1 ? `${group.name} ${piece + 1}` : group.name;
+        if (only && !only.sizes) {
+          return {
+            ...base,
+            piece,
+            title,
+            mode: 'included',
+            included: { label: only.label, imagePath: only.imagePath },
+          };
+        }
+        const pick = picks[index]?.[piece] ?? null;
+        const view = choiceRowView(group.choices, pick?.productId ?? null, pick?.sizeId ?? null);
+        return { ...base, piece, title, mode: 'choose', view };
+      });
     });
+  });
+
+  /** The set's photos, one per group (up to 4): what is picked, else the group's first product, greyed. */
+  readonly photos = computed<readonly SetPhoto[]>(() => {
+    const picks = this.#picks();
+    return this.#groups()
+      .slice(0, 4)
+      .map((group, index) => {
+        const pick = picks[index]?.[0];
+        const choice =
+          (pick && group.choices.find((entry) => entry.productId === pick.productId)) || group.choices[0];
+        return { group: index, name: group.name, imagePath: choice?.imagePath ?? '', picked: !!pick };
+      });
   });
 
   /**
@@ -531,26 +427,18 @@ export class BundlePage {
 
   /** The picked pieces priced by the bag's own `priceBag()`. */
   readonly #totals = computed<BundleTotals>(() => {
-    const byGroup = this.slots().map(() => ({ normal: 0, share: 0 }));
     const draft = this.#draftLines(false);
     const lists = this.#choiceLists();
-    if (!draft || !lists || draft.lines.length === 0) return { normal: 0, total: 0, byGroup };
+    if (!draft || !lists || draft.lines.length === 0) return { normal: 0, total: 0 };
     const priced = priceBag(draft.lines, this.#pricingProducts(), this.#offers(), this.#pricingCtx());
     let normal = 0;
     let total = 0;
-    priced.lines.forEach((line, n) => {
-      if (!line) return;
-      const group = byGroup[draft.groups[n]!];
+    for (const line of priced.lines) {
+      if (!line) continue;
       normal += line.fullEgp;
       total += line.lineEgp;
-      if (group) {
-        byGroup[draft.groups[n]!] = {
-          normal: group.normal + line.fullEgp,
-          share: group.share + line.lineEgp,
-        };
-      }
-    });
-    return { normal, total, byGroup };
+    }
+    return { normal, total };
   });
 
   /**
@@ -564,7 +452,8 @@ export class BundlePage {
     return draft.lines.filter((_, n) => !draft.inBag[n]);
   });
 
-  readonly complete = computed(() => this.#bundleLines() !== null);
+  /** Every piece is picked (never while the products are loading or failed to load). */
+  readonly complete = computed(() => this.#groups().length > 0 && this.#bundleLines() !== null);
   readonly normalPrice = computed(() => this.#money(this.#totals().normal));
   readonly bundlePrice = computed(() => this.#money(this.#totals().total));
   readonly youSave = computed(() => {
@@ -581,23 +470,6 @@ export class BundlePage {
   });
 
   readonly hasPicks = computed(() => this.#picks().some((picks) => picks.length > 0));
-
-  readonly sideItems = computed<readonly SideItemView[]>(() => {
-    if (!this.sideBySide()) return [];
-    const totals = this.#totals();
-    const picks = this.#picks();
-    return this.groupViews().map((group) => {
-      const money = totals.byGroup[group.index] ?? { normal: 0, share: 0 };
-      return {
-        group: group.index,
-        card: group.cards[0]!,
-        quantity: group.quantity,
-        normal: money.share < money.normal ? this.#money(money.normal) : '',
-        share: this.#money(money.share),
-        sizeRows: this.#sizeRows(this.#groups()[group.index]!, group.index, picks[group.index] ?? []),
-      };
-    });
-  });
 
   constructor() {
     afterNextRender(() => this.#hydrated.set(true));
@@ -647,45 +519,69 @@ export class BundlePage {
     const element = this.#host.nativeElement.querySelector<HTMLElement>(`[data-bundle-group="${group}"]`);
     if (!element) return;
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    element.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
-    if (focus) {
-      element
-        .querySelector<HTMLButtonElement>('button[data-choice]:not(:disabled)')
-        ?.focus({ preventScroll: true });
-    }
+    element.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+    if (focus)
+      element.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true });
   }
 
-  #updateGroup(index: number, change: (picks: readonly BundlePiecePick[]) => BundlePiecePick[]): void {
-    this.#picks.update((all) => all.map((picks, at) => (at === index ? change(picks) : picks)));
-    this.#openGroup.set(index);
-  }
-
-  pick(group: number, productId: string): void {
-    const facts = this.#groups()[group];
-    if (!facts) return;
-    this.#updateGroup(group, (picks) => pickProduct(facts, picks, productId));
-  }
-
-  remove(group: number, productId: string): void {
-    this.#updateGroup(group, (picks) => removeProductPiece(picks, productId));
-  }
-
-  chooseSize(group: number, piece: number, sizeId: string): void {
-    this.#picks.update((all) =>
-      all.map((picks, at) => (at === group ? pickSize(picks, piece, sizeId) : picks)),
+  /** The row's button, so the panel can hand focus back to it. */
+  #rowButton(group: number, piece: number): HTMLElement | null {
+    return this.#host.nativeElement.querySelector<HTMLElement>(
+      `[data-bundle-piece="${group}:${piece}"] button:not(:disabled)`,
     );
   }
 
-  change(group: number): void {
-    this.#openGroup.set(group);
-    afterNextRender({ write: () => this.#scrollTo(group, true) }, { injector: this.#injector });
+  /** The first row that still needs a product or a size, at or after a group. */
+  #nextOpenRow(fromGroup: number, after: PieceRow | null): PieceRow | null {
+    const rows = this.rows().filter((row) => row.mode === 'choose');
+    const start = after ? rows.indexOf(after) + 1 : 0;
+    return rows.slice(start).find((row) => row.group >= fromGroup && !row.view?.done) ?? null;
+  }
+
+  /**
+   * Opens the choice panel (the product page's, ATS-349) for one piece: a side panel on desktop, a
+   * sheet from the bottom on phone and tablet. "Next" moves on to the following piece still missing.
+   */
+  async open(group: number, piece: number, trigger: HTMLElement | null): Promise<void> {
+    const rows = this.rows().filter((row) => row.mode === 'choose');
+    const index = rows.findIndex((row) => row.group === group && row.piece === piece);
+    const row = rows[index];
+    const facts = this.#groups()[group];
+    if (!row?.view || !facts || this.soldOut()) return;
+    const next = rows.slice(index + 1).find((entry) => !entry.view?.done) ?? null;
+    const pick = this.#picks()[group]?.[piece] ?? null;
+    let result: Awaited<ReturnType<ChoicePickerService['open']>>;
+    try {
+      result = await this.#picker.open(
+        {
+          choices: facts.choices,
+          title: row.title,
+          step: `Bundle & Save · ${index + 1} of ${rows.length}`,
+          pick: pick ? { productId: pick.productId, sizeId: pick.sizeId } : null,
+          next: next?.title ?? null,
+          hint: 'Tap a photo to pick this piece.',
+        },
+        trigger,
+      );
+    } catch {
+      // The panel couldn't open: the row stays as it was and the shopper can tap it again.
+      return;
+    }
+    if (!result) return;
+    const { productId, sizeId } = result;
+    this.#picks.update((all) =>
+      all.map((picks, at) => (at === group ? setPiecePick(facts, picks, piece, productId, sizeId) : picks)),
+    );
+    if (result.next && next) await this.open(next.group, next.piece, this.#rowButton(next.group, next.piece));
   }
 
   /** The one button: opens the next thing to choose, or adds the whole bundle and opens the bag. */
   next(): void {
     const action = this.action();
     if (action.kind !== 'add') {
-      this.change(action.group);
+      const row = this.#nextOpenRow(action.group, null);
+      if (row) void this.open(row.group, row.piece, this.#rowButton(row.group, row.piece));
+      else this.#scrollTo(action.group, true);
       return;
     }
     const lines = this.#bundleLines();

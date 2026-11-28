@@ -7,18 +7,60 @@
   }
   @default {
     <article class="container-content">
-      <div class="bundle-page">
-        <header class="bundle-page__header">
-          <p class="bundle-page__kicker">{{ kicker() }}</p>
-          <h1 class="bundle-page__title" dir="auto">{{ pageTitle() }}</h1>
-          @if (saving()) {
-            <p class="bundle-page__tag">{{ saving() }}</p>
-          }
-        </header>
+      <div class="bundle-look" [class.bundle-look--plain]="state() !== 'open'">
+        @if (state() === 'open') {
+          <!-- The set's photos: greyed with the group's name until a piece is picked. -->
+          <div class="bundle-look__media">
+            @if (loading()) {
+              <app-skeleton class="bundle-set bundle-set--skeleton" />
+            } @else if (photos().length > 0) {
+              <div
+                class="bundle-set"
+                [class.bundle-set--grid]="photos().length > 2"
+                [attr.data-count]="photos().length"
+                aria-hidden="true"
+              >
+                @for (photo of photos(); track photo.group; let first = $first) {
+                  <span
+                    class="bundle-set__piece"
+                    [class.bundle-set__piece--lead]="first"
+                    [class.bundle-set__piece--waiting]="!photo.picked"
+                  >
+                    @if (photo.imagePath) {
+                      <img
+                        [ngSrc]="path(photo.imagePath)"
+                        [appImageFallback]="photo.imagePath"
+                        alt=""
+                        fill
+                        [priority]="first"
+                        sizes="(max-width: 767px) 70vw, 30vw"
+                        class="object-cover"
+                      />
+                    }
+                    @if (!photo.picked) {
+                      <span class="bundle-set__label">{{ photo.name }}</span>
+                    }
+                  </span>
+                }
+                @if (photos().length === 2) {
+                  <span class="bundle-set__plus">+</span>
+                }
+              </div>
+            }
+          </div>
+        }
 
-        <div class="bundle-page__body">
+        <div class="bundle-look__info">
+          <header class="elements-start-col gap-2">
+            <p class="bundle-look__kicker">{{ kicker() }}</p>
+            <h1 class="bundle-look__title" dir="auto">{{ pageTitle() }}</h1>
+          </header>
+
           @switch (state()) {
             @case ('members') {
+              @if (saving()) {
+                <span class="pdp-gift-tag w-fit">{{ saving() }}</span>
+              }
               <div class="bundle-note">
                 @if (needsConfirmedEmail()) {
                   <p>
@@ -38,264 +80,145 @@
               }
             }
             @case ('open') {
+              @if (complete()) {
+                <div class="elements-start-col gap-1">
+                  <p class="bundle-look__price">
+                    <span class="font-headline-sm font-bold!">{{ bundlePrice() }}</span>
+                    @if (youSave()) {
+                      <s class="font-body-lg text-on-surface-variant">{{ normalPrice() }}</s>
+                    }
+                  </p>
+                  @if (youSave()) {
+                    <p class="font-label-lg font-bold!">You save {{ youSave() }}</p>
+                  }
+                </div>
+              } @else if (saving()) {
+                <p class="elements-start flex-wrap gap-2">
+                  <span class="pdp-gift-tag">{{ saving() }}</span>
+                  <span class="font-body-md text-on-surface-variant">when you buy the set</span>
+                </p>
+              }
+
               @if (loading()) {
-                <div class="elements-start-col w-full gap-4" aria-hidden="true">
-                  <app-skeleton class="h-6 w-40" />
-                  <div class="grid w-full grid-cols-2 gap-4 lg:grid-cols-4">
-                    <app-skeleton class="aspect-4/5 w-full" />
-                    <app-skeleton class="aspect-4/5 w-full" />
-                  </div>
+                <div class="elements-start-col items-stretch! w-full gap-3" aria-hidden="true">
+                  <app-skeleton class="h-20 w-full" />
+                  <app-skeleton class="h-20 w-full" />
+                  <app-skeleton class="h-12 w-full" />
                 </div>
               } @else if (failed()) {
                 <app-error-page kind="failed" [level]="2" />
               } @else {
-                <div class="bundle-layout">
-                  <div class="bundle-layout__main">
-                    @if (sideBySide()) {
-                      <div class="bundle-side">
-                        @for (item of sideItems(); track item.group; let last = $last) {
-                          <div class="bundle-side__item">
-                            <div class="bundle-card bundle-card--static" [attr.aria-label]="item.card.label">
-                              <span class="bundle-card__photo">
-                                @if (item.card.imagePath) {
-                                  <img
-                                    [ngSrc]="path(item.card.imagePath)"
-                                    [appImageFallback]="item.card.imagePath"
-                                    alt=""
-                                    fill
-                                    sizes="(max-width: 1023px) 45vw, 22vw"
-                                    class="object-cover"
-                                  />
-                                }
-                              </span>
-                              <span class="bundle-card__caption">
-                                <span class="bundle-card__name">
-                                  {{ item.card.name }}
-                                  @if (item.quantity > 1) {
-                                    × {{ item.quantity }}
-                                  }
-                                </span>
-                                <span class="bundle-card__price">
-                                  @if (item.normal) {
-                                    <s class="text-on-surface-variant">{{ item.normal }}</s>
-                                  }
-                                  <span class="font-bold!">{{ item.share }}</span>
-                                </span>
-                              </span>
-                            </div>
-                            @for (row of item.sizeRows; track row.piece) {
-                              <ng-container
-                                *ngTemplateOutlet="sizeRow; context: { $implicit: row, group: item.group }"
-                              />
-                            }
+                <p class="font-body-md text-on-surface-variant">
+                  Choose each piece below. Your bag prices them together as a set.
+                </p>
+
+                <div class="bundle-look__rows">
+                  @for (row of rows(); track row.group + ':' + row.piece) {
+                    <div
+                      class="pdp-gift-line"
+                      [attr.data-bundle-group]="row.group"
+                      [attr.data-bundle-piece]="row.group + ':' + row.piece"
+                    >
+                      @switch (row.mode) {
+                        @case ('included') {
+                          <div class="pdp-gift-item pdp-gift-item--static">
+                            <span class="pdp-gift-thumb">
+                              @if (row.included?.imagePath; as image) {
+                                <img
+                                  [ngSrc]="path(image)"
+                                  [appImageFallback]="image"
+                                  alt=""
+                                  width="56"
+                                  height="56"
+                                  class="size-full object-cover"
+                                />
+                              }
+                            </span>
+                            <span class="pdp-gift-item__text">
+                              <span class="font-label-lg font-bold!">{{ row.title }}</span>
+                              <span class="pdp-gift-item__detail text-on-surface-variant">{{
+                                row.included?.label
+                              }}</span>
+                            </span>
+                            <span class="pdp-gift-item__action pdp-gift-item__action--plain">
+                              <mat-icon name="check" weight="700" aria-hidden="true" />
+                              Included
+                            </span>
                           </div>
-                          @if (!last) {
-                            <span class="bundle-side__plus" aria-hidden="true">+</span>
+                        }
+                        @case ('soldOut') {
+                          <div class="pdp-gift-item pdp-gift-item--static">
+                            <span class="pdp-gift-item__text">
+                              <span class="font-label-lg font-bold!">{{ row.title }}</span>
+                              <span class="pdp-gift-item__detail text-on-surface-variant">{{
+                                row.soldOutText
+                              }}</span>
+                            </span>
+                          </div>
+                        }
+                        @default {
+                          @if (row.view; as view) {
+                            <app-choice-row
+                              [title]="row.title"
+                              [view]="view"
+                              [disabled]="soldOut()"
+                              (opened)="open(row.group, row.piece, $event)"
+                            />
                           }
                         }
-                      </div>
-                    } @else {
-                      <ol class="bundle-steps">
-                        @for (group of groupViews(); track group.index) {
-                          <li
-                            class="bundle-step"
-                            [class.bundle-step--waiting]="group.mode === 'waiting'"
-                            [attr.data-bundle-group]="group.index"
-                            [attr.aria-disabled]="group.mode === 'waiting' ? true : null"
-                          >
-                            <h2 class="bundle-step__title">
-                              @if (group.complete) {
-                                <span class="bundle-step__mark bundle-step__mark--done" aria-hidden="true">
-                                  <mat-icon name="check" size="xs" weight="700" />
-                                </span>
-                              } @else {
-                                <span class="bundle-step__mark" aria-hidden="true">{{ group.number }}</span>
-                              }
-                              <span>{{ group.name }}</span>
-                              @if (group.mode === 'fixed') {
-                                <span class="bundle-step__hint">· Included</span>
-                              } @else if (group.quantity > 1) {
-                                <span class="bundle-step__hint">· choose {{ group.quantity }}</span>
-                              }
-                            </h2>
-
-                            @switch (group.mode) {
-                              @case ('folded') {
-                                <p class="bundle-step__picked">
-                                  {{ group.pickedNames }} ·
-                                  <button type="button" class="bundle-link" (click)="change(group.index)">
-                                    Change
-                                  </button>
-                                </p>
-                              }
-                              @case ('soldOut') {
-                                <p class="bundle-note">{{ group.soldOutText }}</p>
-                              }
-                              @case ('fixed') {
-                                @let card = group.cards[0]!;
-                                <div class="bundle-fixed">
-                                  <span class="bundle-fixed__photo">
-                                    @if (card.imagePath) {
-                                      <img
-                                        [ngSrc]="path(card.imagePath)"
-                                        [appImageFallback]="card.imagePath"
-                                        alt=""
-                                        fill
-                                        sizes="80px"
-                                        class="object-cover"
-                                      />
-                                    }
-                                  </span>
-                                  <span class="elements-start-col min-w-0 gap-1">
-                                    <span class="font-label-lg font-bold!">
-                                      {{ card.label }}
-                                      @if (group.quantity > 1) {
-                                        × {{ group.quantity }}
-                                      }
-                                    </span>
-                                    <span class="font-body-sm">{{ card.price }}</span>
-                                  </span>
-                                </div>
-                              }
-                              @case ('open') {
-                                <div class="scroll-row bundle-row" appHorizontalScroll [enableWheel]="false">
-                                  @for (card of group.cards; track card.productId) {
-                                    @if (group.quantity === 1) {
-                                      <button
-                                        type="button"
-                                        data-choice
-                                        class="bundle-card"
-                                        [attr.aria-label]="card.label + ', ' + card.price"
-                                        [attr.aria-pressed]="card.count > 0"
-                                        (click)="pick(group.index, card.productId)"
-                                      >
-                                        <ng-container
-                                          *ngTemplateOutlet="
-                                            cardBody;
-                                            context: { $implicit: card, picked: card.count > 0 }
-                                          "
-                                        />
-                                      </button>
-                                    } @else {
-                                      <div class="bundle-card" [class.bundle-card--picked]="card.count > 0">
-                                        <ng-container
-                                          *ngTemplateOutlet="
-                                            cardBody;
-                                            context: { $implicit: card, picked: false }
-                                          "
-                                        />
-                                        <span class="bundle-qty">
-                                          <button
-                                            type="button"
-                                            class="bundle-qty__btn"
-                                            [disabled]="card.count === 0"
-                                            [attr.aria-label]="'One less ' + card.label"
-                                            (click)="remove(group.index, card.productId)"
-                                          >
-                                            −
-                                          </button>
-                                          <span class="bundle-qty__count" aria-live="polite">{{
-                                            card.count
-                                          }}</span>
-                                          <button
-                                            type="button"
-                                            data-choice
-                                            class="bundle-qty__btn"
-                                            [disabled]="group.full"
-                                            [attr.aria-label]="'One more ' + card.label"
-                                            (click)="pick(group.index, card.productId)"
-                                          >
-                                            +
-                                          </button>
-                                        </span>
-                                      </div>
-                                    }
-                                  }
-                                </div>
-                                @if (group.quantity > 1) {
-                                  <p class="font-label-lg font-bold!">{{ group.chosenText }}</p>
-                                }
-                              }
-                            }
-
-                            @for (row of group.sizeRows; track row.piece) {
-                              <ng-container
-                                *ngTemplateOutlet="sizeRow; context: { $implicit: row, group: group.index }"
-                              />
-                            }
-                          </li>
-                        }
-                      </ol>
-                    }
-
-                    @if (soldOut()) {
-                      @if (sideBySide()) {
-                        <p class="bundle-note">{{ soldOutNote() }}</p>
                       }
-                      @if (whatsappUrl) {
-                        <a
-                          matButton="outlined"
-                          class="btn-block"
-                          [href]="whatsappUrl"
-                          target="_blank"
-                          rel="noopener"
-                        >
-                          Message Us on WhatsApp
-                        </a>
-                      }
-                    }
-                  </div>
-
-                  <!-- Desktop: "Your bundle" beside the groups. -->
-                  <aside class="bundle-summary" aria-label="Your bundle">
-                    <h2 class="font-title-md font-bold!">Your bundle</h2>
-                    @if (complete()) {
-                      <p class="bundle-summary__row bundle-summary__row--normal">
-                        <span>Normal price</span>
-                        <s>{{ normalPrice() }}</s>
-                      </p>
-                      <p class="bundle-summary__row bundle-summary__row--total">
-                        <span>Bundle price</span>
-                        <span>{{ bundlePrice() }}</span>
-                      </p>
-                      @if (youSave()) {
-                        <p class="bundle-summary__row">
-                          <span class="text-on-surface-variant">You save</span>
-                          <span class="font-bold!">{{ youSave() }}</span>
-                        </p>
-                      }
-                    } @else {
-                      <p class="bundle-summary__row">
-                        <span class="text-on-surface-variant">{{ progressText() }}</span>
-                        @if (hasPicks()) {
-                          <span class="font-bold!">{{ bundlePrice() }}</span>
-                        }
-                      </p>
-                    }
-                    <ng-container *ngTemplateOutlet="mainButton" />
-                  </aside>
+                    </div>
+                  }
                 </div>
 
-                <!-- Phone: the same, as a bar that stays at the bottom. -->
+                @if (soldOut()) {
+                  <p class="bundle-note">{{ soldOutNote() }}</p>
+                  @if (whatsappUrl) {
+                    <a
+                      matButton="outlined"
+                      class="btn-block"
+                      [href]="whatsappUrl"
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      Message Us on WhatsApp
+                    </a>
+                  }
+                }
+
+                <!-- Tablet and desktop: the one button under the rows. -->
+                <div class="bundle-look__main-button">
+                  <button
+                    matButton="filled"
+                    type="button"
+                    class="btn-block"
+                    [disabled]="soldOut()"
+                    (click)="next()"
+                  >
+                    {{ complete() ? action().label + ' · ' + bundlePrice() : action().label }}
+                  </button>
+                </div>
+
+                <!-- Phone: price and the same button in a bar that stays at the bottom. -->
                 <div class="bundle-bar">
                   <span class="elements-start-col min-w-0">
                     @if (complete()) {
                       @if (youSave()) {
                         <s class="font-body-sm text-on-surface-variant">{{ normalPrice() }}</s>
                       }
+                      <span class="font-title-md font-bold!">{{ bundlePrice() }}</span>
                     } @else {
                       <span class="font-body-sm text-on-surface-variant">{{ progressText() }}</span>
                     }
-                    @if (complete() || hasPicks()) {
-                      <span class="font-title-md font-bold!">{{ bundlePrice() }}</span>
-                    }
                   </span>
-                  <ng-container *ngTemplateOutlet="mainButton" />
+                  <button matButton="filled" type="button" [disabled]="soldOut()" (click)="next()">
+                    {{ action().label }}
+                  </button>
                 </div>
               }
             }
             @case ('checking') {
-              <div class="elements-start-col w-full gap-3" aria-hidden="true">
+              <div class="elements-start-col items-stretch! w-full gap-3" aria-hidden="true">
                 <app-skeleton class="h-16 w-full" />
                 <app-skeleton class="h-12 w-full" />
               </div>
@@ -321,64 +244,3 @@
     </article>
   }
 }
-
-<ng-template #mainButton>
-  <button matButton="filled" type="button" [disabled]="soldOut()" (click)="next()">
-    {{ action().label }}
-  </button>
-</ng-template>
-
-<ng-template #cardBody let-card let-picked="picked">
-  <span class="bundle-card__photo">
-    @if (card.imagePath) {
-      <img
-        [ngSrc]="path(card.imagePath)"
-        [appImageFallback]="card.imagePath"
-        alt=""
-        fill
-        sizes="(max-width: 1023px) 40vw, 12vw"
-        class="object-cover"
-      />
-    }
-    @if (picked) {
-      <span class="bundle-card__check" aria-hidden="true"
-        ><mat-icon name="check" size="xs" weight="700"
-      /></span>
-    } @else if (card.count > 0) {
-      <span class="bundle-card__check" aria-hidden="true">{{ card.count }}</span>
-    }
-  </span>
-  <span class="bundle-card__caption" aria-hidden="true">
-    <span class="bundle-card__name">{{ card.name }}</span>
-    <span class="bundle-card__price">{{ card.price }}</span>
-    @if (card.colours.length > 0) {
-      <span class="elements-start gap-1">
-        @for (colour of card.colours; track colour.id) {
-          <app-color-swatch class="size-2.5" [colorId]="colour.id" round />
-        }
-      </span>
-    }
-  </span>
-</ng-template>
-
-<ng-template #sizeRow let-row let-group="group">
-  <div class="bundle-sizes" role="group" [attr.aria-label]="row.title">
-    <span class="font-label-lg">{{ row.title }}</span>
-    <span class="elements-start flex-wrap gap-2">
-      @for (size of row.sizes; track size.id) {
-        <button
-          type="button"
-          data-choice
-          class="pdp-choice bundle-sizes__btn"
-          [class.pdp-choice--sold-out]="size.soldOut"
-          [disabled]="size.soldOut"
-          [attr.aria-pressed]="row.pickedId === size.id"
-          [attr.aria-label]="size.soldOut ? size.label + ', sold out' : size.label"
-          (click)="chooseSize(group, row.piece, size.id)"
-        >
-          {{ size.label }}
-        </button>
-      }
-    </span>
-  </div>
-</ng-template>
