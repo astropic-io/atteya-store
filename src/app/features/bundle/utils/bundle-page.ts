@@ -254,6 +254,29 @@ export function pickSize(
   });
 }
 
+/**
+ * What the choice panel picked for one piece of a group (ATS-391): replaces that piece, or adds it
+ * after the pieces already picked. The same product and size keeps the piece as it was (a piece
+ * taken from the bag stays marked); anything else is a new piece. A size the product doesn't offer
+ * is left open.
+ */
+export function setPiecePick(
+  group: BundleGroupFacts,
+  picks: readonly BundlePiecePick[],
+  piece: number,
+  productId: string,
+  sizeId: string | null,
+): BundlePiecePick[] {
+  const choice = choiceOf(group, productId);
+  if (!choice || piece < 0 || piece >= group.quantity) return [...picks];
+  const size = choice.sizes?.some((entry) => entry.id === sizeId) ? sizeId : startSize(choice);
+  const current = picks[piece];
+  if (current && current.productId === productId && current.sizeId === size) return [...picks];
+  const next: BundlePiecePick = { productId, sizeId: size };
+  if (piece < picks.length) return picks.map((entry, index) => (index === piece ? next : entry));
+  return [...picks, next];
+}
+
 /** "Balls · choose 3" hint: "3 of 3 chosen". */
 export function chosenCountText(group: BundleGroupFacts, picks: readonly BundlePiecePick[]): string {
   return `${piecesChosen(group, picks)} of ${group.quantity} chosen`;

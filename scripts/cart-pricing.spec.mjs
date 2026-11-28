@@ -11,6 +11,7 @@ import {
   nextBundleAction,
   pickProduct,
   removeProductPiece,
+  setPiecePick,
   startingPicks,
 } from '../src/app/features/bundle/utils/bundle-page.ts';
 import {
@@ -1876,6 +1877,22 @@ describe('Bundle & Save page (ATS-279)', () => {
     picks = pickProduct(group, picks, 'y');
     assert.equal(pickProduct(group, picks, 'x').length, 2);
     assert.deepEqual(removeProductPiece(picks, 'x'), [{ productId: 'y', sizeId: null }]);
+  });
+
+  it('the choice panel sets one piece of a group, or adds it after the picked ones (ATS-391)', () => {
+    const group = {
+      name: 'Socks',
+      quantity: 2,
+      choices: [card('w', [{ id: 'm' }, { id: 'l' }]), card('p', [{ id: 'm' }])],
+    };
+    assert.deepEqual(setPiecePick(group, [], 0, 'w', 'm'), [{ productId: 'w', sizeId: 'm' }]);
+    const one = [{ productId: 'w', sizeId: 'm', inBag: true }];
+    assert.deepEqual(setPiecePick(group, one, 0, 'w', 'm'), one);
+    assert.deepEqual(setPiecePick(group, one, 0, 'w', 'l'), [{ productId: 'w', sizeId: 'l' }]);
+    assert.deepEqual(setPiecePick(group, one, 1, 'p', null), [...one, { productId: 'p', sizeId: 'm' }]);
+    assert.deepEqual(setPiecePick(group, one, 1, 'w', 'xl'), [...one, { productId: 'w', sizeId: null }]);
+    assert.deepEqual(setPiecePick(group, one, 2, 'p', 'm'), one);
+    assert.deepEqual(setPiecePick(group, one, 0, 'nope', null), one);
   });
 });
 
