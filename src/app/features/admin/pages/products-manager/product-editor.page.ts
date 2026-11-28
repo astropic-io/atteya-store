@@ -30,7 +30,9 @@ import {
 } from '@core/services/products/marketing-badge';
 import { PlayerListService } from '@core/services/products/player-list.service';
 import { MAX_PRODUCT_PLAYERS } from '@core/services/products/player.schema';
-import { PRODUCT_GENDERS, PRODUCT_TYPES, SIZE_ORDER } from '@core/services/products/product.constants';
+import { PRODUCT_GENDERS, SIZE_ORDER } from '@core/services/products/product.constants';
+import { BUILT_IN_PRODUCT_TYPES, type ProductTypeEntry } from '@core/services/products/product-types';
+import { ProductTypesService } from '@core/services/products/product-types.service';
 import type { Product, ProductGenderId, ProductTypeId } from '@core/services/products/product.model';
 import {
   defaultNewArrivalUntil,
@@ -172,7 +174,14 @@ export class ProductEditorPageComponent implements OnInit {
   readonly #playerList = inject(PlayerListService);
   readonly #tracker = new StorageAssetTracker();
 
-  readonly types = PRODUCT_TYPES;
+  readonly #productTypes = inject(ProductTypesService);
+  /** Types from Categories & Brands → Types (ATS-388), plus this product's own if it was removed there. */
+  readonly types = computed(() => {
+    const options = this.#productTypes.options();
+    const current = this.model().type;
+    if (!current || options.some((option) => option.id === current)) return options;
+    return [...options, { id: current, label: this.#productTypes.label(current) }];
+  });
   readonly genderOptions = GENDER_OPTIONS;
   readonly maxColours = MAX_COLOURS;
   readonly summaryWords = SUMMARY_WORDS;
@@ -188,7 +197,7 @@ export class ProductEditorPageComponent implements OnInit {
   readonly isSaving = signal(false);
   readonly isDeleting = signal(false);
   readonly formError = signal('');
-  readonly model = signal<SharedFields>(emptyFields());
+  readonly model = signal<SharedFields>(emptyFields(this.#productTypes.types()));
   readonly sizes = signal<readonly ModelSizeDraft[]>([]);
   readonly colours = signal<readonly ColourDraft[]>([]);
   readonly activeIndex = signal(0);
@@ -217,9 +226,12 @@ export class ProductEditorPageComponent implements OnInit {
   readonly #reloadTick = signal(0);
   readonly #savedImagePaths = signal<readonly string[]>([]);
 
-  #lastType: ProductTypeId = PRODUCT_TYPES[0].id;
-  #lastSuggestedCategory = defaultCategoryForType(PRODUCT_TYPES[0].id);
+  #lastType: ProductTypeId = this.model().type;
+  #lastSuggestedCategory = this.model().categoryId;
   #categoryPicked = false;
+  /** The saved Types list has been checked once for the starting type. */
+  #typeSeeded = false;
+
   /** Last weight the page filled in from the category ('' = none), so a typed weight is kept. */
   #suggestedWeight = '';
   #descriptionBaseline = '';
@@ -381,11 +393,27 @@ export class ProductEditorPageComponent implements OnInit {
       if (current.type !== this.#lastType) {
         this.#lastType = current.type;
         if (!this.#categoryPicked) {
-          const suggested = defaultCategoryForType(current.type);
-          this.#lastSuggestedCategory = suggested;
-          untracked(() => this.model.update((prev) => ({ ...prev, categoryId: suggested })));
+          // A type with no Usual category (ATS-388) leaves the category as it is.
+          const suggested = defaultCategoryForType(current.type, untracked(this.#productTypes.types));
+          if (suggested) {
+            this.#lastSuggestedCategory = suggested;
+            untracked(() => this.model.update((prev) => ({ ...prev, categoryId: suggested })));
+          }
         }
       }
+    });
+
+    // A new product starts on the first built-in type; once the saved Types list arrives and that
+    // type isn't in it (staff deleted it), start on the list's first type instead (ATS-388).
+    effect(() => {
+      if (!this.#productTypes.loaded() || this.#typeSeeded) return;
+      this.#typeSeeded = true;
+      const first = this.#productTypes.types()[0]?.id;
+      untracked(() => {
+        if (!this.isCreate() || !first) return;
+        if (this.#productTypes.types().some((type) => type.id === this.model().type)) return;
+        this.model.update((prev) => ({ ...prev, type: first }));
+      });
     });
 
     // New products: fill the shipping weight from the category (and "jacket" in the name) while
@@ -868,7 +896,7 @@ export class ProductEditorPageComponent implements OnInit {
     this.picking.set(false);
 
     if (!anchor) {
-      const fields = emptyFields();
+      const fields = emptyFields(this.#productTypes.types());
       this.#lastType = fields.type;
       this.#lastSuggestedCategory = fields.categoryId;
       this.#categoryPicked = false;
@@ -1093,15 +1121,15 @@ export class ProductEditorPageComponent implements OnInit {
   }
 }
 
-function emptyFields(): SharedFields {
-  const type = PRODUCT_TYPES[0].id;
+function emptyFields(types: readonly ProductTypeEntry[]): SharedFields {
+  const type = types[0]?.id ?? BUILT_IN_PRODUCT_TYPES[0]!.id;
   return {
     name: '',
     summary: '',
     description: '',
     details: '',
     type,
-    categoryId: defaultCategoryForType(type),
+    categoryId: defaultCategoryForType(type, types),
     brandId: '',
     gender: '',
     price: '',

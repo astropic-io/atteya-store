@@ -15,6 +15,7 @@ import { Router } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { SeoService } from '@core/services/seo';
 import { ProductCacheService } from '@core/services/products/product-cache.service';
+import { ProductTypesService } from '@core/services/products/product-types.service';
 import type { Product } from '@core/services/products/product.model';
 import { SnackbarService } from '@core/services/snack-bar/snack-bar.service';
 import { ProductsTableComponent } from './components/products-table/products-table.component';
@@ -58,6 +59,7 @@ export class ProductsManagerComponent implements OnInit {
   readonly #tools = inject(CatalogToolsService);
   readonly #snackbar = inject(SnackbarService);
   readonly #productCache = inject(ProductCacheService);
+  readonly #types = inject(ProductTypesService);
   readonly #platformId = inject(PLATFORM_ID);
 
   readonly search = signal('');
@@ -99,7 +101,8 @@ export class ProductsManagerComponent implements OnInit {
     if (!data) return [];
     const categoryNames = new Map(data.categories.map((cat) => [cat.id, cat.name]));
     const brandNames = new Map(data.brands.map((brand) => [brand.id, brand.name]));
-    return data.products.map((product) => toProductTableRow(product, categoryNames, brandNames));
+    const types = this.#types.types();
+    return data.products.map((product) => toProductTableRow(product, categoryNames, brandNames, types));
   });
 
   /** Brand filter: the brand docs from Categories & Brands (built-in brands until they load). */

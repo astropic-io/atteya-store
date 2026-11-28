@@ -1,6 +1,7 @@
 import { displayPrice, type Offer, type OfferReward, type PricedProduct } from '../offers/engine/index.js';
 import { cardShortDescription } from '../products/card-short-description.js';
 import { PRODUCT_TYPES, sizeRank, type ProductTypeId } from '../products/catalog-mapping.js';
+import { readableTypeId } from '../products/product-types.js';
 import { categoryIdsFor, DEFAULT_CATEGORY_FOR_TYPE } from '../products/catalog-taxonomy.js';
 import { type ColorSibling } from '../products/color-siblings.js';
 import {
@@ -110,7 +111,7 @@ export function toSearchRecord(
   }
 
   const brandName = brandsById.get(brandId)?.name ?? brandId;
-  const typeLabel = TYPE_LABEL_BY_ID.get(type) ?? type;
+  const typeLabel = TYPE_LABEL_BY_ID.get(type) ?? readableTypeId(type);
   const modelGroup =
     typeof data['modelGroup'] === 'string' && data['modelGroup'].trim() ? data['modelGroup'].trim() : null;
 

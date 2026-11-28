@@ -58,7 +58,7 @@
       <mat-label>Type</mat-label>
       <mat-select [value]="typeId()" (selectionChange)="typeId.set($event.value)">
         <mat-option value="all">All types</mat-option>
-        @for (type of types; track type.id) {
+        @for (type of types(); track type.id) {
           <mat-option [value]="type.id">{{ type.label }}</mat-option>
         }
       </mat-select>

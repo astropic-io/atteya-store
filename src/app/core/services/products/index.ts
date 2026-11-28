@@ -19,3 +19,5 @@ export * from './utils/product-details';
 export * from './shop-categories.service';
 export * from './shop-category.match';
 export * from './utils/shop-categories';
+export * from './product-types';
+export * from './product-types.service';

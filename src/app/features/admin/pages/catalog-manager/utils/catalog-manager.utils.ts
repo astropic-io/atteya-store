@@ -113,6 +113,12 @@ export function moveWithinLevel(ids: readonly string[], id: string, step: -1 | 1
   return next;
 }
 
+/** Why a type in use can't be deleted (ATS-388): "Hoodies is the type of 12 products. …". */
+export function typeBlockedMessage(name: string, products: number): string {
+  const what = products === 1 ? '1 product' : `${products} products`;
+  return `${name} is the type of ${what}. Give ${products === 1 ? 'it' : 'them'} another type in Products first.`;
+}
+
 /** The short count on a row: "61 live", "None live". */
 export function liveCountLabel(count: number): string {
   return count > 0 ? `${count} live` : 'None live';

@@ -1,11 +1,11 @@
-import { Component, input, model, output } from '@angular/core';
+import { Component, inject, input, model, output } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSelectModule } from '@angular/material/select';
-import { PRODUCT_TYPES } from '@core/services/products/product.constants';
+import { ProductTypesService } from '@core/services/products/product-types.service';
 import { SharedIconModule } from '@shared/ui/mat-icon';
 import type {
   BrandOptionView,
@@ -59,7 +59,7 @@ export class ProductsToolbarComponent {
   readonly shippingWeights = output<void>();
 
   /** Product types are a fixed list (they are not categories). */
-  readonly types = PRODUCT_TYPES;
+  readonly types = inject(ProductTypesService).options;
 
   onSearch(event: Event): void {
     const target = event.target;
