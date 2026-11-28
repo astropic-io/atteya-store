@@ -401,7 +401,8 @@ export class BundlePage {
   /** How wide each photo shows (they share one line), so the browser fetches the right size. */
   readonly photoSizes = computed(() => {
     const count = Math.max(1, this.photos().length);
-    return `(max-width: 767px) ${Math.round(90 / count)}vw, ${Math.round(50 / count)}vw`;
+    // From 1024px the photos share 2/3 of the page and two of them stretch taller than wide.
+    return `(max-width: 767px) ${Math.round(90 / count)}vw, (max-width: 1023px) ${Math.round(50 / count)}vw, ${Math.round(70 / count)}vw`;
   });
 
   /**
