@@ -88,9 +88,6 @@
                       <s class="font-body-lg text-on-surface-variant">{{ normalPrice() }}</s>
                     }
                   </p>
-                  @if (youSave()) {
-                    <p class="font-label-lg font-bold!">You save {{ youSave() }}</p>
-                  }
                 </div>
               } @else if (saving()) {
                 <p class="elements-start flex-wrap gap-2">
@@ -224,6 +221,9 @@
               </div>
             }
             @default {
+              @if (saving()) {
+                <span class="pdp-gift-tag w-fit">{{ saving() }}</span>
+              }
               @if (note(); as n) {
                 <div class="bundle-note">
                   <p class="font-bold!">{{ n.title }}</p>

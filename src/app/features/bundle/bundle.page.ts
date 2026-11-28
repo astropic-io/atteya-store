@@ -92,7 +92,6 @@ interface SetPhoto {
 interface BundleTotals {
   readonly normal: number;
   readonly total: number;
-  /** Per group: normal and bundle share of its picked pieces. */
 }
 
 /**
@@ -469,8 +468,6 @@ export class BundlePage {
     return done < groups.length ? `${done} of ${groups.length} chosen` : '';
   });
 
-  readonly hasPicks = computed(() => this.#picks().some((picks) => picks.length > 0));
-
   constructor() {
     afterNextRender(() => this.#hydrated.set(true));
 
@@ -532,10 +529,10 @@ export class BundlePage {
   }
 
   /** The first row that still needs a product or a size, at or after a group. */
-  #nextOpenRow(fromGroup: number, after: PieceRow | null): PieceRow | null {
-    const rows = this.rows().filter((row) => row.mode === 'choose');
-    const start = after ? rows.indexOf(after) + 1 : 0;
-    return rows.slice(start).find((row) => row.group >= fromGroup && !row.view?.done) ?? null;
+  #nextOpenRow(fromGroup: number): PieceRow | null {
+    return (
+      this.rows().find((row) => row.mode === 'choose' && row.group >= fromGroup && !row.view?.done) ?? null
+    );
   }
 
   /**
@@ -543,13 +540,17 @@ export class BundlePage {
    * sheet from the bottom on phone and tablet. "Next" moves on to the following piece still missing.
    */
   async open(group: number, piece: number, trigger: HTMLElement | null): Promise<void> {
-    const rows = this.rows().filter((row) => row.mode === 'choose');
-    const index = rows.findIndex((row) => row.group === group && row.piece === piece);
-    const row = rows[index];
     const facts = this.#groups()[group];
-    if (!row?.view || !facts || this.soldOut()) return;
+    const groupPicks = this.#picks()[group] ?? [];
+    if (!facts || this.soldOut()) return;
+    // Pieces of a group fill in order: an empty "Balls 3" row picks the group's next empty piece.
+    const at = Math.min(piece, groupPicks.length);
+    const rows = this.rows().filter((row) => row.mode === 'choose');
+    const index = rows.findIndex((row) => row.group === group && row.piece === at);
+    const row = rows[index];
+    if (!row?.view) return;
     const next = rows.slice(index + 1).find((entry) => !entry.view?.done) ?? null;
-    const pick = this.#picks()[group]?.[piece] ?? null;
+    const pick = groupPicks[at] ?? null;
     let result: Awaited<ReturnType<ChoicePickerService['open']>>;
     try {
       result = await this.#picker.open(
@@ -557,7 +558,7 @@ export class BundlePage {
           choices: facts.choices,
           title: row.title,
           step: `Bundle & Save · ${index + 1} of ${rows.length}`,
-          pick: pick ? { productId: pick.productId, sizeId: pick.sizeId } : null,
+          pick: pick ? { productId: pick.productId, sizeId: row.view.sizeId } : null,
           next: next?.title ?? null,
           hint: 'Tap a photo to pick this piece.',
         },
@@ -570,7 +571,7 @@ export class BundlePage {
     if (!result) return;
     const { productId, sizeId } = result;
     this.#picks.update((all) =>
-      all.map((picks, at) => (at === group ? setPiecePick(facts, picks, piece, productId, sizeId) : picks)),
+      all.map((picks, n) => (n === group ? setPiecePick(facts, picks, at, productId, sizeId) : picks)),
     );
     if (result.next && next) await this.open(next.group, next.piece, this.#rowButton(next.group, next.piece));
   }
@@ -579,7 +580,7 @@ export class BundlePage {
   next(): void {
     const action = this.action();
     if (action.kind !== 'add') {
-      const row = this.#nextOpenRow(action.group, null);
+      const row = this.#nextOpenRow(action.group);
       if (row) void this.open(row.group, row.piece, this.#rowButton(row.group, row.piece));
       else this.#scrollTo(action.group, true);
       return;

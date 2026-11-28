@@ -254,7 +254,6 @@ export function pickSize(
   });
 }
 
-/** "Balls · choose 3" hint: "3 of 3 chosen". */
 /**
  * What the choice panel picked for one piece of a group (ATS-391): replaces that piece, or adds it
  * after the pieces already picked. The same product and size keeps the piece as it was (a piece
@@ -278,6 +277,7 @@ export function setPiecePick(
   return [...picks, next];
 }
 
+/** "Balls · choose 3" hint: "3 of 3 chosen". */
 export function chosenCountText(group: BundleGroupFacts, picks: readonly BundlePiecePick[]): string {
   return `${piecesChosen(group, picks)} of ${group.quantity} chosen`;
 }
