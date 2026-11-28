@@ -72,8 +72,9 @@ function choiceLabel(choice: Choice): string {
 
 /**
  * **Links To** (ATS-246, ATS-267): the one picker for every link staff set up in Navigation and
- * Home Page. A searchable list of categories, brands, pages and running offers, plus Shop with
- * Filters… and Outside Link (a full `https://` address on another site, the only typed choice).
+ * Home Page. Only Opens the Menu, Shop with Filters… and Outside Link (a full `https://` address
+ * on another site, the only typed choice) come first, then a searchable list of categories, brands,
+ * pages and running offers.
  * A link saved as a typed address opens as the target that address names (`effectiveNavTarget`);
  * one that can't be matched shows "Pick where this goes".
  */
@@ -205,16 +206,17 @@ export class NavTargetFieldComponent {
       .filter((offer) => matches(offer.name))
       .map((offer) => ({ kind: 'target', target: { kind: 'offer', id: offer.id }, label: offer.name }));
 
-    const more: Choice[] = [{ kind: 'shop-dialog' }];
-    if (this.allowOutside()) more.push({ kind: 'outside' });
+    // Special choices come first and stay while searching, so staff never have to scroll for them.
+    const special: Choice[] = [];
+    if (this.allowMenuOnly()) special.push({ kind: 'menu' });
+    special.push({ kind: 'shop-dialog' });
+    if (this.allowOutside()) special.push({ kind: 'outside' });
 
-    const groups: ChoiceGroup[] = [];
-    if (this.allowMenuOnly()) groups.push({ label: '', choices: [{ kind: 'menu' }] });
+    const groups: ChoiceGroup[] = [{ label: '', choices: special }];
     if (categories.length) groups.push({ label: 'Categories', choices: categories });
     if (brands.length) groups.push({ label: 'Brands', choices: brands });
     if (pages.length) groups.push({ label: 'Pages', choices: pages });
     if (offers.length) groups.push({ label: 'Offers', choices: offers });
-    groups.push({ label: 'More', choices: more });
     return groups;
   });
 
