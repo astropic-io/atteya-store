@@ -1,27 +1,26 @@
 @layer components {
   /**
-   * Bundle & Save page (`/bundle/<offer id>`, ATS-279, Look Book layout ATS-391): from 768px two
-   * columns, the photos of the set on the left (sticky) and the title, price, one row per piece and
-   * the button on the right; from 1024px the photos take 2/3 and the details 1/3, and two photos stretch
-   * to the height of the details (ATS-392); on phone they stack and the button sits in a bar at the bottom.
+   * Bundle & Save page (`/bundle/<offer id>`, ATS-279, Look Book layout ATS-391, ATS-392): from 1024px
+   * two columns, the photos of the set (2/3, portrait) on the left and the title, price, one row per
+   * piece and the button on the right (1/3, sticky), at most 1360px wide; on tablet and phone they
+   * stack and the button sits in a bar at the bottom.
    * Rows reuse the product page's offer rows (.pdp-gift-*) and open its choice panel.
    */
   .bundle-look {
-    @apply grid w-full grid-cols-[minmax(0,1fr)] items-start gap-6 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] md:gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] xl:gap-12;
+    @apply grid w-full grid-cols-[minmax(0,1fr)] items-start gap-6 md:gap-8 lg:mx-auto lg:max-w-[1360px] lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] xl:gap-12;
   }
 
   /* Ended, upcoming, members and not available: the details column only. */
   .bundle-look--plain {
-    @apply md:grid-cols-[minmax(0,1fr)] max-w-2xl;
+    @apply lg:mx-0 lg:grid-cols-[minmax(0,1fr)] max-w-2xl;
   }
 
-  /* Sticky from 768px; from 1024px the column runs the height of the details and the photos inside stay in view. */
   .bundle-look__media {
-    @apply min-w-0 md:sticky md:top-[calc(var(--storefront-top-chrome,56px)+1.5rem)] lg:static lg:flex lg:flex-col lg:self-stretch;
+    @apply min-w-0;
   }
 
   .bundle-look__info {
-    @apply elements-start-col items-stretch! min-w-0 gap-4;
+    @apply elements-start-col items-stretch! min-w-0 gap-4 lg:sticky lg:top-[calc(56px+1.5rem)];
   }
 
   .bundle-look__kicker {
@@ -44,23 +43,23 @@
     @apply scroll-mt-[calc(var(--storefront-top-chrome,56px)+1rem)];
   }
 
-  /* The one button under the rows: tablet and desktop (the phone has the bar). */
+  /* The one button under the rows: desktop (phone and tablet have the bar). */
   .bundle-look__main-button {
-    @apply hidden md:block;
+    @apply hidden lg:block;
   }
 
   /* The photos of the set: side by side in one line, the same size, with a "+" between them. */
   .bundle-set {
-    @apply elements-center w-full gap-2 md:gap-3 lg:sticky lg:top-[calc(var(--storefront-top-chrome,56px)+1.5rem)] lg:max-h-[calc(100dvh-var(--storefront-top-chrome,56px)-3rem)] lg:flex-1 lg:items-stretch!;
+    @apply elements-center w-full gap-2 md:gap-3;
   }
 
   /* Sized like the usual two photos and their "+", so the page doesn't jump when they load. */
   .bundle-set--skeleton {
-    @apply block w-full aspect-[11/5] lg:aspect-auto lg:min-h-64;
+    @apply block w-full aspect-[11/5] lg:aspect-[8/5];
   }
 
   .bundle-set__piece {
-    @apply relative block min-w-0 flex-1 aspect-square lg:aspect-auto lg:min-h-64 overflow-hidden border-shape bg-surface-container-low;
+    @apply relative block min-w-0 flex-1 aspect-square lg:aspect-4/5 overflow-hidden border-shape bg-surface-container-low;
   }
 
   /* Not picked yet: the group's first product, greyed, with the group's name. */
@@ -77,13 +76,13 @@
   }
 
   /* Three or four pieces: a smaller "+" and name so the photos keep their room in the one line. */
-  /* Stretching 3 or 4 photos would make thin strips, so they stay square. */
+  /* Three or four photos stay square on desktop so they keep their room. */
   .bundle-set--many {
-    @apply gap-1 md:gap-2 lg:flex-none lg:items-center!;
+    @apply gap-1 md:gap-2;
   }
 
   .bundle-set--many .bundle-set__piece {
-    @apply lg:aspect-square lg:min-h-0;
+    @apply lg:aspect-square;
   }
 
   .bundle-set--many .bundle-set__plus {
@@ -99,9 +98,9 @@
     @apply w-full elements-start-col gap-1 p-4 bg-surface-container border-shape font-body-md;
   }
 
-  /* Phone: price and the one button in a bar that stays at the bottom, just above the store's bottom bar. */
+  /* Phone and tablet: price and the one button in a bar that stays at the bottom, just above the store's bottom bar. */
   .bundle-bar {
-    @apply sticky z-10 -mx-[5cqw] elements-between gap-3 px-[5cqw] py-3 border-t border-outline-variant bg-surface md:hidden;
+    @apply sticky z-10 -mx-[5cqw] elements-between gap-3 px-[5cqw] py-3 border-t border-outline-variant bg-surface lg:hidden;
     bottom: calc(env(safe-area-inset-bottom, 0px) + 4.5rem);
   }
 }
