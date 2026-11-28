@@ -47,34 +47,18 @@
     @apply hidden md:block;
   }
 
-  /* The photos of the set: two overlap with a "+" between them; three or four make a grid. */
+  /* The photos of the set: side by side in one line, the same size, with a "+" between them. */
   .bundle-set {
-    @apply relative block w-full aspect-square overflow-hidden border-shape bg-surface-container-low;
+    @apply elements-center w-full gap-2 md:gap-3;
   }
 
+  /* Sized like the usual two photos and their "+", so the page doesn't jump when they load. */
   .bundle-set--skeleton {
-    @apply block w-full aspect-square;
+    @apply block w-full aspect-[11/5];
   }
 
   .bundle-set__piece {
-    @apply absolute block overflow-hidden border-shape bg-surface-container;
-  }
-
-  .bundle-set__piece--lead {
-    @apply start-[6%] top-[7%] w-[60%] aspect-square;
-  }
-
-  .bundle-set__piece:not(.bundle-set__piece--lead) {
-    @apply end-[6%] bottom-[7%] w-[38%] aspect-4/5 border-4 border-surface shadow-mat-3;
-  }
-
-  .bundle-set--grid {
-    @apply grid grid-cols-2 gap-3 p-3;
-  }
-
-  .bundle-set--grid .bundle-set__piece,
-  .bundle-set--grid .bundle-set__piece:not(.bundle-set__piece--lead) {
-    @apply relative inset-auto w-full aspect-square border-0 shadow-none;
+    @apply relative block min-w-0 flex-1 aspect-square overflow-hidden border-shape bg-surface-container-low;
   }
 
   /* Not picked yet: the group's first product, greyed, with the group's name. */
@@ -83,11 +67,24 @@
   }
 
   .bundle-set__label {
-    @apply absolute start-2 top-2 px-2 py-1 bg-surface border-shape font-label-md font-bold!;
+    @apply absolute start-2 top-2 max-w-[calc(100%-1rem)] truncate px-2 py-1 bg-surface border-shape font-label-md font-bold!;
   }
 
   .bundle-set__plus {
-    @apply absolute start-[60%] top-[34%] z-10 elements-center size-10 -translate-x-1/2 rounded-full bg-primary text-on-primary font-title-lg md:size-12;
+    @apply elements-center shrink-0 size-8 rounded-full bg-primary text-on-primary font-title-md md:size-10;
+  }
+
+  /* Three or four pieces: a smaller "+" and name so the photos keep their room in the one line. */
+  .bundle-set--many {
+    @apply gap-1 md:gap-2;
+  }
+
+  .bundle-set--many .bundle-set__plus {
+    @apply size-6 font-title-sm md:size-8;
+  }
+
+  .bundle-set--many .bundle-set__label {
+    @apply start-1 top-1 max-w-[calc(100%-0.5rem)] px-1 font-label-sm;
   }
 
   /** The grey note when the bundle can't be bought, or a group is sold out. */

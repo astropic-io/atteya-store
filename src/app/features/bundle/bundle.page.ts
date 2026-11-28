@@ -398,6 +398,12 @@ export class BundlePage {
       });
   });
 
+  /** How wide each photo shows (they share one line), so the browser fetches the right size. */
+  readonly photoSizes = computed(() => {
+    const count = Math.max(1, this.photos().length);
+    return `(max-width: 767px) ${Math.round(90 / count)}vw, ${Math.round(50 / count)}vw`;
+  });
+
   /**
    * The picked pieces as bag lines (a piece whose size is still open is priced without one), and
    * the group of each line, and whether it is already in the bag.

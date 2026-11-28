@@ -14,18 +14,12 @@
             @if (loading()) {
               <app-skeleton class="bundle-set bundle-set--skeleton" />
             } @else if (photos().length > 0) {
-              <div
-                class="bundle-set"
-                [class.bundle-set--grid]="photos().length > 2"
-                [attr.data-count]="photos().length"
-                aria-hidden="true"
-              >
+              <div class="bundle-set" [class.bundle-set--many]="photos().length > 2" aria-hidden="true">
                 @for (photo of photos(); track photo.group; let first = $first) {
-                  <span
-                    class="bundle-set__piece"
-                    [class.bundle-set__piece--lead]="first"
-                    [class.bundle-set__piece--waiting]="!photo.picked"
-                  >
+                  @if (!first) {
+                    <span class="bundle-set__plus">+</span>
+                  }
+                  <span class="bundle-set__piece" [class.bundle-set__piece--waiting]="!photo.picked">
                     @if (photo.imagePath) {
                       <img
                         [ngSrc]="path(photo.imagePath)"
@@ -33,7 +27,7 @@
                         alt=""
                         fill
                         [priority]="first"
-                        sizes="(max-width: 767px) 70vw, 30vw"
+                        [sizes]="photoSizes()"
                         class="object-cover"
                       />
                     }
@@ -41,9 +35,6 @@
                       <span class="bundle-set__label">{{ photo.name }}</span>
                     }
                   </span>
-                }
-                @if (photos().length === 2) {
-                  <span class="bundle-set__plus">+</span>
                 }
               </div>
             }
